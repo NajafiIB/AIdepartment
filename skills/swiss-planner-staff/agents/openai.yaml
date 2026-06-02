@@ -1,0 +1,4 @@
+interface:
+  display_name: "Swiss Planner Staff"
+  short_description: "Manage KPIs, staff cycles, CRM health, application preparation, and approval-gated outreach for Swiss Planner."
+  default_prompt: "Use swiss-planner-staff to run the Swiss Planner AI Staff cycle against active KPI targets, coordinating research, application preparation, CRM health, and safe outreach."

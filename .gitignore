@@ -1,0 +1,79 @@
+# Local credentials and environment
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+*.key
+*.pem
+*.p12
+*.pfx
+*.credentials
+.tmp_new_webhook_token.txt
+*token*.txt
+*secret*.txt
+
+# Local runtime state
+swiss_planner_command_center/swiss_planner_local.db*
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+*.log
+*.pid
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local build/dependency folders
+node_modules/
+.venv/
+venv/
+env/
+dist/
+build/
+.codex_pdf_tools/
+.codex_pdf_tools_download/
+
+# Private/generated application material
+Application Packages/
+test_output_package/
+*.docx
+*.pdf
+*.eml
+*.zip
+*.lnk
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
+# Local operational scripts with machine paths or deployment URLs
+/*.cmd
+/*.ps1
+
+# Root-level generated research/package artifacts
+/_cc-react-app.js
+/*.json
+/*.txt
+/*.patch
+/*.py
+/*.md
+!/.env.example
+!/README.md
+!/GITHUB_HANDOFF.md
+!/docs/**
+
+# Separate/reference repositories kept in this workspace
+Implementation_Musahama/
+
+# Keep source folders visible to Git
+!swiss_planner_command_center/**
+!gmail_bridge/**
+!skills/**
+
+# Runtime exclusions inside tracked source folders
+swiss_planner_command_center/swiss_planner_local.db*
+swiss_planner_command_center/__pycache__/
+swiss_planner_command_center/**/*.py[cod]

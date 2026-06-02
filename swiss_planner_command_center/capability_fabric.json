@@ -1,0 +1,1442 @@
+{
+  "schemaVersion": "1.0",
+  "architecture": "Capability Orchestration Fabric",
+  "status": "Active",
+  "lastReviewed": "2026-05-31",
+  "solutionModules": [
+    {
+      "id": "solution_swiss_planner_apply_department",
+      "label": "Swiss Planner Apply Department",
+      "summary": "Find, evaluate, prepare, send, and follow up funded PhD/MSc application opportunities for Iman Najafi.",
+      "owner": "AIstaff_Manager",
+      "lifecycleStatus": "Active",
+      "modulesUsing": [
+        "Swiss Planner Command Center",
+        "Swiss Planner Google Sheet CRM",
+        "Swiss Planner Gmail Bridge"
+      ],
+      "operatingRule": "Solution module -> Capability -> Recipe -> Stage -> Lane -> Quality gate -> Output."
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "opportunity_discovery",
+      "label": "Opportunity Discovery",
+      "summary": "Find funded PhD/MSc opportunities and verify them against official sources before promotion.",
+      "lifecycleStatus": "Active",
+      "ownerStaff": "AIstaff_OpportunityHunter",
+      "recipes": [
+        "recipe_find_verified_opportunities"
+      ],
+      "requiredConnections": [
+        "official_web_sources"
+      ],
+      "recommendedConnections": [
+        "linkedin_lead_search"
+      ],
+      "databases": [
+        "db_opportunity",
+        "db_links",
+        "db_professor_research_fit"
+      ],
+      "aiSupport": [
+        "ai_research_reasoning"
+      ],
+      "automations": [
+        "daily_kpi_cycle",
+        "hourly_crm_health"
+      ],
+      "qualityGates": [
+        "gate_official_evidence",
+        "gate_no_duplicate_opportunity"
+      ],
+      "outputs": [
+        "verified_opportunity_rows",
+        "evidence_links",
+        "research_leads"
+      ],
+      "confidence": "Medium"
+    },
+    {
+      "id": "fit_assessment",
+      "label": "Fit Assessment",
+      "summary": "Score opportunities for eligibility, funding, location, Iman's background, and private-market/project-finance relevance.",
+      "lifecycleStatus": "Active",
+      "ownerStaff": "AIstaff_FitAnalyst",
+      "recipes": [
+        "recipe_convert_opportunity_to_application"
+      ],
+      "requiredConnections": [
+        "google_sheet_crm"
+      ],
+      "recommendedConnections": [
+        "official_web_sources"
+      ],
+      "databases": [
+        "db_opportunity",
+        "db_application",
+        "db_ai_staff_entities"
+      ],
+      "aiSupport": [
+        "ai_manager_low_cost",
+        "ai_fit_reasoning"
+      ],
+      "automations": [
+        "daily_kpi_cycle"
+      ],
+      "qualityGates": [
+        "gate_eligibility_check",
+        "gate_deadline_check",
+        "gate_minimum_fit_score"
+      ],
+      "outputs": [
+        "fit_score",
+        "application_candidate_rows",
+        "rejection_reason"
+      ],
+      "confidence": "Medium"
+    },
+    {
+      "id": "professor_research_intelligence",
+      "label": "Professor Research Intelligence",
+      "summary": "Build supervisor research-fit briefs from official profiles, publication evidence, and student/contact routes.",
+      "lifecycleStatus": "Active",
+      "ownerStaff": "AIstaff_ProfessorResearchAnalyst",
+      "recipes": [
+        "recipe_build_professor_research_fit"
+      ],
+      "requiredConnections": [
+        "official_web_sources"
+      ],
+      "recommendedConnections": [
+        "google_scholar_public_pages",
+        "linkedin_lead_search"
+      ],
+      "databases": [
+        "db_professor_research_fit",
+        "db_student_outreach",
+        "db_links"
+      ],
+      "aiSupport": [
+        "ai_research_reasoning"
+      ],
+      "automations": [
+        "daily_kpi_cycle"
+      ],
+      "qualityGates": [
+        "gate_professor_evidence",
+        "gate_source_freshness"
+      ],
+      "outputs": [
+        "professor_fit_row",
+        "student_contact_leads",
+        "research_theme_summary"
+      ],
+      "confidence": "Medium"
+    },
+    {
+      "id": "application_package_generation",
+      "label": "Application Package Generation",
+      "summary": "Prepare tailored CV, SOP, proposal/concept note, publication list, checklist, and package folders.",
+      "lifecycleStatus": "Active",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "recipes": [
+        "recipe_prepare_supervisor_package"
+      ],
+      "requiredConnections": [
+        "google_drive_packages",
+        "google_sheet_crm"
+      ],
+      "recommendedConnections": [
+        "official_web_sources"
+      ],
+      "databases": [
+        "db_application",
+        "db_application_docs",
+        "db_application_packages",
+        "db_package_files"
+      ],
+      "aiSupport": [
+        "ai_document_writing_high_quality"
+      ],
+      "automations": [
+        "daily_kpi_cycle"
+      ],
+      "qualityGates": [
+        "gate_document_template_style",
+        "gate_professor_specificity",
+        "gate_package_folder_registered"
+      ],
+      "outputs": [
+        "academic_cv",
+        "research_proposal",
+        "sop",
+        "publication_list",
+        "package_index"
+      ],
+      "confidence": "Medium"
+    },
+    {
+      "id": "outreach_email",
+      "label": "Outreach Email",
+      "summary": "Queue, verify, and send supervisor/admissions outreach only after content, package, and attachment gates pass.",
+      "lifecycleStatus": "Active",
+      "ownerStaff": "AIstaff_ApplicationPackSender",
+      "recipes": [
+        "recipe_safely_send_outreach"
+      ],
+      "requiredConnections": [
+        "gmail_bridge",
+        "google_drive_packages",
+        "google_sheet_crm"
+      ],
+      "recommendedConnections": [],
+      "databases": [
+        "db_email_send_queue",
+        "db_gmail_sent_log",
+        "db_outreach_queue"
+      ],
+      "aiSupport": [
+        "ai_email_safety_reasoning"
+      ],
+      "automations": [
+        "hourly_crm_health"
+      ],
+      "qualityGates": [
+        "gate_content_safety",
+        "gate_package_completeness",
+        "gate_attachment_access",
+        "gate_duplicate_recipient"
+      ],
+      "outputs": [
+        "sent_email_log",
+        "blocked_send_reason",
+        "draft_or_manual_send_record"
+      ],
+      "confidence": "High"
+    },
+    {
+      "id": "reply_followup",
+      "label": "Reply And Follow-up",
+      "summary": "Sync inbound replies, reconcile application status, create follow-ups, and route supervisor decisions through Manager.",
+      "lifecycleStatus": "Active",
+      "ownerStaff": "AIstaff_FollowUpController",
+      "recipes": [
+        "recipe_reconcile_reply_and_follow_up"
+      ],
+      "requiredConnections": [
+        "gmail_bridge",
+        "google_sheet_crm"
+      ],
+      "recommendedConnections": [],
+      "databases": [
+        "db_gmail_inbox_log",
+        "db_ai_staff_followups",
+        "db_ai_staff_tasks"
+      ],
+      "aiSupport": [
+        "ai_manager_low_cost"
+      ],
+      "automations": [
+        "hourly_crm_health"
+      ],
+      "qualityGates": [
+        "gate_reply_match_confidence",
+        "gate_followup_due_date"
+      ],
+      "outputs": [
+        "reply_status_update",
+        "followup_task",
+        "thread_message"
+      ],
+      "confidence": "Medium"
+    },
+    {
+      "id": "crm_sync_activation",
+      "label": "CRM Sync Activation",
+      "summary": "Keep local SQLite, Google Sheet CRM, AppSheet-compatible tables, tasks, threads, and event trail synchronized.",
+      "lifecycleStatus": "Active",
+      "ownerStaff": "AIstaff_CRMController",
+      "recipes": [
+        "recipe_run_crm_health_cycle"
+      ],
+      "requiredConnections": [
+        "google_sheet_crm",
+        "apps_script_bridge"
+      ],
+      "recommendedConnections": [],
+      "databases": [
+        "db_local_sqlite",
+        "db_ai_staff_event_log",
+        "db_ai_staff_tasks",
+        "db_ai_staff_threads"
+      ],
+      "aiSupport": [
+        "ai_manager_low_cost"
+      ],
+      "automations": [
+        "hourly_crm_health",
+        "daily_kpi_cycle"
+      ],
+      "qualityGates": [
+        "gate_sync_error_check",
+        "gate_active_entity_followup",
+        "gate_event_log_trace"
+      ],
+      "outputs": [
+        "sync_status",
+        "audit_task",
+        "manager_report"
+      ],
+      "confidence": "High"
+    },
+    {
+      "id": "workflow_automation",
+      "label": "Workflow Automation",
+      "summary": "Run local and scheduled cycles until KPI targets are met or the next action is blocked by human/Codex work.",
+      "lifecycleStatus": "Active",
+      "ownerStaff": "AIstaff_Manager",
+      "recipes": [
+        "recipe_run_daily_kpi_cycle"
+      ],
+      "requiredConnections": [
+        "local_command_center",
+        "google_sheet_crm"
+      ],
+      "recommendedConnections": [
+        "apps_script_bridge"
+      ],
+      "databases": [
+        "db_ai_staff_kpis",
+        "db_ai_staff_tasks",
+        "db_ai_staff_followups"
+      ],
+      "aiSupport": [
+        "ai_manager_low_cost"
+      ],
+      "automations": [
+        "daily_kpi_cycle",
+        "weekly_kpi_review"
+      ],
+      "qualityGates": [
+        "gate_kpi_progress",
+        "gate_no_hidden_blocker"
+      ],
+      "outputs": [
+        "daily_report",
+        "queued_staff_task",
+        "human_plan_request"
+      ],
+      "confidence": "Medium"
+    },
+    {
+      "id": "ai_reasoning",
+      "label": "AI Reasoning",
+      "summary": "Provide low-cost Manager interpretation and higher-quality Codex/AI reasoning for research, fit, and document tasks.",
+      "lifecycleStatus": "Active",
+      "ownerStaff": "AIstaff_Manager",
+      "recipes": [
+        "recipe_interpret_and_route_manager_thread"
+      ],
+      "requiredConnections": [
+        "openai_api"
+      ],
+      "recommendedConnections": [
+        "codex_worker"
+      ],
+      "databases": [
+        "db_ai_staff_threads",
+        "db_ai_staff_tasks"
+      ],
+      "aiSupport": [
+        "ai_manager_low_cost",
+        "ai_document_writing_high_quality",
+        "ai_research_reasoning"
+      ],
+      "automations": [
+        "manager_thread_reply"
+      ],
+      "qualityGates": [
+        "gate_no_email_from_chat",
+        "gate_safe_routing"
+      ],
+      "outputs": [
+        "manager_reply",
+        "routed_task",
+        "skill_update_candidate"
+      ],
+      "confidence": "High"
+    }
+  ],
+  "recipes": [
+    {
+      "id": "recipe_find_verified_opportunities",
+      "capabilityId": "opportunity_discovery",
+      "label": "Find Verified Opportunities",
+      "summary": "Search sources, verify official evidence, record leads, and hand off to Fit Analyst.",
+      "ownerStaff": "AIstaff_OpportunityHunter",
+      "stages": [
+        {
+          "id": "stage_search_scope",
+          "label": "Scope Search",
+          "lanes": [
+            "lane_ai_reasoning",
+            "lane_official_web_search"
+          ],
+          "qualityGates": [
+            "gate_kpi_progress"
+          ]
+        },
+        {
+          "id": "stage_official_verification",
+          "label": "Official Verification",
+          "lanes": [
+            "lane_official_web_search"
+          ],
+          "qualityGates": [
+            "gate_official_evidence"
+          ]
+        },
+        {
+          "id": "stage_record_opportunity",
+          "label": "Record Opportunity",
+          "lanes": [
+            "lane_google_sheets_crm"
+          ],
+          "qualityGates": [
+            "gate_no_duplicate_opportunity"
+          ]
+        },
+        {
+          "id": "stage_handoff_fit",
+          "label": "Handoff To Fit Analyst",
+          "lanes": [
+            "lane_local_thread_tasks"
+          ],
+          "qualityGates": [
+            "gate_event_log_trace"
+          ]
+        }
+      ],
+      "outputs": [
+        "verified_opportunity_rows",
+        "evidence_links"
+      ]
+    },
+    {
+      "id": "recipe_convert_opportunity_to_application",
+      "capabilityId": "fit_assessment",
+      "label": "Convert Opportunity To Application",
+      "summary": "Score opportunity, reject blockers, or create application entity and package tasks.",
+      "ownerStaff": "AIstaff_FitAnalyst",
+      "stages": [
+        {
+          "id": "stage_eligibility",
+          "label": "Eligibility Check",
+          "lanes": [
+            "lane_google_sheets_crm",
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_eligibility_check",
+            "gate_deadline_check"
+          ]
+        },
+        {
+          "id": "stage_fit_score",
+          "label": "Fit Score",
+          "lanes": [
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_minimum_fit_score"
+          ]
+        },
+        {
+          "id": "stage_create_application",
+          "label": "Create Application Entity",
+          "lanes": [
+            "lane_google_sheets_crm",
+            "lane_local_thread_tasks"
+          ],
+          "qualityGates": [
+            "gate_event_log_trace"
+          ]
+        }
+      ],
+      "outputs": [
+        "fit_score",
+        "application_candidate_rows"
+      ]
+    },
+    {
+      "id": "recipe_build_professor_research_fit",
+      "capabilityId": "professor_research_intelligence",
+      "label": "Build Professor Research Fit",
+      "summary": "Gather supervisor evidence, research themes, students/contact routes, and fit notes.",
+      "ownerStaff": "AIstaff_ProfessorResearchAnalyst",
+      "stages": [
+        {
+          "id": "stage_profile_scan",
+          "label": "Profile Scan",
+          "lanes": [
+            "lane_official_web_search"
+          ],
+          "qualityGates": [
+            "gate_professor_evidence"
+          ]
+        },
+        {
+          "id": "stage_publication_theme",
+          "label": "Publication Theme Analysis",
+          "lanes": [
+            "lane_ai_reasoning",
+            "lane_official_web_search"
+          ],
+          "qualityGates": [
+            "gate_source_freshness"
+          ]
+        },
+        {
+          "id": "stage_record_fit",
+          "label": "Record Fit",
+          "lanes": [
+            "lane_google_sheets_crm"
+          ],
+          "qualityGates": [
+            "gate_event_log_trace"
+          ]
+        }
+      ],
+      "outputs": [
+        "professor_fit_row",
+        "research_theme_summary"
+      ]
+    },
+    {
+      "id": "recipe_prepare_supervisor_package",
+      "capabilityId": "application_package_generation",
+      "label": "Prepare Supervisor Package",
+      "summary": "Produce package docs in the selected template, register Drive folder, and prepare package verification.",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "stages": [
+        {
+          "id": "stage_inputs_check",
+          "label": "Inputs Check",
+          "lanes": [
+            "lane_google_sheets_crm",
+            "lane_google_drive_packages"
+          ],
+          "qualityGates": [
+            "gate_professor_specificity"
+          ]
+        },
+        {
+          "id": "stage_document_generation",
+          "label": "Document Generation",
+          "lanes": [
+            "lane_codex_document_worker",
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_document_template_style"
+          ]
+        },
+        {
+          "id": "stage_drive_package",
+          "label": "Drive Package Registration",
+          "lanes": [
+            "lane_google_drive_packages",
+            "lane_apps_script_bridge"
+          ],
+          "qualityGates": [
+            "gate_package_folder_registered"
+          ]
+        },
+        {
+          "id": "stage_sender_handoff",
+          "label": "Sender Handoff",
+          "lanes": [
+            "lane_local_thread_tasks"
+          ],
+          "qualityGates": [
+            "gate_event_log_trace"
+          ]
+        }
+      ],
+      "outputs": [
+        "academic_cv",
+        "research_proposal",
+        "publication_list",
+        "package_index"
+      ]
+    },
+    {
+      "id": "recipe_safely_send_outreach",
+      "capabilityId": "outreach_email",
+      "label": "Safely Send Outreach",
+      "summary": "Verify queue, content, package, and attachments before sending or blocking.",
+      "ownerStaff": "AIstaff_ApplicationPackSender",
+      "stages": [
+        {
+          "id": "stage_queue_check",
+          "label": "Queue Check",
+          "lanes": [
+            "lane_gmail_bridge"
+          ],
+          "qualityGates": [
+            "gate_duplicate_recipient"
+          ]
+        },
+        {
+          "id": "stage_content_safety",
+          "label": "Content Safety",
+          "lanes": [
+            "lane_ai_reasoning",
+            "lane_gmail_bridge"
+          ],
+          "qualityGates": [
+            "gate_content_safety"
+          ]
+        },
+        {
+          "id": "stage_package_completeness",
+          "label": "Package Completeness",
+          "lanes": [
+            "lane_apps_script_bridge",
+            "lane_google_drive_packages"
+          ],
+          "qualityGates": [
+            "gate_package_completeness"
+          ]
+        },
+        {
+          "id": "stage_attachment_verification",
+          "label": "Attachment Verification",
+          "lanes": [
+            "lane_gmail_bridge"
+          ],
+          "qualityGates": [
+            "gate_attachment_access"
+          ]
+        },
+        {
+          "id": "stage_send_or_block",
+          "label": "Send Or Block",
+          "lanes": [
+            "lane_gmail_bridge",
+            "lane_google_sheets_crm"
+          ],
+          "qualityGates": [
+            "gate_event_log_trace"
+          ]
+        }
+      ],
+      "outputs": [
+        "sent_email_log",
+        "blocked_send_reason"
+      ]
+    },
+    {
+      "id": "recipe_reconcile_reply_and_follow_up",
+      "capabilityId": "reply_followup",
+      "label": "Reconcile Reply And Follow Up",
+      "summary": "Sync inbound replies, match to threads, update application status, and create follow-up tasks.",
+      "ownerStaff": "AIstaff_FollowUpController",
+      "stages": [
+        {
+          "id": "stage_sync_inbound",
+          "label": "Sync Inbound",
+          "lanes": [
+            "lane_gmail_bridge"
+          ],
+          "qualityGates": [
+            "gate_sync_error_check"
+          ]
+        },
+        {
+          "id": "stage_match_reply",
+          "label": "Match Reply",
+          "lanes": [
+            "lane_google_sheets_crm",
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_reply_match_confidence"
+          ]
+        },
+        {
+          "id": "stage_followup_task",
+          "label": "Create Follow-up",
+          "lanes": [
+            "lane_local_thread_tasks"
+          ],
+          "qualityGates": [
+            "gate_followup_due_date"
+          ]
+        }
+      ],
+      "outputs": [
+        "reply_status_update",
+        "followup_task"
+      ]
+    },
+    {
+      "id": "recipe_run_crm_health_cycle",
+      "capabilityId": "crm_sync_activation",
+      "label": "Run CRM Health Cycle",
+      "summary": "Sync local/online records, audit active entities, and raise process tasks instead of hidden warnings.",
+      "ownerStaff": "AIstaff_CRMController",
+      "stages": [
+        {
+          "id": "stage_sheet_sync",
+          "label": "Sheet Sync",
+          "lanes": [
+            "lane_google_sheets_crm",
+            "lane_local_sqlite"
+          ],
+          "qualityGates": [
+            "gate_sync_error_check"
+          ]
+        },
+        {
+          "id": "stage_process_audit",
+          "label": "Process Audit",
+          "lanes": [
+            "lane_apps_script_bridge",
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_active_entity_followup"
+          ]
+        },
+        {
+          "id": "stage_event_trace",
+          "label": "Event Trace",
+          "lanes": [
+            "lane_google_sheets_crm"
+          ],
+          "qualityGates": [
+            "gate_event_log_trace"
+          ]
+        }
+      ],
+      "outputs": [
+        "sync_status",
+        "audit_task",
+        "manager_report"
+      ]
+    },
+    {
+      "id": "recipe_run_daily_kpi_cycle",
+      "capabilityId": "workflow_automation",
+      "label": "Run Daily KPI Cycle",
+      "summary": "Run due tasks/follow-ups until KPI targets are complete or a safe blocker is reached.",
+      "ownerStaff": "AIstaff_Manager",
+      "stages": [
+        {
+          "id": "stage_kpi_snapshot",
+          "label": "KPI Snapshot",
+          "lanes": [
+            "lane_google_sheets_crm",
+            "lane_local_sqlite"
+          ],
+          "qualityGates": [
+            "gate_kpi_progress"
+          ]
+        },
+        {
+          "id": "stage_select_next_work",
+          "label": "Select Next Work",
+          "lanes": [
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_no_hidden_blocker"
+          ]
+        },
+        {
+          "id": "stage_dispatch_task",
+          "label": "Dispatch Task",
+          "lanes": [
+            "lane_local_thread_tasks"
+          ],
+          "qualityGates": [
+            "gate_safe_routing"
+          ]
+        }
+      ],
+      "outputs": [
+        "daily_report",
+        "queued_staff_task"
+      ]
+    },
+    {
+      "id": "recipe_interpret_and_route_manager_thread",
+      "capabilityId": "ai_reasoning",
+      "label": "Interpret And Route Manager Thread",
+      "summary": "Use the Manager AI brain to interpret natural human messages and route work safely.",
+      "ownerStaff": "AIstaff_Manager",
+      "stages": [
+        {
+          "id": "stage_understand_reply",
+          "label": "Understand Reply",
+          "lanes": [
+            "lane_openai_manager_brain"
+          ],
+          "qualityGates": [
+            "gate_no_email_from_chat"
+          ]
+        },
+        {
+          "id": "stage_route_work",
+          "label": "Route Work",
+          "lanes": [
+            "lane_local_thread_tasks"
+          ],
+          "qualityGates": [
+            "gate_safe_routing"
+          ]
+        },
+        {
+          "id": "stage_learning_candidate",
+          "label": "Learning Candidate",
+          "lanes": [
+            "lane_local_thread_tasks"
+          ],
+          "qualityGates": [
+            "gate_event_log_trace"
+          ]
+        }
+      ],
+      "outputs": [
+        "manager_reply",
+        "routed_task",
+        "skill_update_candidate"
+      ]
+    }
+  ],
+  "lanes": [
+    {
+      "id": "lane_openai_manager_brain",
+      "label": "OpenAI Manager Brain",
+      "routeType": "AI reasoning",
+      "ownerStaff": "AIstaff_Manager",
+      "connections": [
+        "openai_api"
+      ],
+      "databases": [
+        "db_ai_staff_threads"
+      ],
+      "aiSupport": [
+        "ai_manager_low_cost"
+      ],
+      "qualityGates": [
+        "gate_safe_routing",
+        "gate_no_email_from_chat"
+      ]
+    },
+    {
+      "id": "lane_ai_reasoning",
+      "label": "AI Reasoning",
+      "routeType": "AI reasoning",
+      "ownerStaff": "AIstaff_Manager",
+      "connections": [
+        "openai_api"
+      ],
+      "databases": [
+        "db_ai_staff_tasks",
+        "db_ai_staff_threads"
+      ],
+      "aiSupport": [
+        "ai_manager_low_cost",
+        "ai_fit_reasoning",
+        "ai_research_reasoning"
+      ],
+      "qualityGates": [
+        "gate_safe_routing"
+      ]
+    },
+    {
+      "id": "lane_codex_document_worker",
+      "label": "Codex Document Worker",
+      "routeType": "human-supervised AI worker",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "connections": [
+        "codex_worker",
+        "google_drive_packages"
+      ],
+      "databases": [
+        "db_application_docs",
+        "db_application_packages"
+      ],
+      "aiSupport": [
+        "ai_document_writing_high_quality"
+      ],
+      "qualityGates": [
+        "gate_document_template_style",
+        "gate_professor_specificity"
+      ]
+    },
+    {
+      "id": "lane_official_web_search",
+      "label": "Official Web Search",
+      "routeType": "external search",
+      "ownerStaff": "AIstaff_OpportunityHunter",
+      "connections": [
+        "official_web_sources"
+      ],
+      "databases": [
+        "db_links"
+      ],
+      "aiSupport": [
+        "ai_research_reasoning"
+      ],
+      "qualityGates": [
+        "gate_official_evidence",
+        "gate_source_freshness"
+      ]
+    },
+    {
+      "id": "lane_google_sheets_crm",
+      "label": "Google Sheets CRM",
+      "routeType": "database/writeback",
+      "ownerStaff": "AIstaff_CRMController",
+      "connections": [
+        "google_sheet_crm"
+      ],
+      "databases": [
+        "db_opportunity",
+        "db_application",
+        "db_ai_staff_tasks",
+        "db_ai_staff_event_log"
+      ],
+      "aiSupport": [],
+      "qualityGates": [
+        "gate_sync_error_check",
+        "gate_event_log_trace"
+      ]
+    },
+    {
+      "id": "lane_google_drive_packages",
+      "label": "Google Drive Packages",
+      "routeType": "document storage",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "connections": [
+        "google_drive_packages"
+      ],
+      "databases": [
+        "db_application_packages",
+        "db_package_files"
+      ],
+      "aiSupport": [],
+      "qualityGates": [
+        "gate_package_folder_registered",
+        "gate_attachment_access"
+      ]
+    },
+    {
+      "id": "lane_gmail_bridge",
+      "label": "Gmail Bridge",
+      "routeType": "email operation",
+      "ownerStaff": "AIstaff_ApplicationPackSender",
+      "connections": [
+        "gmail_bridge",
+        "apps_script_bridge"
+      ],
+      "databases": [
+        "db_email_send_queue",
+        "db_gmail_sent_log",
+        "db_gmail_inbox_log"
+      ],
+      "aiSupport": [
+        "ai_email_safety_reasoning"
+      ],
+      "qualityGates": [
+        "gate_content_safety",
+        "gate_package_completeness",
+        "gate_attachment_access",
+        "gate_duplicate_recipient"
+      ]
+    },
+    {
+      "id": "lane_apps_script_bridge",
+      "label": "Apps Script Bridge",
+      "routeType": "automation adapter",
+      "ownerStaff": "AIstaff_CRMController",
+      "connections": [
+        "apps_script_bridge"
+      ],
+      "databases": [
+        "db_ai_staff_tasks",
+        "db_package_files",
+        "db_email_send_queue"
+      ],
+      "aiSupport": [],
+      "qualityGates": [
+        "gate_sync_error_check"
+      ]
+    },
+    {
+      "id": "lane_local_thread_tasks",
+      "label": "Local Task Threads",
+      "routeType": "local workflow",
+      "ownerStaff": "AIstaff_Manager",
+      "connections": [
+        "local_command_center"
+      ],
+      "databases": [
+        "db_local_sqlite",
+        "db_ai_staff_threads",
+        "db_ai_staff_thread_messages"
+      ],
+      "aiSupport": [
+        "ai_manager_low_cost"
+      ],
+      "qualityGates": [
+        "gate_no_hidden_blocker",
+        "gate_event_log_trace"
+      ]
+    },
+    {
+      "id": "lane_local_sqlite",
+      "label": "Local SQLite Store",
+      "routeType": "local database",
+      "ownerStaff": "AIstaff_CRMController",
+      "connections": [
+        "local_command_center"
+      ],
+      "databases": [
+        "db_local_sqlite"
+      ],
+      "aiSupport": [],
+      "qualityGates": [
+        "gate_sync_error_check"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "openai_api",
+      "label": "OpenAI API",
+      "status": "Connected",
+      "type": "AI provider",
+      "requiredFor": [
+        "ai_reasoning"
+      ]
+    },
+    {
+      "id": "codex_worker",
+      "label": "Codex Worker",
+      "status": "Available",
+      "type": "AI worker",
+      "requiredFor": [
+        "application_package_generation"
+      ]
+    },
+    {
+      "id": "official_web_sources",
+      "label": "Official Web Sources",
+      "status": "Available",
+      "type": "web/evidence",
+      "requiredFor": [
+        "opportunity_discovery",
+        "professor_research_intelligence"
+      ]
+    },
+    {
+      "id": "google_scholar_public_pages",
+      "label": "Google Scholar public pages",
+      "status": "Available",
+      "type": "publication evidence",
+      "requiredFor": [
+        "professor_research_intelligence"
+      ]
+    },
+    {
+      "id": "linkedin_lead_search",
+      "label": "LinkedIn Lead Search",
+      "status": "Optional",
+      "type": "lead source",
+      "requiredFor": []
+    },
+    {
+      "id": "google_sheet_crm",
+      "label": "Swiss Planner Google Sheet CRM",
+      "status": "Connected",
+      "type": "database",
+      "requiredFor": [
+        "crm_sync_activation"
+      ]
+    },
+    {
+      "id": "google_drive_packages",
+      "label": "Google Drive Package Folder",
+      "status": "Connected",
+      "type": "document store",
+      "requiredFor": [
+        "application_package_generation"
+      ]
+    },
+    {
+      "id": "gmail_bridge",
+      "label": "Gmail Bridge",
+      "status": "Connected",
+      "type": "email",
+      "requiredFor": [
+        "outreach_email",
+        "reply_followup"
+      ]
+    },
+    {
+      "id": "apps_script_bridge",
+      "label": "Apps Script Bridge",
+      "status": "Connected",
+      "type": "automation",
+      "requiredFor": [
+        "crm_sync_activation",
+        "outreach_email"
+      ]
+    },
+    {
+      "id": "local_command_center",
+      "label": "Windows Command Center",
+      "status": "Connected",
+      "type": "local runtime",
+      "requiredFor": [
+        "workflow_automation"
+      ]
+    }
+  ],
+  "databases": [
+    {
+      "id": "db_local_sqlite",
+      "label": "Local SQLite task-thread store",
+      "status": "Active",
+      "type": "local"
+    },
+    {
+      "id": "db_opportunity",
+      "label": "Opportunity",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_application",
+      "label": "Application",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_links",
+      "label": "Links",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_application_docs",
+      "label": "Application Docs",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_application_packages",
+      "label": "Application Packages",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_package_files",
+      "label": "Package Files",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_email_send_queue",
+      "label": "Email Send Queue",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_outreach_queue",
+      "label": "Outreach Queue",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_gmail_sent_log",
+      "label": "Gmail Sent Log",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_gmail_inbox_log",
+      "label": "Gmail Inbox Log",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_professor_research_fit",
+      "label": "Professor Research Fit",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_student_outreach",
+      "label": "Student Outreach",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_ai_staff_kpis",
+      "label": "AI Staff KPIs",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_ai_staff_tasks",
+      "label": "AI Staff Tasks",
+      "status": "Active",
+      "type": "Google Sheet tab/local-first"
+    },
+    {
+      "id": "db_ai_staff_threads",
+      "label": "AI Staff Threads",
+      "status": "Active",
+      "type": "local-first/synced on close"
+    },
+    {
+      "id": "db_ai_staff_thread_messages",
+      "label": "AI Staff Thread Messages",
+      "status": "Active",
+      "type": "local-first/synced on close"
+    },
+    {
+      "id": "db_ai_staff_followups",
+      "label": "AI Staff Follow Ups",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_ai_staff_entities",
+      "label": "AI Staff Entities",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_ai_staff_event_log",
+      "label": "AI Staff Event Log",
+      "status": "Active",
+      "type": "Google Sheet tab"
+    }
+  ],
+  "aiSupport": [
+    {
+      "id": "ai_manager_low_cost",
+      "label": "Manager low-cost reasoning",
+      "model": "gpt-5-mini",
+      "reasoningEffort": "minimal",
+      "ownerStaff": "AIstaff_Manager",
+      "usage": "Interpret human messages, classify intent, and route work."
+    },
+    {
+      "id": "ai_fit_reasoning",
+      "label": "Fit reasoning",
+      "model": "gpt-5-mini",
+      "reasoningEffort": "low",
+      "ownerStaff": "AIstaff_FitAnalyst",
+      "usage": "Eligibility, fit scoring, and prioritization."
+    },
+    {
+      "id": "ai_research_reasoning",
+      "label": "Research reasoning",
+      "model": "gpt-5-mini or Codex",
+      "reasoningEffort": "medium",
+      "ownerStaff": "AIstaff_OpportunityHunter",
+      "usage": "Opportunity search planning, source assessment, and professor-fit synthesis."
+    },
+    {
+      "id": "ai_document_writing_high_quality",
+      "label": "Document writing",
+      "model": "Codex / higher reasoning when needed",
+      "reasoningEffort": "high",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "usage": "CV/SOP/proposal quality and professor-specific framing."
+    },
+    {
+      "id": "ai_email_safety_reasoning",
+      "label": "Email safety reasoning",
+      "model": "gpt-5-mini",
+      "reasoningEffort": "minimal",
+      "ownerStaff": "AIstaff_ApplicationPackSender",
+      "usage": "Check outbound wording for unsafe internal/system language."
+    }
+  ],
+  "qualityGates": [
+    {
+      "id": "gate_official_evidence",
+      "label": "Official Evidence",
+      "rule": "Serious opportunity rows require an official university/funder/institute source link."
+    },
+    {
+      "id": "gate_no_duplicate_opportunity",
+      "label": "No Duplicate Opportunity",
+      "rule": "Do not add duplicate opportunity rows; update existing row instead."
+    },
+    {
+      "id": "gate_eligibility_check",
+      "label": "Eligibility Check",
+      "rule": "Reject or downgrade hard-ineligible opportunities, including graduation-date constraints."
+    },
+    {
+      "id": "gate_deadline_check",
+      "label": "Deadline Check",
+      "rule": "Deadline must be active or have a clear late-application rationale."
+    },
+    {
+      "id": "gate_minimum_fit_score",
+      "label": "Minimum Fit Score",
+      "rule": "Fit Analyst must score against geography, funding, field, finance/energy relevance, and probability."
+    },
+    {
+      "id": "gate_professor_evidence",
+      "label": "Professor Evidence",
+      "rule": "Professor fit must cite a profile, topic, or publication source."
+    },
+    {
+      "id": "gate_source_freshness",
+      "label": "Source Freshness",
+      "rule": "Current opportunity/funding/deadline facts must be verified against current sources."
+    },
+    {
+      "id": "gate_document_template_style",
+      "label": "Document Template Style",
+      "rule": "Generated docs must use the agreed Harvard/academic/proposal templates, not plain placeholder formatting."
+    },
+    {
+      "id": "gate_professor_specificity",
+      "label": "Professor Specificity",
+      "rule": "Proposal/SOP/email must refer to the supervisor/topic/funding evidence and Iman's relevant background."
+    },
+    {
+      "id": "gate_package_folder_registered",
+      "label": "Package Folder Registered",
+      "rule": "Each serious application has one package folder and package index under the configured Drive parent."
+    },
+    {
+      "id": "gate_content_safety",
+      "label": "Content Safety",
+      "rule": "Outbound email cannot mention internal failures, package archive problems, or system instructions."
+    },
+    {
+      "id": "gate_package_completeness",
+      "label": "Package Completeness",
+      "rule": "Supervisor outreach requires CV + proposal/concept note + publication list unless explicitly fit-inquiry/no-attachment."
+    },
+    {
+      "id": "gate_attachment_access",
+      "label": "Attachment Access",
+      "rule": "All attachment Drive URLs must be accessible to the Gmail bridge before sending."
+    },
+    {
+      "id": "gate_duplicate_recipient",
+      "label": "Duplicate Recipient",
+      "rule": "Repeated professor/supervisor recipients require Manager/Human review before a second send."
+    },
+    {
+      "id": "gate_reply_match_confidence",
+      "label": "Reply Match Confidence",
+      "rule": "Inbound replies must match by thread, recipient/sender domain, or application/opportunity evidence."
+    },
+    {
+      "id": "gate_followup_due_date",
+      "label": "Follow-up Due Date",
+      "rule": "Waiting-for-reply items need an active follow-up unless closed/cancelled/submitted."
+    },
+    {
+      "id": "gate_sync_error_check",
+      "label": "Sync Error Check",
+      "rule": "Sync/bridge errors become Technical Bug or System Audit tasks, not hidden logs."
+    },
+    {
+      "id": "gate_active_entity_followup",
+      "label": "Active Entity Follow-up",
+      "rule": "Every active AI-owned entity needs an active, not-overdue follow-up or queued task."
+    },
+    {
+      "id": "gate_event_log_trace",
+      "label": "Event Log Trace",
+      "rule": "Important status/responsible/stage changes need an event-log or thread record."
+    },
+    {
+      "id": "gate_kpi_progress",
+      "label": "KPI Progress",
+      "rule": "The daily/weekly cycle continues until KPI targets are met or a blocker is explicit."
+    },
+    {
+      "id": "gate_no_hidden_blocker",
+      "label": "No Hidden Blocker",
+      "rule": "When the cycle stops without work, Manager asks Human for a plan instead of silently stopping."
+    },
+    {
+      "id": "gate_no_email_from_chat",
+      "label": "No Email From Chat",
+      "rule": "Thread replies never send email by themselves."
+    },
+    {
+      "id": "gate_safe_routing",
+      "label": "Safe Routing",
+      "rule": "Specialist staff talk to Manager first; only Manager talks to Human."
+    }
+  ],
+  "automations": [
+    {
+      "id": "hourly_crm_health",
+      "label": "Hourly CRM Health",
+      "status": "Active",
+      "capabilities": [
+        "crm_sync_activation",
+        "reply_followup",
+        "outreach_email"
+      ]
+    },
+    {
+      "id": "daily_kpi_cycle",
+      "label": "Daily KPI Cycle",
+      "status": "Active",
+      "capabilities": [
+        "workflow_automation",
+        "opportunity_discovery",
+        "fit_assessment",
+        "application_package_generation"
+      ]
+    },
+    {
+      "id": "weekly_kpi_review",
+      "label": "Weekly KPI Review",
+      "status": "Active",
+      "capabilities": [
+        "workflow_automation",
+        "crm_sync_activation"
+      ]
+    },
+    {
+      "id": "manager_thread_reply",
+      "label": "Manager Thread Reply",
+      "status": "Active",
+      "capabilities": [
+        "ai_reasoning",
+        "workflow_automation"
+      ]
+    }
+  ],
+  "operatingNotes": {
+    "workMap": "# Work Map\n\nThis section explains how department work moves from responsibility to execution.\n\n## Opportunity Discovery\n- Owner: `AIstaff_OpportunityHunter`\n- Purpose: Find funded PhD/MSc opportunities and verify them against official sources before promotion.\n- Recipes: Find Verified Opportunities\n- Quality gates: Official Evidence, No Duplicate Opportunity\n- Outputs: verified_opportunity_rows, evidence_links, research_leads\n\n## Fit Assessment\n- Owner: `AIstaff_FitAnalyst`\n- Purpose: Score opportunities for eligibility, funding, location, Iman's background, and private-market/project-finance relevance.\n- Recipes: Convert Opportunity To Application\n- Quality gates: Eligibility Check, Deadline Check, Minimum Fit Score\n- Outputs: fit_score, application_candidate_rows, rejection_reason\n\n## Professor Research Intelligence\n- Owner: `AIstaff_ProfessorResearchAnalyst`\n- Purpose: Build supervisor research-fit briefs from official profiles, publication evidence, and student/contact routes.\n- Recipes: Build Professor Research Fit\n- Quality gates: Professor Evidence, Source Freshness\n- Outputs: professor_fit_row, student_contact_leads, research_theme_summary\n\n## Application Package Generation\n- Owner: `AIstaff_ApplicationPackMaker`\n- Purpose: Prepare tailored CV, SOP, proposal/concept note, publication list, checklist, and package folders.\n- Recipes: Prepare Supervisor Package\n- Quality gates: Document Template Style, Professor Specificity, Package Folder Registered\n- Outputs: academic_cv, research_proposal, sop, publication_list, package_index\n\n## Outreach Email\n- Owner: `AIstaff_ApplicationPackSender`\n- Purpose: Queue, verify, and send supervisor/admissions outreach only after content, package, and attachment gates pass.\n- Recipes: Safely Send Outreach\n- Quality gates: Content Safety, Package Completeness, Attachment Access, Duplicate Recipient\n- Outputs: sent_email_log, blocked_send_reason, draft_or_manual_send_record\n\n## Reply And Follow-up\n- Owner: `AIstaff_FollowUpController`\n- Purpose: Sync inbound replies, reconcile application status, create follow-ups, and route supervisor decisions through Manager.\n- Recipes: Reconcile Reply And Follow Up\n- Quality gates: Reply Match Confidence, Follow-up Due Date\n- Outputs: reply_status_update, followup_task, thread_message\n\n## CRM Sync Activation\n- Owner: `AIstaff_CRMController`\n- Purpose: Keep local SQLite, Google Sheet CRM, AppSheet-compatible tables, tasks, threads, and event trail synchronized.\n- Recipes: Run CRM Health Cycle\n- Quality gates: Sync Error Check, Active Entity Follow-up, Event Log Trace\n- Outputs: sync_status, audit_task, manager_report\n\n## Workflow Automation\n- Owner: `AIstaff_Manager`\n- Purpose: Run local and scheduled cycles until KPI targets are met or the next action is blocked by human/Codex work.\n- Recipes: Run Daily KPI Cycle\n- Quality gates: KPI Progress, No Hidden Blocker\n- Outputs: daily_report, queued_staff_task, human_plan_request\n\n## AI Reasoning\n- Owner: `AIstaff_Manager`\n- Purpose: Provide low-cost Manager interpretation and higher-quality Codex/AI reasoning for research, fit, and document tasks.\n- Recipes: Interpret And Route Manager Thread\n- Quality gates: No Email From Chat, Safe Routing\n- Outputs: manager_reply, routed_task, skill_update_candidate\n",
+    "lanesTools": "# Lanes & Tools\n\nUse this section to define how every lane/tool should be used, what it needs, and when it must stop.\n\n## OpenAI Manager Brain\n- Lane ID: `lane_openai_manager_brain`\n- Route type: AI reasoning\n- Owner: `AIstaff_Manager`\n- Connections: OpenAI API\n- Databases: AI Staff Threads\n- AI support: Manager low-cost reasoning\n- Quality gates: Safe Routing, No Email From Chat\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## AI Reasoning\n- Lane ID: `lane_ai_reasoning`\n- Route type: AI reasoning\n- Owner: `AIstaff_Manager`\n- Connections: OpenAI API\n- Databases: AI Staff Tasks, AI Staff Threads\n- AI support: Manager low-cost reasoning, Fit reasoning, Research reasoning\n- Quality gates: Safe Routing\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Codex Document Worker\n- Lane ID: `lane_codex_document_worker`\n- Route type: human-supervised AI worker\n- Owner: `AIstaff_ApplicationPackMaker`\n- Connections: Codex Worker, Google Drive Package Folder\n- Databases: Application Docs, Application Packages\n- AI support: Document writing\n- Quality gates: Document Template Style, Professor Specificity\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Official Web Search\n- Lane ID: `lane_official_web_search`\n- Route type: external search\n- Owner: `AIstaff_OpportunityHunter`\n- Connections: Official Web Sources\n- Databases: Links\n- AI support: Research reasoning\n- Quality gates: Official Evidence, Source Freshness\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Google Sheets CRM\n- Lane ID: `lane_google_sheets_crm`\n- Route type: database/writeback\n- Owner: `AIstaff_CRMController`\n- Connections: Swiss Planner Google Sheet CRM\n- Databases: Opportunity, Application, AI Staff Tasks, AI Staff Event Log\n- AI support: None\n- Quality gates: Sync Error Check, Event Log Trace\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Google Drive Packages\n- Lane ID: `lane_google_drive_packages`\n- Route type: document storage\n- Owner: `AIstaff_ApplicationPackMaker`\n- Connections: Google Drive Package Folder\n- Databases: Application Packages, Package Files\n- AI support: None\n- Quality gates: Package Folder Registered, Attachment Access\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Gmail Bridge\n- Lane ID: `lane_gmail_bridge`\n- Route type: email operation\n- Owner: `AIstaff_ApplicationPackSender`\n- Connections: Gmail Bridge, Apps Script Bridge\n- Databases: Email Send Queue, Gmail Sent Log, Gmail Inbox Log\n- AI support: Email safety reasoning\n- Quality gates: Content Safety, Package Completeness, Attachment Access, Duplicate Recipient\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Apps Script Bridge\n- Lane ID: `lane_apps_script_bridge`\n- Route type: automation adapter\n- Owner: `AIstaff_CRMController`\n- Connections: Apps Script Bridge\n- Databases: AI Staff Tasks, Package Files, Email Send Queue\n- AI support: None\n- Quality gates: Sync Error Check\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Local Task Threads\n- Lane ID: `lane_local_thread_tasks`\n- Route type: local workflow\n- Owner: `AIstaff_Manager`\n- Connections: Windows Command Center\n- Databases: Local SQLite task-thread store, AI Staff Threads, AI Staff Thread Messages\n- AI support: Manager low-cost reasoning\n- Quality gates: No Hidden Blocker, Event Log Trace\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Local SQLite Store\n- Lane ID: `lane_local_sqlite`\n- Route type: local database\n- Owner: `AIstaff_CRMController`\n- Connections: Windows Command Center\n- Databases: Local SQLite task-thread store\n- AI support: None\n- Quality gates: Sync Error Check\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n",
+    "qualityGates": "# Quality Gates\n\nUse this checklist before a staff member moves work to the next stage.\n\n## Official Evidence\n- Gate ID: `gate_official_evidence`\n- Rule: Serious opportunity rows require an official university/funder/institute source link.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## No Duplicate Opportunity\n- Gate ID: `gate_no_duplicate_opportunity`\n- Rule: Do not add duplicate opportunity rows; update existing row instead.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Eligibility Check\n- Gate ID: `gate_eligibility_check`\n- Rule: Reject or downgrade hard-ineligible opportunities, including graduation-date constraints.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Deadline Check\n- Gate ID: `gate_deadline_check`\n- Rule: Deadline must be active or have a clear late-application rationale.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Minimum Fit Score\n- Gate ID: `gate_minimum_fit_score`\n- Rule: Fit Analyst must score against geography, funding, field, finance/energy relevance, and probability.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Professor Evidence\n- Gate ID: `gate_professor_evidence`\n- Rule: Professor fit must cite a profile, topic, or publication source.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Source Freshness\n- Gate ID: `gate_source_freshness`\n- Rule: Current opportunity/funding/deadline facts must be verified against current sources.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Document Template Style\n- Gate ID: `gate_document_template_style`\n- Rule: Generated docs must use the agreed Harvard/academic/proposal templates, not plain placeholder formatting.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Professor Specificity\n- Gate ID: `gate_professor_specificity`\n- Rule: Proposal/SOP/email must refer to the supervisor/topic/funding evidence and Iman's relevant background.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Package Folder Registered\n- Gate ID: `gate_package_folder_registered`\n- Rule: Each serious application has one package folder and package index under the configured Drive parent.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Content Safety\n- Gate ID: `gate_content_safety`\n- Rule: Outbound email cannot mention internal failures, package archive problems, or system instructions.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Package Completeness\n- Gate ID: `gate_package_completeness`\n- Rule: Supervisor outreach requires CV + proposal/concept note + publication list unless explicitly fit-inquiry/no-attachment.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Attachment Access\n- Gate ID: `gate_attachment_access`\n- Rule: All attachment Drive URLs must be accessible to the Gmail bridge before sending.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Duplicate Recipient\n- Gate ID: `gate_duplicate_recipient`\n- Rule: Repeated professor/supervisor recipients require Manager/Human review before a second send.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Reply Match Confidence\n- Gate ID: `gate_reply_match_confidence`\n- Rule: Inbound replies must match by thread, recipient/sender domain, or application/opportunity evidence.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Follow-up Due Date\n- Gate ID: `gate_followup_due_date`\n- Rule: Waiting-for-reply items need an active follow-up unless closed/cancelled/submitted.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Sync Error Check\n- Gate ID: `gate_sync_error_check`\n- Rule: Sync/bridge errors become Technical Bug or System Audit tasks, not hidden logs.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Active Entity Follow-up\n- Gate ID: `gate_active_entity_followup`\n- Rule: Every active AI-owned entity needs an active, not-overdue follow-up or queued task.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Event Log Trace\n- Gate ID: `gate_event_log_trace`\n- Rule: Important status/responsible/stage changes need an event-log or thread record.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## KPI Progress\n- Gate ID: `gate_kpi_progress`\n- Rule: The daily/weekly cycle continues until KPI targets are met or a blocker is explicit.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## No Hidden Blocker\n- Gate ID: `gate_no_hidden_blocker`\n- Rule: When the cycle stops without work, Manager asks Human for a plan instead of silently stopping.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## No Email From Chat\n- Gate ID: `gate_no_email_from_chat`\n- Rule: Thread replies never send email by themselves.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Safe Routing\n- Gate ID: `gate_safe_routing`\n- Rule: Specialist staff talk to Manager first; only Manager talks to Human.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n",
+    "dataConnectors": "# Data & Connectors\n\nThis section tells staff which systems are available and how carefully they may write to them.\n\n## Connections\n- `openai_api`: OpenAI API (Connected, AI provider)\n- `codex_worker`: Codex Worker (Available, AI worker)\n- `official_web_sources`: Official Web Sources (Available, web/evidence)\n- `google_scholar_public_pages`: Google Scholar public pages (Available, publication evidence)\n- `linkedin_lead_search`: LinkedIn Lead Search (Optional, lead source)\n- `google_sheet_crm`: Swiss Planner Google Sheet CRM (Connected, database)\n- `google_drive_packages`: Google Drive Package Folder (Connected, document store)\n- `gmail_bridge`: Gmail Bridge (Connected, email)\n- `apps_script_bridge`: Apps Script Bridge (Connected, automation)\n- `local_command_center`: Windows Command Center (Connected, local runtime)\n\n## Databases\n- `db_local_sqlite`: Local SQLite task-thread store (Active, local)\n- `db_opportunity`: Opportunity (Active, Google Sheet tab)\n- `db_application`: Application (Active, Google Sheet tab)\n- `db_links`: Links (Active, Google Sheet tab)\n- `db_application_docs`: Application Docs (Active, Google Sheet tab)\n- `db_application_packages`: Application Packages (Active, Google Sheet tab)\n- `db_package_files`: Package Files (Active, Google Sheet tab)\n- `db_email_send_queue`: Email Send Queue (Active, Google Sheet tab)\n- `db_outreach_queue`: Outreach Queue (Active, Google Sheet tab)\n- `db_gmail_sent_log`: Gmail Sent Log (Active, Google Sheet tab)\n- `db_gmail_inbox_log`: Gmail Inbox Log (Active, Google Sheet tab)\n- `db_professor_research_fit`: Professor Research Fit (Active, Google Sheet tab)\n- `db_student_outreach`: Student Outreach (Active, Google Sheet tab)\n- `db_ai_staff_kpis`: AI Staff KPIs (Active, Google Sheet tab)\n- `db_ai_staff_tasks`: AI Staff Tasks (Active, Google Sheet tab/local-first)\n- `db_ai_staff_threads`: AI Staff Threads (Active, local-first/synced on close)\n- `db_ai_staff_thread_messages`: AI Staff Thread Messages (Active, local-first/synced on close)\n- `db_ai_staff_followups`: AI Staff Follow Ups (Active, Google Sheet tab)\n- `db_ai_staff_entities`: AI Staff Entities (Active, Google Sheet tab)\n- `db_ai_staff_event_log`: AI Staff Event Log (Active, Google Sheet tab)\n\n## Write Rules\n- Local task/thread updates are local-first.\n- Closed thread archives can sync to the online CRM.\n- Email and portal actions require their own safety gates.\n",
+    "aiBrain": "# AI Brain\n\nThis section defines which reasoning level is used for each kind of work.\n\n## Manager low-cost reasoning\n- AI ID: `ai_manager_low_cost`\n- Model: gpt-5-mini\n- Reasoning effort: minimal\n- Owner: `AIstaff_Manager`\n- Usage: Interpret human messages, classify intent, and route work.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Fit reasoning\n- AI ID: `ai_fit_reasoning`\n- Model: gpt-5-mini\n- Reasoning effort: low\n- Owner: `AIstaff_FitAnalyst`\n- Usage: Eligibility, fit scoring, and prioritization.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Research reasoning\n- AI ID: `ai_research_reasoning`\n- Model: gpt-5-mini or Codex\n- Reasoning effort: medium\n- Owner: `AIstaff_OpportunityHunter`\n- Usage: Opportunity search planning, source assessment, and professor-fit synthesis.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Document writing\n- AI ID: `ai_document_writing_high_quality`\n- Model: Codex / higher reasoning when needed\n- Reasoning effort: high\n- Owner: `AIstaff_ApplicationPackMaker`\n- Usage: CV/SOP/proposal quality and professor-specific framing.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Email safety reasoning\n- AI ID: `ai_email_safety_reasoning`\n- Model: gpt-5-mini\n- Reasoning effort: minimal\n- Owner: `AIstaff_ApplicationPackSender`\n- Usage: Check outbound wording for unsafe internal/system language.\n- Cost policy: Use the lowest level that can safely complete the work.\n",
+    "outputTemplates": "# Output Templates\n\nThis section defines what each staff member must produce before a task can be marked done.\n\n## Opportunity Discovery\n- Owner: `AIstaff_OpportunityHunter`\n- Outputs: verified_opportunity_rows, evidence_links, research_leads\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Fit Assessment\n- Owner: `AIstaff_FitAnalyst`\n- Outputs: fit_score, application_candidate_rows, rejection_reason\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Professor Research Intelligence\n- Owner: `AIstaff_ProfessorResearchAnalyst`\n- Outputs: professor_fit_row, student_contact_leads, research_theme_summary\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Application Package Generation\n- Owner: `AIstaff_ApplicationPackMaker`\n- Outputs: academic_cv, research_proposal, sop, publication_list, package_index\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Outreach Email\n- Owner: `AIstaff_ApplicationPackSender`\n- Outputs: sent_email_log, blocked_send_reason, draft_or_manual_send_record\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Reply And Follow-up\n- Owner: `AIstaff_FollowUpController`\n- Outputs: reply_status_update, followup_task, thread_message\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## CRM Sync Activation\n- Owner: `AIstaff_CRMController`\n- Outputs: sync_status, audit_task, manager_report\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Workflow Automation\n- Owner: `AIstaff_Manager`\n- Outputs: daily_report, queued_staff_task, human_plan_request\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## AI Reasoning\n- Owner: `AIstaff_Manager`\n- Outputs: manager_reply, routed_task, skill_update_candidate\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n",
+    "learningLibrary": "# Learning Library\n\nClosed threads can become Skill Update Candidates.\n\n## Rule\n- Human-approved learnings are appended to the related staff role file.\n- Do not auto-apply a learning without `Human_Iman` approval.\n- The Manager decides whether a human answer should become a department rule or a staff-specific rule.\n\n## Where Learnings Go\n- Department-wide rule: `swiss-planner-staff/SKILL.md`\n- Staff-specific rule: `swiss-planner-staff/roles/<StaffID>.md`\n"
+  }
+}
