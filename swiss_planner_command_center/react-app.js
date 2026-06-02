@@ -1961,25 +1961,121 @@ function LoadingView() {
 }
 
 function OverviewView({ dashboard, summary, runOne, openTaskDialog, runAutopilotCycle, setAutopilot, autopilotEnabled, setView }) {
-  return h(Fragment, null,
-    h("section", { className: "metrics" }, [
-      ["Active Entities", summary.activeEntities],
-      ["Due Tasks", summary.dueTasks],
-      ["Waiting Codex", summary.waitingCodexWorker],
-      ["Overdue Tasks", summary.overdueTasks],
-      ["Due Follow-ups", summary.dueFollowUps],
-      ["Late Follow-ups", summary.overdueFollowUps],
-      ["Human Inbox", summary.humanTasks],
-      ["Open Escalations", summary.openEscalations == null ? summary.managerReview : summary.openEscalations],
-      ["Sent Today", summary.sentToday],
-      ["Blocked Emails", summary.blockedEmails],
-    ].map(([label, value]) => h("div", { key: label, className: "metric" }, h("span", { className: "value" }, value == null ? 0 : value), h("span", { className: "label" }, label)))),
-    h("section", { className: "layout cockpit-grid" },
-      h(DailyKpiCard, { dashboard, summary }),
-      h(ActivityCard, { dashboard, setView })
+  const [activeTab, setActiveTab] = useState("sponsor");
+  const sync = dashboard.localSync || {};
+  const alexOpenThreads = (((dashboard.threadsSummary || {}).byStaff || {}).AIstaff_Manager || {}).open || 0;
+  const activeApplications = summary.activeEntities || (dashboard.applications || []).length || 0;
+  const blockedCount = (summary.blockedEmails || 0) + (summary.overdueTasks || 0) + (summary.overdueFollowUps || 0);
+  const tabs = [
+    ["sponsor", "Sponsor organization details"],
+    ["howTo", "How to work with the department"],
+    ["department", "Department operating model"],
+  ];
+  return h("section", { className: "overview-landing" },
+    h("div", { className: "overview-hero" },
+      h("div", { className: "overview-hero-copy" },
+        h("p", { className: "eyebrow" }, "Overview"),
+        h("h1", null, "Swiss Planner AI Department"),
+        h("p", null, "A local AI staff department for PhD opportunity research, application preparation, package safety, and follow-up control.")
+      ),
+      h("div", { className: "overview-hero-actions" },
+        h(Button, { variant: "secondary", onClick: () => setView("explorer") }, icon("user"), "Department Explorer"),
+        h(Button, { onClick: () => setView("reports") }, icon("play"), "Login to Department")
+      )
     ),
-    h(AutopilotCard, { autopilot: (dashboard.localSync && dashboard.localSync.autopilot) || {}, documentQuality: (dashboard.localSync && dashboard.localSync.documentQuality) || {}, runAutopilotCycle, setAutopilot, enabled: autopilotEnabled }),
-    h(StaffFlowCard, { dashboard, setView })
+    h("div", { className: "overview-tabbar", role: "tablist", "aria-label": "Overview sections" },
+      tabs.map(([key, label]) => h("button", {
+        key,
+        type: "button",
+        role: "tab",
+        className: cn("overview-tab", activeTab === key && "active"),
+        "aria-selected": activeTab === key,
+        onClick: () => setActiveTab(key),
+      }, label))
+    ),
+    activeTab === "sponsor" ? h(OverviewSponsorTab, { dashboard, summary, activeApplications, alexOpenThreads, blockedCount, sync }) : null,
+    activeTab === "howTo" ? h(OverviewHowToTab, { setView, openTaskDialog }) : null,
+    activeTab === "department" ? h(OverviewDepartmentTab, { dashboard, setView }) : null
+  );
+}
+
+function OverviewSponsorTab({ dashboard, summary, activeApplications, alexOpenThreads, blockedCount, sync }) {
+  const mission = ((dashboard.kpis || []).find(row => normalizedText(row.Status) === "active") || {})["Owner Notes"] || "Find and execute funded PhD paths in Europe, prioritizing Switzerland, finance, energy, and Krakow/Poland feasibility.";
+  const cards = [
+    ["Sponsor", "Iman Najafi", "Human owner and final decision maker."],
+    ["Department", "Swiss Planner AI Staff", "Research, package preparation, safety checks, and follow-up control."],
+    ["Manager", "Alex Fergusen", `${alexOpenThreads || 0} open thread(s) with the AI manager.`],
+    ["Current workload", `${activeApplications || 0} active items`, `${summary.dueTasks || 0} due task(s), ${blockedCount || 0} risk item(s).`],
+  ];
+  return h("div", { className: "overview-panel" },
+    h("div", { className: "overview-section-head" },
+      h("div", null, h("h2", null, "Sponsor organization details"), h("p", null, "This department is configured like an internal AI team serving one sponsor organization.")),
+      h(Badge, { tone: blockedCount ? "warn" : "ok" }, blockedCount ? "Needs attention" : "Operational")
+    ),
+    h("div", { className: "overview-info-grid" }, cards.map(([label, value, detail]) =>
+      h("article", { className: "overview-info-card", key: label },
+        h("span", null, label),
+        h("strong", null, value),
+        h("p", null, detail)
+      )
+    )),
+    h("article", { className: "overview-narrative" },
+      h("h3", null, "Mission"),
+      h("p", null, mission),
+      h("div", { className: "overview-meta-row" },
+        h("span", null, `Last sheet sync: ${fmtDate(sync.lastSheetSync) || "not synced yet"}`),
+        h("span", null, `Pending local changes: ${sync.pendingActions || 0}`),
+        h("span", null, `Failed actions: ${sync.failedActions || 0}`)
+      )
+    )
+  );
+}
+
+function OverviewHowToTab({ setView, openTaskDialog }) {
+  const steps = [
+    ["1", "Message Alex", "Give the department a natural-language instruction. Alex routes it to the correct AI staff."],
+    ["2", "Review human threads", "When Alex needs a decision, the question appears in Tasks as a conversation thread."],
+    ["3", "Monitor the department", "Use Reports as the operating cockpit for KPIs, blockers, pipeline, staff status, and system health."],
+    ["4", "Explore structure", "Use Department Explorer to inspect the team, roles, tools, work steps, QA rules, and learned skills."],
+  ];
+  return h("div", { className: "overview-panel" },
+    h("div", { className: "overview-section-head" },
+      h("div", null, h("h2", null, "How to work with the department"), h("p", null, "You do not need to manage every worker. Talk to Alex, and Alex manages the team."))
+    ),
+    h("div", { className: "overview-step-list" }, steps.map(([number, title, body]) =>
+      h("article", { className: "overview-step", key: number },
+        h("span", null, number),
+        h("div", null, h("h3", null, title), h("p", null, body))
+      )
+    )),
+    h("div", { className: "overview-inline-actions" },
+      h(Button, { onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), "Message Alex"),
+      h(Button, { variant: "secondary", onClick: () => setView("work") }, "Open Tasks"),
+      h(Button, { variant: "secondary", onClick: () => setView("reports") }, "Open Reports")
+    )
+  );
+}
+
+function OverviewDepartmentTab({ dashboard, setView }) {
+  const staff = STAFF_ORDER
+    .filter(id => id !== HUMAN_STAFF_ID && id !== "AIstaff_Manager")
+    .map(id => ({ id, label: staffProfile(id).label, role: staffProfile(id).systemLabel || "AI staff" }));
+  return h("div", { className: "overview-panel" },
+    h("div", { className: "overview-section-head" },
+      h("div", null, h("h2", null, "Department operating model"), h("p", null, "The AI Manager coordinates specialist staff; humans communicate with Alex unless policy changes."))
+    ),
+    h("div", { className: "overview-org-mini" },
+      h("article", { className: "overview-org-node owner" }, staffAvatar("Human_Iman"), h("div", null, h("strong", null, "Iman / Human"), h("span", null, "Department owner"))),
+      h("div", { className: "overview-org-line" }),
+      h("article", { className: "overview-org-node manager" }, staffAvatar("AIstaff_Manager"), h("div", null, h("strong", null, "Alex Fergusen"), h("span", null, "AI Department Manager"))),
+      h("div", { className: "overview-org-staff" }, staff.map(item =>
+        h("article", { className: "overview-org-node", key: item.id }, staffAvatar(item.id), h("div", null, h("strong", null, item.label), h("span", null, item.role || "AI staff")))
+      ))
+    ),
+    h("div", { className: "overview-inline-actions" },
+      h(Button, { onClick: () => setView("explorer") }, icon("user"), "Open Department Explorer"),
+      h(Button, { variant: "secondary", onClick: () => setView("settings") }, "Department Settings")
+    )
   );
 }
 
