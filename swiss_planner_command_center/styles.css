@@ -637,6 +637,179 @@ button.text-btn:hover {
   font-size: 13px;
 }
 
+.wiki-page {
+  display: grid;
+  gap: 16px;
+}
+
+.wiki-hero {
+  min-height: auto;
+}
+
+.wiki-hero .ui-card-header {
+  align-items: center;
+  border-bottom: 0;
+}
+
+.wiki-hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.wiki-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.wiki-panel {
+  min-height: 100%;
+}
+
+.wiki-menu-panel,
+.wiki-process {
+  grid-row: span 2;
+}
+
+.wiki-steps {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.wiki-steps li {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-container-low);
+}
+
+.wiki-steps li > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-weight: 900;
+}
+
+.wiki-steps h3,
+.wiki-menu-list h3 {
+  margin-bottom: 4px;
+}
+
+.wiki-steps p,
+.wiki-menu-list p,
+.wiki-menu-list span,
+.wiki-bullets,
+.wiki-note,
+.wiki-routine p,
+.wiki-callout p {
+  color: var(--muted);
+}
+
+.wiki-example {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--surface-container-low);
+  border: 1px solid var(--line);
+}
+
+.wiki-example > p {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.wiki-example blockquote {
+  margin: 0;
+  padding-left: 14px;
+  border-left: 4px solid var(--primary);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.wiki-note,
+.wiki-callout {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.wiki-callout p {
+  color: var(--on-primary-container);
+  margin-top: 4px;
+}
+
+.wiki-menu-list {
+  display: grid;
+  gap: 10px;
+}
+
+.wiki-menu-list article {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-container-low);
+}
+
+.wiki-bullets {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.wiki-routine {
+  display: grid;
+  gap: 8px;
+  counter-reset: routine;
+}
+
+.wiki-routine p {
+  position: relative;
+  margin: 0;
+  padding: 10px 10px 10px 42px;
+  border-radius: var(--radius);
+  background: var(--surface-container-low);
+}
+
+.wiki-routine p::before {
+  counter-increment: routine;
+  content: counter(routine);
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -4410,8 +4583,14 @@ select:focus,
 
   .overview-info-grid,
   .overview-step-list,
-  .overview-org-staff {
+  .overview-org-staff,
+  .wiki-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wiki-menu-panel,
+  .wiki-process {
+    grid-row: auto;
   }
 
   .overview-org-node {
@@ -4542,8 +4721,14 @@ select:focus,
 
   .overview-info-grid,
   .overview-step-list,
-  .overview-org-staff {
+  .overview-org-staff,
+  .wiki-grid,
+  .wiki-menu-list article {
     grid-template-columns: 1fr;
+  }
+
+  .wiki-hero-actions .btn {
+    width: 100%;
   }
 
   .overview-tabbar {

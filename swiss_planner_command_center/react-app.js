@@ -99,6 +99,7 @@ const APPLICATION_STAGES = [
 
 const NAV_ITEMS = [
   ["overview", "Overview"],
+  ["wikis", "Wikis"],
   ["explorer", "Department Explorer"],
   ["applications", "Applications"],
   ["work", "Tasks"],
@@ -114,6 +115,7 @@ function initialViewFromHash() {
 
 const NAV_ICONS = {
   overview: "chart",
+  wikis: "book",
   explorer: "user",
   applications: "file",
   work: "send",
@@ -684,6 +686,12 @@ function icon(name) {
       h("path", { key: 2, d: "M18 17V9" }),
       h("path", { key: 3, d: "M13 17V5" }),
       h("path", { key: 4, d: "M8 17v-3" }),
+    ],
+    book: [
+      h("path", { key: 1, d: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20" }),
+      h("path", { key: 2, d: "M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z" }),
+      h("path", { key: 3, d: "M8 6h8" }),
+      h("path", { key: 4, d: "M8 10h6" }),
     ],
     database: [
       h("ellipse", { key: 1, cx: "12", cy: "5", rx: "9", ry: "3" }),
@@ -1939,6 +1947,7 @@ function App() {
       h("section", { className: "status-line" }, status),
       !dashboard ? h(LoadingView) : h(Fragment, null,
         view === "overview" ? h(OverviewView, { dashboard, summary, runOne, openTaskDialog, runAutopilotCycle, setAutopilot, autopilotEnabled, setView }) : null,
+        view === "wikis" ? h(WikisView, { setView, openTaskDialog }) : null,
         view === "explorer" ? h(DepartmentExplorerView, { dashboard, runOne, openTaskDialog, setView, selectedStaffRequest: selectedExplorerStaffId }) : null,
         view === "applications" ? h(ApplicationsView, { rows: dashboard.applications || [], labels, filters: applicationFilters, setFilters: setApplicationFilters, viewMode: applicationsView, setViewMode: setApplicationsView, runOne, openTaskDialog, openRef, openUniversity }) : null,
         view === "work" ? h(WorkView, { dashboard, tasks: allTasks, labels, filters: taskFilters, setFilters: setTaskFilters, runOne, snoozeTask, reassignTask, snoozeFollowUp, processQueueRow, approveEmail, runEmailSafetyCheck, setDecisionDialog, openTaskDialog, openRef, openUniversity, openStaffProfile }) : null,
@@ -2050,6 +2059,7 @@ function OverviewHowToTab({ setView, openTaskDialog }) {
     )),
     h("div", { className: "overview-inline-actions" },
       h(Button, { onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), "Message Alex"),
+      h(Button, { variant: "secondary", onClick: () => setView("wikis") }, icon("book"), "Open Wikis"),
       h(Button, { variant: "secondary", onClick: () => setView("work") }, "Open Tasks"),
       h(Button, { variant: "secondary", onClick: () => setView("reports") }, "Open Reports")
     )
@@ -2075,6 +2085,105 @@ function OverviewDepartmentTab({ dashboard, setView }) {
     h("div", { className: "overview-inline-actions" },
       h(Button, { onClick: () => setView("explorer") }, icon("user"), "Open Department Explorer"),
       h(Button, { variant: "secondary", onClick: () => setView("settings") }, "Department Settings")
+    )
+  );
+}
+
+function WikisView({ setView, openTaskDialog }) {
+  const processSteps = [
+    ["Give direction", "Use Message Alex when you want the department to do work. Write normally, for example: find five funded Switzerland energy-finance PhD opportunities."],
+    ["Alex routes the work", "Alex decides whether the request goes to Opportunity Hunter, Fit Analyst, Package Maker, Sender, Follow-up Controller, or CRM Controller."],
+    ["Specialists work internally", "AI staff work through tasks and follow-ups. They should ask Alex first, not message the human directly."],
+    ["Human answers only when needed", "If there is a decision, risk, duplicate professor, missing permission, or unclear strategy, Alex opens a task thread for Iman."],
+    ["Reports show the operating result", "Use Reports to see KPIs, blockers, application pipeline, staff workload, system health, and what changed in the selected period."],
+  ];
+  const menuGuide = [
+    ["Overview", "Entry page for the department.", "Use it to understand the sponsor, mission, and main entry actions."],
+    ["Wikis", "This user guide.", "Use it when you need to remember the process, menus, or safety rules."],
+    ["Department Explorer", "Org-chart and profile view of the AI department.", "Use it to inspect Alex, specialist staff, roles, tools, work steps, QA rules, and learned skills."],
+    ["Applications", "List or pipeline view of application entities.", "Use it to search applications, check stage/status, open application detail, and see related work."],
+    ["Tasks", "Conversation inbox for human/AI task threads.", "Use it to answer Alex, review human decisions, and follow task conversations like a chat."],
+    ["Reports", "Manager cockpit for operating performance.", "Use it as the main dashboard after login: KPI progress, blockers, pipeline, staff, follow-ups, email safety, and system health."],
+    ["Settings", "Configuration and local status.", "Use it to inspect bridge/sync settings, operating notes, and technical configuration where allowed."],
+  ];
+  const safetyRules = [
+    "Replying in a task thread never sends an email by itself.",
+    "Only approved email queue rows may send, and the bridge still checks content, package completeness, attachments, and duplicate recipients.",
+    "Repeated professor or supervisor recipients require a human decision unless the duplicate risk is already resolved.",
+    "Portal submissions and LinkedIn messages remain manual unless the policy is explicitly changed.",
+    "Private tokens, local databases, and generated application files stay local unless intentionally exported.",
+  ];
+  return h("section", { className: "wiki-page" },
+    h(Card, { className: "wiki-hero" },
+      h(CardHeader, {
+        eyebrow: "User Guide",
+        title: "How to Run the Swiss Planner AI Department",
+        description: "A practical guide for normal users: what to click, how work moves, and what each menu means.",
+        action: h("div", { className: "wiki-hero-actions" },
+          h(Button, { onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), "Message Alex"),
+          h(Button, { variant: "secondary", onClick: () => setView("reports") }, icon("play"), "Login to Department")
+        )
+      })
+    ),
+    h("div", { className: "wiki-grid" },
+      h(Card, { className: "wiki-panel wiki-process" },
+        h(CardHeader, { title: "Normal Process", description: "How one request moves through the department." }),
+        h(CardContent, null,
+          h("ol", { className: "wiki-steps" }, processSteps.map(([title, body], index) =>
+            h("li", { key: title },
+              h("span", null, String(index + 1)),
+              h("div", null, h("h3", null, title), h("p", null, body))
+            )
+          ))
+        )
+      ),
+      h(Card, { className: "wiki-panel" },
+        h(CardHeader, { title: "How To Give Work to Alex", description: "Use plain language. Alex turns it into staff tasks." }),
+        h(CardContent, null,
+          h("div", { className: "wiki-example" },
+            h("p", null, "Example request"),
+            h("blockquote", null, "Find 5 funded PhD opportunities in Switzerland related to energy finance, rank them, and start the package process for the best one.")
+          ),
+          h("div", { className: "wiki-note" }, "Good requests include geography, field, target count, deadline urgency, and whether sending is allowed or should wait.")
+        )
+      ),
+      h(Card, { className: "wiki-panel wiki-menu-panel" },
+        h(CardHeader, { title: "Menu Guide", description: "What each menu is for." }),
+        h(CardContent, null,
+          h("div", { className: "wiki-menu-list" }, menuGuide.map(([menu, purpose, use]) =>
+            h("article", { key: menu },
+              h("div", null, h("h3", null, menu), h("p", null, purpose)),
+              h("span", null, use)
+            )
+          ))
+        )
+      ),
+      h(Card, { className: "wiki-panel" },
+        h(CardHeader, { title: "Tasks And Threads", description: "The human-facing work model." }),
+        h(CardContent, null,
+          h("div", { className: "wiki-callout" },
+            h("strong", null, "Main rule"),
+            h("p", null, "Human users should talk to Alex. Specialist AI staff report to Alex, and Alex asks Iman only when a decision or instruction is needed.")
+          ),
+          h("ul", { className: "wiki-bullets" },
+            ["A task is the work item.", "A thread is the conversation around that work.", "Open threads are active. Closed threads can become learning candidates.", "Human closure keeps the visible conversation auditable."].map(item => h("li", { key: item }, item))
+          )
+        )
+      ),
+      h(Card, { className: "wiki-panel" },
+        h(CardHeader, { title: "Safety Rules", description: "What the system will not do silently." }),
+        h(CardContent, null,
+          h("ul", { className: "wiki-bullets" }, safetyRules.map(item => h("li", { key: item }, item)))
+        )
+      ),
+      h(Card, { className: "wiki-panel" },
+        h(CardHeader, { title: "Recommended Daily Routine", description: "The simplest way to operate the department." }),
+        h(CardContent, null,
+          h("div", { className: "wiki-routine" },
+            ["Open Reports and check Do First.", "Answer any Human Inbox threads from Alex.", "Check Applications for movement and deadlines.", "Use Department Explorer only when you need to inspect or improve the team structure.", "End by asking Alex what is blocked and what should happen next."].map(item => h("p", { key: item }, item))
+          )
+        )
+      )
     )
   );
 }
