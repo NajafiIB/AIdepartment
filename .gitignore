@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+.envrc
 *.secret
 *.secrets
 *.key
@@ -12,6 +13,7 @@
 .tmp_new_webhook_token.txt
 *token*.txt
 *secret*.txt
+.streamlit/secrets.toml
 
 # Local runtime state
 swiss_planner_command_center/swiss_planner_local.db*
@@ -23,15 +25,48 @@ swiss_planner_command_center/swiss_planner_local.db*
 *.pid
 __pycache__/
 *.py[cod]
+*.py.class
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Python packaging/build artifacts
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
 
 # Local build/dependency folders
 node_modules/
 .venv/
 venv/
 env/
-dist/
-build/
+ENV/
+env.bak/
+venv.bak/
 .codex_pdf_tools/
 .codex_pdf_tools_download/
 

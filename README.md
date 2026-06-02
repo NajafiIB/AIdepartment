@@ -1,6 +1,8 @@
-# Swiss Planner AI Staff Command Center
+# AIdepartment
 
-Local Windows command center for the Swiss Planner AI Staff workflow. It monitors application opportunities, AI staff tasks, task threads, package preparation, Gmail bridge safety checks, and manager-readable reports for Iman Najafi's PhD application process.
+The structure of a single AI department in which there are multiple AI staff working under an AI manager.
+
+This repository currently contains the Swiss Planner AI Staff Command Center: a local Windows command center for monitoring and running an AI department that supports Iman Najafi's PhD application process.
 
 ## Main Components
 
@@ -55,4 +57,4 @@ This repository intentionally excludes:
 - machine-specific command shortcuts and scripts;
 - separate/reference repositories in the workspace.
 
-See `GITHUB_HANDOFF.md` before pushing to GitHub.
+See `GITHUB_HANDOFF.md` before pushing future updates.
