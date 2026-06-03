@@ -106,16 +106,13 @@ def expand_percent_env(value: str, label: str) -> str:
     return value
 
 
-def read_bridge_config() -> tuple[str, str]:
+def get_bridge_config() -> tuple[str, str] | None:
     webhook = read_env_or_user_env("SWISS_PLANNER_WEBHOOK_URL")
     token = read_env_or_user_env("SWISS_PLANNER_WEBHOOK_TOKEN")
 
     if not webhook or not token:
         if not RUNNER_FILE.exists():
-            raise RuntimeError(
-                "Bridge settings were not found. Set SWISS_PLANNER_WEBHOOK_URL and "
-                "SWISS_PLANNER_WEBHOOK_TOKEN, or create run_swiss_planner_bridge.cmd."
-            )
+            return None
         text = RUNNER_FILE.read_text(encoding="utf-8", errors="ignore")
         webhook_match = re.search(r'set\s+"WEBHOOK=([^"]+)"', text, re.IGNORECASE)
         token_match = re.search(r'set\s+"TOKEN=([^"]+)"', text, re.IGNORECASE)
@@ -125,17 +122,53 @@ def read_bridge_config() -> tuple[str, str]:
             token = token_match.group(1).strip()
 
     if not webhook or not token:
+        return None
+
+    webhook = expand_percent_env(webhook, "webhook URL")
+    token = expand_percent_env(token, "token")
+    if "bridge-not-configured" in webhook or "127.0.0.1:9" in webhook:
+        return None
+    return webhook, token
+
+
+def read_bridge_config() -> tuple[str, str]:
+    config = get_bridge_config()
+    if config is None:
         raise RuntimeError(
             "Could not read bridge settings. Set SWISS_PLANNER_WEBHOOK_URL and "
             "SWISS_PLANNER_WEBHOOK_TOKEN, or check run_swiss_planner_bridge.cmd."
         )
+    return config
 
-    webhook = expand_percent_env(webhook, "webhook URL")
-    token = expand_percent_env(token, "token")
-    return webhook, token
+
+def bridge_enabled() -> bool:
+    return get_bridge_config() is not None
+
+
+def bridge_disabled_response(action: str | None = None) -> dict:
+    return {
+        "ok": False,
+        "bridgeDisabled": True,
+        "action": action or "",
+        "error": "Google Apps Script / CRM sync is disabled. The command center is running in local-only mode.",
+    }
+
+
+def local_dashboard_or_empty(message: str = "") -> dict:
+    snapshot = local_store.load_dashboard_snapshot()
+    if not snapshot:
+        snapshot = local_store.empty_dashboard(message or "No local dashboard snapshot yet.")
+    snapshot.setdefault("localSync", {})
+    snapshot["localSync"]["crmSyncEnabled"] = bridge_enabled()
+    snapshot["localSync"]["crmSyncStatus"] = "enabled" if bridge_enabled() else "disabled"
+    if not bridge_enabled():
+        snapshot["localSync"]["lastSyncError"] = ""
+    return snapshot
 
 
 def bridge_request(action: str | None = None, payload: dict | None = None, method: str = "POST") -> dict:
+    if not bridge_enabled():
+        return bridge_disabled_response(action)
     retry_delays = [0, 8, 18, 32]
     with BRIDGE_CALL_LOCK:
         result = {"ok": False, "error": "Bridge request was not attempted."}
@@ -258,20 +291,21 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
         params = dict(urllib.parse.parse_qsl(query, keep_blank_values=True))
 
         if path == "/api/bridge-info":
+            if not bridge_enabled():
+                json_response(self, bridge_disabled_response())
+                return
             json_response(self, bridge_request(method="GET"))
             return
 
         if path == "/api/dashboard":
             run_audit = params.get("runAudit", "false").lower() == "true"
             force_sync = params.get("sync", "false").lower() == "true"
-            if run_audit or force_sync:
+            if bridge_enabled() and (run_audit or force_sync):
                 local_store.sync_from_sheet(bridge_request, run_audit=run_audit)
-            snapshot = local_store.load_dashboard_snapshot()
-            if not snapshot:
+            snapshot = local_dashboard_or_empty("CRM sync is disabled; using the local dashboard only.")
+            if not local_store.load_dashboard_snapshot() and bridge_enabled():
                 sync_result = local_store.sync_from_sheet(bridge_request, run_audit=False)
-                snapshot = local_store.load_dashboard_snapshot()
-                if not snapshot:
-                    snapshot = local_store.empty_dashboard(sync_result.get("error", "No local dashboard snapshot yet."))
+                snapshot = local_dashboard_or_empty(sync_result.get("error", "No local dashboard snapshot yet."))
             json_response(self, snapshot)
             return
 
@@ -314,6 +348,9 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/queue-status":
+            if not bridge_enabled():
+                json_response(self, {"ok": True, "bridgeDisabled": True, "queue": [], "blocked": [], "queued": [], "sent": [], "errors": []})
+                return
             json_response(self, bridge_request("getEmailQueueStatus", {"limit": params.get("limit", 20)}))
             return
 
@@ -387,20 +424,42 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
                 json_response(self, {"ok": False, "error": "processQueueRow requires queueId."}, 400)
                 return
             if action == "processQueueRow":
+                if not bridge_enabled():
+                    json_response(self, bridge_disabled_response(action))
+                    return
                 json_response(self, process_queue_row_with_preflight(str(payload.get("queueId") or payload.get("id") or "")))
                 return
             method = "POST" if action in POST_ONLY_ACTIONS else "GET"
             if action in LOCAL_FIRST_ACTIONS:
-                sync_online = bool(payload.get("syncOnline")) if action in LOCAL_UNTIL_THREAD_CLOSED_ACTIONS else True
+                sync_online = bridge_enabled() and (bool(payload.get("syncOnline")) if action in LOCAL_UNTIL_THREAD_CLOSED_ACTIONS else True)
                 json_response(self, local_store.queue_action(action, payload, method=method, sync_online=sync_online))
+                return
+            if not bridge_enabled():
+                json_response(self, bridge_disabled_response(action))
                 return
             json_response(self, bridge_request(action, payload, method=method))
             return
 
         if path == "/api/sync-now":
             run_audit = bool(body.get("runAudit"))
+            if not bridge_enabled():
+                snapshot = local_dashboard_or_empty("CRM sync is disabled; local-only dashboard is active.")
+                json_response(
+                    self,
+                    {
+                        "ok": True,
+                        "bridgeDisabled": True,
+                        "sync": {
+                            "ok": True,
+                            "bridgeDisabled": True,
+                            "message": "CRM sync is disabled; no Google Apps Script call was made.",
+                        },
+                        "dashboard": snapshot,
+                    },
+                )
+                return
             result = local_store.sync_from_sheet(bridge_request, run_audit=run_audit)
-            snapshot = local_store.load_dashboard_snapshot() or local_store.empty_dashboard(result.get("error", "Sync did not return a dashboard snapshot."))
+            snapshot = local_dashboard_or_empty(result.get("error", "Sync did not return a dashboard snapshot."))
             json_response(self, {"ok": bool(result.get("ok")), "sync": result, "dashboard": snapshot})
             return
 
@@ -413,14 +472,34 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
                 json_response(self, {"ok": True, "autopilot": local_store.set_autopilot_enabled(False)})
                 return
             if action == "run-now":
+                if not bridge_enabled():
+                    snapshot = local_dashboard_or_empty("CRM sync is disabled; KPI cycle cannot call the CRM task runner.")
+                    json_response(
+                        self,
+                        {
+                            "ok": True,
+                            "bridgeDisabled": True,
+                            "autopilot": local_store.autopilot_status(),
+                            "cycle": {
+                                "ok": True,
+                                "state": "Local Only",
+                                "reason": "CRM sync is disabled; local tasks and threads are available, but Google Script runner actions are skipped.",
+                            },
+                            "dashboard": snapshot,
+                        },
+                    )
+                    return
                 result = local_store.run_autopilot_until_blocked(bridge_request, max_steps=int(body.get("maxSteps") or 8))
-                snapshot = local_store.load_dashboard_snapshot() or local_store.empty_dashboard(result.get("error", "Autopilot cycle did not return a dashboard snapshot."))
+                snapshot = local_dashboard_or_empty(result.get("error", "Autopilot cycle did not return a dashboard snapshot."))
                 json_response(self, {"ok": bool(result.get("ok")), "autopilot": local_store.autopilot_status(), "cycle": result, "dashboard": snapshot})
                 return
             json_response(self, {"ok": False, "error": "Unknown autopilot action."}, 400)
             return
 
         if path == "/api/run-health":
+            if not bridge_enabled():
+                json_response(self, bridge_disabled_response("run-health"))
+                return
             steps = []
             for action in ["syncSent", "syncInbound", "reconcileInboundReplies", "auditAiStaffProcessHealth"]:
                 steps.append({"action": action, "response": bridge_request(action, {})})
@@ -445,6 +524,16 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
             payload = {"maxItems": body.get("maxItems") or 1}
             if staff:
                 payload["staff"] = staff
+            if not bridge_enabled():
+                json_response(
+                    self,
+                    {
+                        "ok": True,
+                        "bridgeDisabled": True,
+                        "message": "No local staff wake-up is queued. CRM task runner is disabled because Google Apps Script is not configured.",
+                    },
+                )
+                return
             result = bridge_request("runAiStaffTaskRunner", payload)
             if result.get("ok"):
                 try:
@@ -549,11 +638,11 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     local_store.init_db()
-    try:
-        read_bridge_config()
-    except Exception as exc:
-        print(f"Cannot start Swiss Planner Command Center: {exc}")
-        raise
+    crm_sync_enabled = bridge_enabled()
+    local_store.set_meta("crm_sync_enabled", "true" if crm_sync_enabled else "false")
+    local_store.set_meta("crm_sync_status", "enabled" if crm_sync_enabled else "disabled")
+    if not crm_sync_enabled:
+        local_store.set_autopilot_enabled(False)
 
     url = f"http://{HOST}:{PORT}/"
     try:
@@ -563,12 +652,13 @@ def main() -> None:
         print("If the dashboard is already open and working, another Command Center server is probably running.")
         webbrowser.open(url)
         sys.exit(3)
-    print("Swiss Planner AI Staff Command Center")
+    print("GCC lab AI department")
     print(f"Open: {url}")
-    print("Mode: local-first dashboard, hourly Google Sheet sync.")
+    print("Mode: local-only dashboard." if not crm_sync_enabled else "Mode: local-first dashboard, hourly Google Sheet sync.")
     print("Close this window to stop the dashboard.")
-    local_store.start_hourly_sync(bridge_request)
-    local_store.start_autopilot_loop(bridge_request)
+    if crm_sync_enabled:
+        local_store.start_hourly_sync(bridge_request)
+        local_store.start_autopilot_loop(bridge_request)
     webbrowser.open(url)
     server.serve_forever()
 

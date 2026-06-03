@@ -22,7 +22,10 @@ BridgeCall = Callable[[str | None, dict | None, str], dict]
 DB_PATH = Path(__file__).resolve().parent / "swiss_planner_local.db"
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CAPABILITY_FABRIC_PATH = Path(__file__).resolve().parent / "capability_fabric.json"
-STAFF_SKILL_DIR = Path(r"C:\Users\sonse\.codex\skills\swiss-planner-staff")
+STAFF_SKILL_DIR = Path(
+    os.environ.get("SWISS_PLANNER_STAFF_SKILL_DIR", "")
+    or ROOT_DIR / "skills" / "swiss-planner-staff"
+)
 LOCAL_ENV_PATH = ROOT_DIR / ".env.local"
 BACKUP_DIR = ROOT_DIR / "backups"
 
@@ -41,8 +44,8 @@ TASK_CATEGORIES = {
     "manager": "Manager Guidance",
     "audit": "System Audit",
     "technical": "Technical Bug",
-    "email": "Email Safety",
-    "application": "Application Work",
+    "email": "Outreach Safety",
+    "application": "Tender Work",
     "research": "Research Work",
 }
 
@@ -265,13 +268,16 @@ def local_status() -> dict[str, Any]:
         pending = conn.execute("SELECT COUNT(*) AS c FROM pending_actions WHERE status = 'Queued'").fetchone()["c"]
         failed = conn.execute("SELECT COUNT(*) AS c FROM pending_actions WHERE status = 'Error'").fetchone()["c"]
         snapshot = conn.execute("SELECT updated_at, source, error FROM dashboard_snapshot WHERE id = 1").fetchone()
+    crm_sync_enabled = normalize_text(get_meta("crm_sync_enabled", "false")) == "true"
     return {
-        "mode": "local-first",
+        "mode": "local-first" if crm_sync_enabled else "local-only",
+        "crmSyncEnabled": crm_sync_enabled,
+        "crmSyncStatus": get_meta("crm_sync_status", "enabled" if crm_sync_enabled else "disabled"),
         "dbPath": str(DB_PATH),
         "pendingActions": pending,
         "failedActions": failed,
         "lastSheetSync": get_meta("last_sheet_sync", ""),
-        "lastSyncError": get_meta("last_sync_error", ""),
+        "lastSyncError": get_meta("last_sync_error", "") if crm_sync_enabled else "",
         "snapshotUpdatedAt": iso_like(snapshot["updated_at"]) if snapshot else "",
         "snapshotSource": snapshot["source"] if snapshot else "",
         "snapshotError": snapshot["error"] if snapshot else "",
@@ -392,11 +398,11 @@ def json_clone(value: Any) -> Any:
 def default_staff_profiles() -> list[dict[str, Any]]:
     titles = {
         "AIstaff_Manager": "Department Manager",
-        "AIstaff_OpportunityHunter": "Opportunity Research Specialist",
-        "AIstaff_FitAnalyst": "Fit And Eligibility Analyst",
-        "AIstaff_ProfessorResearchAnalyst": "Professor Research Specialist",
-        "AIstaff_ApplicationPackMaker": "Application Package Specialist",
-        "AIstaff_ApplicationPackSender": "Outreach Safety Specialist",
+        "AIstaff_OpportunityHunter": "Tender Document Analyst",
+        "AIstaff_FitAnalyst": "Fit And Supplier Match Analyst",
+        "AIstaff_ProfessorResearchAnalyst": "Supplier Mapper",
+        "AIstaff_ApplicationPackMaker": "Tender Package Maker",
+        "AIstaff_ApplicationPackSender": "Supplier Outreach Specialist",
         "AIstaff_FollowUpController": "Follow-up Coordinator",
         "AIstaff_CRMController": "CRM Operations Controller",
     }
@@ -462,27 +468,27 @@ def default_output_templates() -> list[dict[str, Any]]:
     return [
         {
             "id": "output_verified_opportunity",
-            "label": "Verified Opportunity Record",
+            "label": "Lead Case Brief",
             "ownerStaff": "AIstaff_OpportunityHunter",
-            "requiredSections": ["Official source", "Funding/deadline", "Eligibility", "Why it fits"],
-            "storage": "Opportunity, Links, Professor Research Fit",
+            "requiredSections": ["Lead record", "Tender source", "Files reviewed", "Deadlines", "Missing blockers"],
+            "storage": "Lead, Files Manager, Docs, tender portal/source evidence",
             "qualityGates": ["gate_official_evidence", "gate_no_duplicate_opportunity"],
             "workspaceEditable": True,
         },
         {
             "id": "output_application_package",
-            "label": "Application Package",
+            "label": "Tender Submission Package",
             "ownerStaff": "AIstaff_ApplicationPackMaker",
-            "requiredSections": ["Academic CV", "Research proposal/concept note", "SOP/motivation", "Publication list", "Checklist"],
-            "storage": "Drive package folder and Application Packages / Package Files rows",
+            "requiredSections": ["Compliance matrix", "Technical response", "Commercial summary", "Supplier quote evidence", "Submission checklist"],
+            "storage": "Tender package folder, Lead files, Docs, Files Manager rows",
             "qualityGates": ["gate_document_template_style", "gate_professor_specificity", "gate_package_folder_registered"],
             "workspaceEditable": True,
         },
         {
             "id": "output_supervisor_email",
-            "label": "Supervisor Outreach Email",
+            "label": "Supplier Quotation Outreach",
             "ownerStaff": "AIstaff_ApplicationPackSender",
-            "requiredSections": ["Recipient", "Subject", "Personalized body", "Verified attachments", "Safety result"],
+            "requiredSections": ["Supplier/contact", "Tender scope", "Quotation request", "Verified attachments", "Safety result"],
             "storage": "Email Send Queue and task/thread evidence",
             "qualityGates": ["gate_content_safety", "gate_package_completeness", "gate_attachment_access", "gate_duplicate_recipient"],
             "workspaceEditable": True,
@@ -491,7 +497,7 @@ def default_output_templates() -> list[dict[str, Any]]:
             "id": "output_operating_report",
             "label": "Manager Operating Report",
             "ownerStaff": "AIstaff_Manager",
-            "requiredSections": ["Do first", "KPI progress", "Applications", "AI staff", "System health"],
+            "requiredSections": ["Do first", "KPI progress", "Leads", "AI staff", "System health"],
             "storage": "Reports page and AI Staff Reports",
             "qualityGates": ["gate_kpi_progress", "gate_no_hidden_blocker"],
             "workspaceEditable": True,
@@ -505,7 +511,7 @@ def default_report_definitions() -> list[dict[str, Any]]:
             "id": "report_manager_operating_view",
             "label": "Manager Operating Report",
             "purpose": "Explain what is happening, why it matters, and the next action.",
-            "sections": ["Do First", "KPI Progress", "Applications", "AI Staff", "System Health"],
+            "sections": ["Do First", "KPI Progress", "Leads", "AI Staff", "System Health"],
             "defaultPeriod": "Last 7 days",
             "workspaceEditable": True,
         },
@@ -524,21 +530,21 @@ def default_kpis() -> list[dict[str, Any]]:
     return [
         {
             "id": "kpi_weekly_verified_opportunities",
-            "label": "Verified Opportunities",
+            "label": "Tender Leads Reviewed",
             "periodType": "Weekly",
-            "targetUnit": "Opportunities",
+            "targetUnit": "Leads",
             "targetCount": 10,
-            "minimumEvidenceLevel": "Official source required",
+            "minimumEvidenceLevel": "Lead record + tender source/file evidence required",
             "ownerStaff": "AIstaff_OpportunityHunter",
             "workspaceEditable": True,
         },
         {
             "id": "kpi_weekly_application_packages",
-            "label": "Complete Application Packages",
+            "label": "Tender Packages Ready",
             "periodType": "Weekly",
-            "targetUnit": "Packages",
+            "targetUnit": "Tender packages",
             "targetCount": 2,
-            "minimumEvidenceLevel": "Package folder + QA gates passed",
+            "minimumEvidenceLevel": "Compliance matrix + quote evidence + QA gates passed",
             "ownerStaff": "AIstaff_ApplicationPackMaker",
             "workspaceEditable": True,
         },
@@ -560,7 +566,7 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
         "workspaces": [
             {
                 "id": "workspace_iman_swiss_planner",
-                "label": "Iman Najafi Workspace",
+                "label": "GCC lab Workspace",
                 "owner": "Human_Iman",
                 "members": ["Human_Iman"],
                 "status": "Active",
@@ -570,7 +576,7 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
         "departments": [
             {
                 "id": "department_swiss_planner_applications",
-                "label": "Swiss Planner Application Department",
+                "label": "GCC lab AI department",
                 "workspaceId": "workspace_iman_swiss_planner",
                 "templateId": "template_swiss_planner_application_department",
                 "humanManager": "Human_Iman",
@@ -582,8 +588,8 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
         "departmentTemplates": [
             {
                 "id": "template_swiss_planner_application_department",
-                "label": "Swiss Planner Application Department",
-                "purpose": "Find, evaluate, prepare, send, and follow up funded PhD/MSc applications.",
+                "label": "GCC lab AI department",
+                "purpose": "Review tender Leads, read documents, match suppliers or partners, request quotations, prepare tender packages, and follow up.",
                 "solutionModuleId": "solution_swiss_planner_apply_department",
                 "capabilities": [row.get("id") for row in fabric.get("capabilities", []) or [] if isinstance(row, dict)],
                 "staffProfiles": [row.get("id") for row in default_staff_profiles()],
@@ -594,7 +600,7 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
             {
                 "id": "template_sales_research_department_sample",
                 "label": "Sample Sales Research Department",
-                "purpose": "Sample reusable department template proving the platform is not Swiss Planner-only.",
+                "purpose": "Sample reusable department template proving the platform is not tied to one department.",
                 "solutionModuleId": "solution_sample_sales_research_department",
                 "capabilities": ["opportunity_discovery", "fit_assessment", "workflow_automation"],
                 "staffProfiles": ["Human_Iman", "AIstaff_Manager", "AIstaff_OpportunityHunter", "AIstaff_FitAnalyst", "AIstaff_CRMController"],
@@ -1955,17 +1961,17 @@ def task_category_for_signal(row: dict[str, Any], source_kind: str = "") -> str:
         + " "
         + source_kind
     )
-    if "duplicate recipient" in text or "needs approval" in text or "needs human review" in text or "supervisor reply" in text:
+    if "duplicate recipient" in text or "needs approval" in text or "needs human review" in text or "supervisor reply" in text or "supplier reply" in text:
         return TASK_CATEGORIES["human"]
-    if "email" in text or "queue" in text or "attachment" in text or "send" in text or "gmail" in text:
+    if "email" in text or "queue" in text or "attachment" in text or "send" in text or "gmail" in text or "quote" in text or "quotation" in text:
         return TASK_CATEGORIES["email"]
     if "technical" in text or "bug" in text or "webhook" in text or "lock" in text or "traceback" in text or "script error" in text:
         return TASK_CATEGORIES["technical"]
     if "audit" in text or "follow-up" in text or "followup" in text or "missing follow" in text or "stale" in text:
         return TASK_CATEGORIES["audit"]
-    if "research" in text or "opportunit" in text or "professor" in text:
+    if "research" in text or "opportunit" in text or "professor" in text or "supplier" in text or "vendor" in text or "partner" in text:
         return TASK_CATEGORIES["research"]
-    if "package" in text or "application" in text or "proposal" in text or "cv" in text or "sop" in text:
+    if "package" in text or "application" in text or "proposal" in text or "cv" in text or "sop" in text or "lead" in text or "tender" in text or "rfq" in text or "rfp" in text:
         return TASK_CATEGORIES["application"]
     return TASK_CATEGORIES["manager"]
 
@@ -1990,11 +1996,11 @@ def task_context_label(row: dict[str, Any]) -> str:
     queue_id = row.get("sourceQueueId") or row.get("queueId") or row.get("Queue ID") or ""
     bits = []
     if app_id:
-        bits.append(f"application `{app_id}`")
+        bits.append(f"lead `{app_id}`")
     if opp_id:
-        bits.append(f"opportunity `{opp_id}`")
+        bits.append(f"tender case `{opp_id}`")
     if queue_id:
-        bits.append(f"email queue `{queue_id}`")
+        bits.append(f"outreach queue `{queue_id}`")
     return "; ".join(bits) or "this task"
 
 
@@ -2013,14 +2019,14 @@ def human_task_problem(row: dict[str, Any]) -> str:
         )
     )
     action = row.get("nextAction") or row.get("taskType") or "Review the task"
-    if "duplicate recipient" in text or "repeated professor" in text or "repeated supervisor" in text:
-        return "The system detected a repeated professor/supervisor recipient, so it stopped before any second outreach."
+    if "duplicate recipient" in text or "repeated professor" in text or "repeated supervisor" in text or "repeated supplier" in text:
+        return "The system detected a repeated or risky supplier/contact recipient, so it stopped before any second outreach."
     if "document style qa" in text or "not approved for external send" in text or "minimal renderer" in text:
         return "The package documents are present, but at least one file is marked as not approved for external sending because it does not match the agreed template/style quality."
     if "attachment" in text and ("failed" in text or "blocked" in text or "incomplete" in text):
-        return "The email/package cannot be sent yet because attachment access or package completeness has not passed."
+        return "The supplier outreach or tender package cannot move yet because attachment access, package completeness, or quote evidence has not passed."
     if "codex" in text or "outside apps script" in text or "waiting for codex worker" in text:
-        return "The workflow reached a step that Apps Script can track, but not judge or write safely by itself."
+        return "The workflow reached a judgement-heavy step that the local AI department should review before writing or changing the CRM."
     if "follow" in text or "reply" in text or "waiting" in text:
         return "A follow-up or reply-check is due, and the system needs a clear next action instead of guessing."
     if "approval" in text or "review" in text:
@@ -2042,16 +2048,16 @@ def human_task_exact_need(row: dict[str, Any]) -> str:
             ]
         )
     )
-    if "duplicate recipient" in text or "repeated professor" in text or "repeated supervisor" in text:
-        return "Tell me whether to prepare a careful follow-up for your review, wait longer, close the outreach path, or use a different contact."
+    if "duplicate recipient" in text or "repeated professor" in text or "repeated supervisor" in text or "repeated supplier" in text:
+        return "Tell me whether to prepare a careful follow-up for your review, wait longer, close the outreach path, or use a different supplier/contact."
     if "document style qa" in text or "not approved for external send" in text or "minimal renderer" in text:
         return "Confirm whether I should regenerate the package from the approved Google Docs/template path, or close this package as not ready."
     if "attachment" in text and ("failed" in text or "blocked" in text or "incomplete" in text):
-        return "Tell me whether to fix the package/attachments, prepare missing documents, or leave the email blocked."
+        return "Tell me whether to fix the package/attachments, prepare missing tender documents, or leave the outreach blocked."
     if "codex" in text or "outside apps script" in text or "waiting for codex worker" in text:
-        return "Tell me whether Codex should do the judgement/writing/research work, whether another staff member should take it, or whether the task should be closed."
+        return "Tell me whether Codex should do the tender judgement/writing/research work, whether another staff member should take it, or whether the task should be closed."
     if "follow" in text or "reply" in text or "waiting" in text:
-        return "Tell me whether to follow up now, wait until a later date, close the application path, or review the reply trail first."
+        return "Tell me whether to follow up now, wait until a later date, close the lead path, or review the reply trail first."
     if "approval" in text or "review" in text:
         return "Tell me to approve and continue, reject/close, reassign, or explain what you want changed."
     return "Tell me the decision you want, in normal language. I will translate it into the next staff task."
@@ -2059,14 +2065,14 @@ def human_task_exact_need(row: dict[str, Any]) -> str:
 
 def human_task_options(row: dict[str, Any]) -> list[str]:
     text = normalize_text(compact_join([row.get("taskType"), row.get("status"), row.get("resultNotes"), row.get("nextAction")]))
-    if "duplicate recipient" in text or "repeated professor" in text:
-        return ["Prepare a reviewed follow-up", "Wait longer", "Close this outreach", "Use another contact"]
+    if "duplicate recipient" in text or "repeated professor" in text or "repeated supplier" in text:
+        return ["Prepare a reviewed follow-up", "Wait longer", "Close this outreach", "Use another supplier/contact"]
     if "style" in text or "template" in text or "minimal renderer" in text:
         return ["Regenerate with approved template", "Use existing Google Doc links only", "Close as not ready"]
     if "codex" in text or "outside apps script" in text:
         return ["Let Codex handle it", "Reassign to another AI staff", "Ask me a more specific question", "Close the task"]
     if "follow" in text:
-        return ["Follow up now", "Wait and remind later", "Review reply trail", "Close this application path"]
+        return ["Follow up now", "Wait and remind later", "Review reply trail", "Close this lead path"]
     return ["Approve and continue", "Reassign", "Ask for more detail", "Close"]
 
 
@@ -2949,7 +2955,7 @@ def queue_thread_reply_wakeup(thread: dict[str, Any], body: str, sender_id: str 
         "appendAiStaffTask",
         {
             "taskType": "Thread Reply",
-            "taskCategory": TASK_CATEGORIES["manager"] if staff_id == "AIstaff_Manager" else "Application Work",
+            "taskCategory": TASK_CATEGORIES["manager"] if staff_id == "AIstaff_Manager" else TASK_CATEGORIES["application"],
             "taskTemplateId": "template_handle_human_thread_reply",
             "assignedTo": staff_id,
             "createdBy": normalized_staff_id(sender_id, "Human_Iman"),
@@ -3037,12 +3043,12 @@ def queue_full_process_followthrough(thread_id: str, latest_body: str = "") -> d
             return {"ok": False, "error": f"Thread not found: {thread_id}"}
         text = thread_text_blob(conn, thread_id, latest_body)
         opportunity_ids = extract_opportunity_ids(text)
-    opp_text = ", ".join(opportunity_ids) if opportunity_ids else "the opportunities already discussed in this thread"
+    opp_text = ", ".join(opportunity_ids) if opportunity_ids else "the Leads or tender cases already discussed in this thread"
     return queue_action(
         "appendAiStaffTask",
         {
             "taskId": task_id,
-            "taskType": "Fit Review",
+            "taskType": "Fit / Supplier Match",
             "taskCategory": "Research Work",
             "taskTemplateId": "template_full_process_after_opportunity_research",
             "assignedTo": "AIstaff_FitAnalyst",
@@ -3056,19 +3062,19 @@ def queue_full_process_followthrough(thread_id: str, latest_body: str = "") -> d
             "runAfter": iso_like(),
             "dueAt": iso_like(utc_ts() + 4 * 60 * 60),
             "nextAction": (
-                f"Continue Iman's full-process instruction for {opp_text}. Verify the opportunities exist in the workbook with official evidence, "
-                "score fit, reject hard-ineligible or expired cases, create Application entities/tasks for viable cases, and route the best candidates "
-                "to Application Pack Maker. Do not send emails or submit portals from this task."
+                f"Continue Iman's full-process instruction for {opp_text}. Verify the Lead/tender evidence, "
+                "score GCC lab fit, reject hard-ineligible or expired cases, find supplier/partner route options, and route viable cases "
+                "to Tender Package Maker. Do not contact suppliers or submit portals from this task."
             ),
             "completionCriteria": (
-                "A prioritized shortlist is recorded, viable Application tasks are created for the next staff, and rejected or blocked cases have clear reasons."
+                "A prioritized shortlist is recorded, viable Lead tasks are created for the next staff, and rejected or blocked cases have clear reasons."
             ),
             "successStatus": "Fit Shortlist Ready",
             "failureStatus": "Blocked - Fit Review Issue",
             "status": "Waiting for Codex Worker",
             "escalationLevel": "Normal",
             "evidenceLink": "",
-            "resultNotes": "Created by Manager from Iman's instruction to run the department process through to submission-readiness.",
+            "resultNotes": "Created by Manager from Iman's instruction to run the tender Lead process through to submission-readiness.",
             "threadId": thread_id,
             "sourceTaskId": row_value(thread, "task_id") or "",
         },
@@ -3080,15 +3086,15 @@ def queue_full_process_followthrough(thread_id: str, latest_body: str = "") -> d
 def inferred_task_for_staff(route_staff: str, fallback_type: str = "") -> tuple[str, str]:
     route_staff = normalized_staff_id(route_staff, "AIstaff_Manager")
     if route_staff == "AIstaff_OpportunityHunter":
-        return fallback_type or "Research", TASK_CATEGORIES["research"]
+        return fallback_type or "Lead Review", TASK_CATEGORIES["application"]
     if route_staff == "AIstaff_FitAnalyst":
         return fallback_type or "Fit Review", TASK_CATEGORIES["research"]
     if route_staff == "AIstaff_ProfessorResearchAnalyst":
-        return fallback_type or "Professor Research", TASK_CATEGORIES["research"]
+        return fallback_type or "Supplier Discovery", TASK_CATEGORIES["research"]
     if route_staff == "AIstaff_ApplicationPackMaker":
-        return fallback_type or "Package", TASK_CATEGORIES["application"]
+        return fallback_type or "Tender Package", TASK_CATEGORIES["application"]
     if route_staff == "AIstaff_ApplicationPackSender":
-        return fallback_type or "Outreach", TASK_CATEGORIES["email"]
+        return fallback_type or "Quotation Outreach", TASK_CATEGORIES["email"]
     if route_staff == "AIstaff_FollowUpController":
         return fallback_type or "Follow-up", TASK_CATEGORIES["audit"]
     if route_staff == "AIstaff_CRMController":
@@ -3541,7 +3547,7 @@ def manager_ai_decision(thread: sqlite3.Row | dict[str, Any], human_body: str) -
         ],
     }
     instructions = (
-        "You are Alex, AIstaff_Manager for Iman's Swiss Planner AI Staff system. Interpret Iman's latest thread reply intelligently and safely.\n"
+        "You are Alex, AIstaff_Manager for Iman's GCC lab AI department system for tender Leads. Interpret Iman's latest thread reply intelligently and safely.\n"
         "Return only JSON with these keys: reply, intent, createRoutedTask, createFitReviewTask, routeStaff, taskType, taskCategory, routedNextAction, routedTaskReason, confidence.\n"
         "Rules:\n"
         "- Be concise and human. The reply is shown directly to Iman.\n"
@@ -3552,20 +3558,20 @@ def manager_ai_decision(thread: sqlite3.Row | dict[str, Any], human_body: str) -
         "- Route by the Capability Orchestration Fabric: Solution -> Capability -> Recipe -> Stage -> Lane -> Quality gate -> Output.\n"
         "- Staff are execution lanes/agents under capabilities; do not confuse a staff name with the business capability.\n"
         "- If Iman gives you work for the department, acknowledge it and route a concrete internal task to exactly one specialist staff.\n"
-        "- Do not send email, submit portals, or claim that external action happened.\n"
+        "- Do not contact suppliers, send email, submit portals, or claim that external action happened.\n"
         "- Non-manager staff communicate through you; only you talk to Human_Iman.\n"
         "- Do not close human-facing threads; Iman closes them.\n"
         "- Treat 'now' as a time word, never as 'no'.\n"
         "- Only treat a message as cancel/stop if it is clearly a stop instruction.\n"
         "- If Iman says he did not mean to cancel, correct course and continue.\n"
-        "- New opportunity search -> routeStaff='AIstaff_OpportunityHunter', taskType='Research', taskCategory='Research Work'.\n"
-        "- Fit/prioritization/eligibility -> routeStaff='AIstaff_FitAnalyst'.\n"
-        "- Professor publication/research fit -> routeStaff='AIstaff_ProfessorResearchAnalyst'.\n"
-        "- CV/SOP/proposal/package docs -> routeStaff='AIstaff_ApplicationPackMaker'.\n"
-        "- Email/package sending review -> routeStaff='AIstaff_ApplicationPackSender'.\n"
+        "- New Lead/tender/RFQ/RFP review -> routeStaff='AIstaff_OpportunityHunter', taskType='Lead Review', taskCategory='Tender Work'.\n"
+        "- Fit/prioritization/eligibility/bid-no-bid/supplier match -> routeStaff='AIstaff_FitAnalyst'.\n"
+        "- New supplier/vendor/partner/company mapping -> routeStaff='AIstaff_ProfessorResearchAnalyst', taskType='Supplier Discovery'.\n"
+        "- Tender documents/compliance matrix/forms/submission package -> routeStaff='AIstaff_ApplicationPackMaker', taskType='Tender Package'.\n"
+        "- Supplier quotation outreach / approved supplier communication -> routeStaff='AIstaff_ApplicationPackSender', taskType='Quotation Outreach'.\n"
         "- Replies/follow-ups -> routeStaff='AIstaff_FollowUpController'.\n"
         "- CRM/sync/audit/technical health -> routeStaff='AIstaff_CRMController' unless it is a Manager policy question.\n"
-        "- If Iman asks to run the full process to submission after opportunity research, set intent='continue_full_process', createFitReviewTask=true, routeStaff='AIstaff_FitAnalyst'.\n"
+        "- If Iman asks to run the full process to tender submission-readiness after Lead review, set intent='continue_full_process', createFitReviewTask=true, routeStaff='AIstaff_FitAnalyst'.\n"
         "- The endpoint is submission-readiness unless Iman explicitly changes portal/email autonomy.\n"
     )
     payload = {
@@ -3643,8 +3649,8 @@ def manager_rule_reply_text(thread: sqlite3.Row | dict[str, Any], human_body: st
     if "what do you mean" in body_norm or "meaning" in body_norm or body_norm in {"?", "??", "???", "?????", "????"}:
         if "smoke" in normalize_text(clean_action) or "smoke" in normalize_text(source.get("resultNotes")):
             return (
-                "You are right to ask. This is only a smoke-test / system-test thread, not a real application task. "
-                "It was created to confirm that replies create Manager wake-ups correctly. There is no email to send and no university action needed here. "
+                "You are right to ask. This is only a smoke-test / system-test thread, not a real tender Lead task. "
+                "It was created to confirm that replies create Manager wake-ups correctly. There is no supplier message to send and no tender action needed here. "
                 "You can close or archive this thread."
             )
         return (
@@ -3654,30 +3660,30 @@ def manager_rule_reply_text(thread: sqlite3.Row | dict[str, Any], human_body: st
     if "explain more" in body_norm or "which part" in body_norm or "outside appscript" in body_norm or "outside apps script" in body_norm:
         return (
             manager_followup_brief(source, thread)
-            + " In short, Apps Script handles the Google-side operations; the outside part is judgement-heavy work such as strategy, writing quality, fit interpretation, or approving a risky send."
+            + " In short, the bridge can track simple CRM-side operations; the outside part is judgement-heavy work such as tender strategy, supplier fit, writing quality, fit interpretation, or approving risky outreach."
         )
     if is_full_process_request(body_norm):
         return (
-            "Understood. This is not a cancel instruction. I will move these opportunities through the department process: Fit Analyst first, then package preparation and sender checks for the viable cases. "
-            "The end point is submission-readiness; actual portal submission and external sending still follow the safety gates. I will keep this thread open so you can see updates here."
+            "Understood. This is not a cancel instruction. I will move these Leads through the department process: Fit and supplier match first, then tender package preparation and outreach checks for the viable cases. "
+            "The end point is tender submission-readiness; actual portal submission and external supplier communication still follow the safety gates. I will keep this thread open so you can see updates here."
         )
     if is_false_cancel_correction(body_norm):
         return (
-            "Corrected. I will not treat this as cancel. I will continue the department process from the opportunity results already in this thread and keep this conversation open for your final closure."
+            "Corrected. I will not treat this as cancel. I will continue the department process from the Lead/tender results already in this thread and keep this conversation open for your final closure."
         )
     if is_approval_instruction(body_norm):
         return (
-            "Understood. I will treat this as permission to continue only if the normal safety checks pass: package complete, attachment access verified, no duplicate-recipient risk, and clean email wording. "
-            "Your chat reply itself did not send any email."
+            "Understood. I will treat this as permission to continue only if the normal safety checks pass: tender scope clear, package complete, attachment access verified, no duplicate-recipient risk, and clean outreach wording. "
+            "Your chat reply itself did not contact any supplier or send any email."
         )
     if is_cancel_instruction(body_norm):
         return (
             "Understood. I will treat this as a stop/cancel instruction for this thread unless you clarify otherwise. "
-            "I will not send anything from this reply."
+            "I will not send or submit anything from this reply."
         )
     return (
         f"Got it. I will apply this to the {task_type.lower()} workflow and route the next step internally if a specialist is needed. "
-        "No email is sent from this chat reply."
+        "No supplier message, email, or tender submission is sent from this chat reply."
     )
 
 
@@ -3691,12 +3697,14 @@ def manager_auto_reply_decision(thread: sqlite3.Row | dict[str, Any], human_body
     text = normalize_text(human_body)
     if is_full_process_request(human_body):
         fallback_route, fallback_type, fallback_category = "AIstaff_FitAnalyst", "Fit Review", TASK_CATEGORIES["research"]
-    elif "find" in text or "opportunit" in text or "phd" in text or "msc" in text or "search" in text:
-        fallback_route, fallback_type, fallback_category = "AIstaff_OpportunityHunter", "Research", TASK_CATEGORIES["research"]
-    elif "proposal" in text or "cv" in text or "resume" in text or "sop" in text or "package" in text or "document" in text:
-        fallback_route, fallback_type, fallback_category = "AIstaff_ApplicationPackMaker", "Package", TASK_CATEGORIES["application"]
-    elif "send" in text or "email" in text or "outreach" in text:
-        fallback_route, fallback_type, fallback_category = "AIstaff_ApplicationPackSender", "Outreach", TASK_CATEGORIES["email"]
+    elif "lead" in text or "tender" in text or "rfq" in text or "rfp" in text or "opportunit" in text or "search" in text:
+        fallback_route, fallback_type, fallback_category = "AIstaff_OpportunityHunter", "Lead Review", TASK_CATEGORIES["application"]
+    elif "supplier" in text or "vendor" in text or "partner" in text or "company" in text:
+        fallback_route, fallback_type, fallback_category = "AIstaff_ProfessorResearchAnalyst", "Supplier Discovery", TASK_CATEGORIES["research"]
+    elif "proposal" in text or "package" in text or "document" in text or "compliance" in text or "boq" in text or "form" in text:
+        fallback_route, fallback_type, fallback_category = "AIstaff_ApplicationPackMaker", "Tender Package", TASK_CATEGORIES["application"]
+    elif "send" in text or "email" in text or "outreach" in text or "quote" in text or "quotation" in text:
+        fallback_route, fallback_type, fallback_category = "AIstaff_ApplicationPackSender", "Quotation Outreach", TASK_CATEGORIES["email"]
     return {
         "reply": manager_rule_reply_text(thread, human_body),
         "intent": "fallback",
@@ -4145,7 +4153,7 @@ def read_skill_file(scope: str = "staff", staff_id: str = "") -> dict[str, Any]:
 def required_skill_markers(scope: str = "staff", staff_id: str = "") -> list[str]:
     if str(scope or "").strip().lower() == "department":
         return [
-            "# Swiss Planner Staff",
+            "# GCC lab AI department Staff",
             "## Operating Model",
             "Routing rule:",
             "only `AIstaff_Manager` may create human-facing",
@@ -4484,6 +4492,8 @@ def queue_action(action: str, payload: dict, method: str = "POST", apply_snapsho
         apply_local_action_to_snapshot(action, payload or {}, action_id)
     if sync_online:
         message = "Saved locally and queued for the next Google Sheet sync."
+    elif normalize_text(get_meta("crm_sync_enabled", "false")) != "true":
+        message = "Saved locally. CRM sync is disabled."
     else:
         message = "Saved locally. It will be uploaded to the online CRM when its task thread is closed."
     return {"ok": True, "queuedLocal": True, "localOnly": not sync_online, "actionId": action_id, "message": message}
@@ -4493,7 +4503,7 @@ def queue_daily_codex_research_task(reason: str = "") -> dict[str, Any]:
     return queue_action(
         "appendAiStaffTask",
         {
-            "taskType": "Research",
+            "taskType": "Lead Review",
             "taskTemplateId": "template_daily_kpi_opportunity_research",
             "assignedTo": "AIstaff_OpportunityHunter",
             "createdBy": "Windows Daily Autopilot",
@@ -4501,16 +4511,15 @@ def queue_daily_codex_research_task(reason: str = "") -> dict[str, Any]:
             "runAfter": iso_like(),
             "dueAt": iso_like(utc_ts() + 2 * 60 * 60),
             "nextAction": (
-                "Find 3 verified Switzerland energy-finance PhD opportunities from official university, "
-                "doctoral school, funded project, professor, or institutional pages. Add evidence links and "
-                "prepare the best candidates for Fit Analyst review."
+                "Review transferred GCC lab tender Leads or queued Lead files. Extract tender scope, deadlines, required documents, "
+                "missing blockers, and prepare viable cases for Fit and Supplier Match review."
             ),
-            "completionCriteria": "At least 3 official-evidence Swiss finance/energy PhD leads are added or a blocker is recorded.",
-            "successStatus": "Research Done",
-            "failureStatus": "Blocked - Research Issue",
+            "completionCriteria": "At least one Lead/tender case has a document review brief or a specific missing-file/source blocker.",
+            "successStatus": "Lead Review Done",
+            "failureStatus": "Blocked - Lead Review Issue",
             "status": "Waiting for Codex Worker",
             "evidenceLink": "",
-            "resultNotes": "Created by Windows Daily Autopilot as a Codex Worker research task.",
+            "resultNotes": "Created by Windows Daily Autopilot as a Codex Worker tender Lead review task.",
             "reason": reason,
         },
         method="POST",
@@ -4571,7 +4580,7 @@ def queue_document_quality_fix_tasks(limit: int = 3) -> dict[str, Any]:
                 "runAfter": iso_like(),
                 "dueAt": iso_like(utc_ts() + 4 * 60 * 60),
                 "nextAction": (
-                    "Regenerate the application package from the approved Swiss Planner document templates/Google Docs path, "
+                    "Regenerate the application package from the approved GCC lab AI department document templates/Google Docs path, "
                     "replace or mark the old minimal-renderer PDFs as not approved, and update package links before any send."
                 ),
                 "completionCriteria": (
@@ -4720,19 +4729,22 @@ def task_needs_codex(payload: dict) -> bool:
         "research",
         "find ",
         "opportunit",
-        "professor",
+        "lead",
+        "tender",
+        "supplier",
+        "vendor",
+        "partner",
+        "quote",
+        "quotation",
         "proposal",
         "write",
         "draft",
         "document",
-        "cv",
-        "resume",
-        "sop",
         "package",
         "analy",
         "fit",
     ]
-    manual_terms = ["duplicate recipient", "repeated professor", "manual send", "linkedin", "portal"]
+    manual_terms = ["duplicate recipient", "repeated supplier", "manual send", "linkedin", "portal"]
     return any(term in text for term in thinking_terms) and not any(term in text for term in manual_terms)
 
 
