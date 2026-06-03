@@ -202,6 +202,25 @@ def init_db() -> None:
               completed_at REAL,
               result TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS codex_work_items (
+              work_item_id TEXT PRIMARY KEY,
+              source_task_id TEXT NOT NULL DEFAULT '',
+              thread_id TEXT NOT NULL DEFAULT '',
+              assigned_staff TEXT NOT NULL DEFAULT '',
+              skill_name TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '',
+              prompt TEXT NOT NULL DEFAULT '',
+              context_json TEXT NOT NULL DEFAULT '{}',
+              status TEXT NOT NULL DEFAULT 'Queued',
+              priority TEXT NOT NULL DEFAULT 'Medium',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              started_at REAL,
+              completed_at REAL,
+              result_summary TEXT NOT NULL DEFAULT '',
+              evidence_link TEXT NOT NULL DEFAULT '',
+              last_error TEXT NOT NULL DEFAULT ''
+            );
             CREATE TABLE IF NOT EXISTS department_versions (
               version_id TEXT PRIMARY KEY,
               object_type TEXT NOT NULL,
@@ -232,6 +251,10 @@ def init_db() -> None:
               ON skill_updates (status, staff_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_staff_wakeups_staff
               ON staff_wakeups (staff_id, status, run_after);
+            CREATE INDEX IF NOT EXISTS idx_codex_work_items_status
+              ON codex_work_items (status, assigned_staff, created_at);
+            CREATE INDEX IF NOT EXISTS idx_codex_work_items_source
+              ON codex_work_items (source_task_id, thread_id);
             CREATE INDEX IF NOT EXISTS idx_department_versions_object
               ON department_versions (object_type, object_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_backup_runs_created
@@ -1435,6 +1458,7 @@ def load_dashboard_snapshot() -> Dashboard | None:
         return None
     enforce_manager_human_gate()
     payload = json.loads(row["payload"])
+    payload = reconcile_snapshot_tasks_from_threads(payload)
     payload = normalize_task_table(payload)
     payload = ensure_threads_for_tasks(payload)
     payload["skillUpdates"] = list_skill_updates("Pending").get("learning", [])
@@ -4279,6 +4303,516 @@ def list_skill_updates(status: str = "Pending") -> dict[str, Any]:
     return {"ok": True, "learning": [row_to_skill_update(row) for row in rows]}
 
 
+def row_to_codex_work_item(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    data = dict(row)
+    context: Any = {}
+    try:
+        context = json.loads(data.get("context_json") or "{}")
+    except Exception:
+        context = {}
+    return {
+        "workItemId": data.get("work_item_id"),
+        "sourceTaskId": data.get("source_task_id"),
+        "threadId": data.get("thread_id"),
+        "assignedStaff": data.get("assigned_staff"),
+        "assignedStaffLabel": staff_label(data.get("assigned_staff")),
+        "skillName": data.get("skill_name"),
+        "title": data.get("title"),
+        "prompt": data.get("prompt"),
+        "context": context,
+        "status": data.get("status"),
+        "priority": data.get("priority"),
+        "createdAt": iso_like(data.get("created_at")) if data.get("created_at") else "",
+        "updatedAt": iso_like(data.get("updated_at")) if data.get("updated_at") else "",
+        "startedAt": iso_like(data.get("started_at")) if data.get("started_at") else "",
+        "completedAt": iso_like(data.get("completed_at")) if data.get("completed_at") else "",
+        "resultSummary": data.get("result_summary"),
+        "evidenceLink": data.get("evidence_link"),
+        "lastError": data.get("last_error"),
+    }
+
+
+def skill_for_codex_staff(staff_id: str, text: str = "") -> str:
+    staff = normalized_staff_id(staff_id, "AIstaff_Manager")
+    blob = normalize_text(text)
+    if staff in {"AIstaff_OpportunityHunter", "AIstaff_FitAnalyst", "AIstaff_ProfessorResearchAnalyst"}:
+        return "swiss-planner-research"
+    if staff in {"AIstaff_ApplicationPackMaker", "AIstaff_ApplicationPackSender"}:
+        return "swiss-planner-apply"
+    if any(term in blob for term in ["cv", "resume", "sop", "proposal", "package", "document", "template", "style"]):
+        return "swiss-planner-apply"
+    if any(term in blob for term in ["opportunit", "professor", "research fit", "student", "funding"]):
+        return "swiss-planner-research"
+    return "swiss-planner-staff"
+
+
+def codex_work_required(row: sqlite3.Row | dict[str, Any]) -> bool:
+    source = source_payload_for_thread(row)
+    staff = normalized_staff_id(row_value(row, "responsible") or source.get("assignedTo"), "AIstaff_Manager")
+    if is_human_responsible(staff):
+        return False
+    blob = normalize_text(
+        compact_join(
+            [
+                row_value(row, "last_message_preview"),
+                source.get("status") or source.get("Status") or "",
+                source.get("taskType") or source.get("Task Type") or "",
+                source.get("taskCategory") or source.get("Task Category") or "",
+                source.get("nextAction") or source.get("Next Action") or "",
+                source.get("completionCriteria") or "",
+                source.get("resultNotes") or source.get("notes") or source.get("Notes") or "",
+                source.get("lastError") or source.get("Last Error") or "",
+            ]
+        )
+    )
+    if "workflow reached a step that apps script can track" in blob and "tell me whether codex should do" in blob:
+        return False
+    if "review task needing approval and either approve, reassign, or close" in blob and "original request" not in blob:
+        return False
+    app_id = row_value(row, "application_id") or source.get("relatedApplicationId") or source.get("applicationId") or ""
+    if app_id and any(term in blob for term in ["document style", "style qa", "template style", "minimal-renderer"]):
+        approved, _ = style_qa_approved_application(str(app_id))
+        if approved:
+            return False
+    if any(term in blob for term in ["manual send", "linkedin", "portal submit", "duplicate recipient", "repeated professor"]):
+        return False
+    explicit = any(
+        term in blob
+        for term in [
+            "waiting for codex worker",
+            "requires codex",
+            "outside apps script",
+            "codex worker",
+        ]
+    )
+    substantive = any(
+        term in blob
+        for term in [
+            "research",
+            "find ",
+            "opportunit",
+            "professor",
+            "proposal",
+            "write",
+            "draft",
+            "document",
+            "cv",
+            "resume",
+            "sop",
+            "package",
+            "template",
+            "style",
+            "checklist",
+            "fit",
+            "eligib",
+            "analysis",
+            "compile",
+        ]
+    )
+    if staff == "AIstaff_CRMController" and not any(term in blob for term in ["technical bug", "script", "missing action", "database", "schema"]):
+        return False
+    return explicit and substantive
+
+
+def build_codex_work_prompt(thread: dict[str, Any], messages: list[dict[str, Any]], source: dict[str, Any]) -> tuple[str, str, str, dict[str, Any]]:
+    assigned = normalized_staff_id(thread.get("responsible") or source.get("assignedTo"), "AIstaff_Manager")
+    task_text = compact_join(
+        [
+            source.get("nextAction") or thread.get("lastMessagePreview") or "",
+            source.get("completionCriteria") or "",
+            source.get("resultNotes") or "",
+            source.get("lastError") or "",
+        ]
+    )
+    skill = skill_for_codex_staff(assigned, task_text)
+    title_base = source.get("taskType") or source.get("taskCategory") or "Codex work"
+    app_id = thread.get("applicationId") or source.get("relatedApplicationId") or source.get("applicationId") or ""
+    opp_id = thread.get("opportunityId") or source.get("relatedOpportunityId") or source.get("opportunityId") or ""
+    title_parts = [str(title_base)]
+    if app_id:
+        title_parts.append(app_id)
+    title = " - ".join(title_parts)
+    transcript = "\n".join(
+        f"- {message.get('senderLabel') or message.get('senderId')}: {thread_preview(message.get('body'), 500)}"
+        for message in messages[-8:]
+    )
+    context = {
+        "threadId": thread.get("threadId"),
+        "taskId": thread.get("taskId"),
+        "assignedStaff": assigned,
+        "skillName": skill,
+        "applicationId": app_id,
+        "opportunityId": opp_id,
+        "sourceTask": source,
+        "recentMessages": messages[-8:],
+    }
+    prompt = (
+        f"You are acting as {staff_label(assigned)} ({assigned}) in the Swiss Planner AI Staff system.\n\n"
+        f"Required skill: {skill}\n\n"
+        "Task:\n"
+        f"{task_text or title}\n\n"
+        "Related IDs:\n"
+        f"- TaskID: {thread.get('taskId')}\n"
+        f"- ThreadID: {thread.get('threadId')}\n"
+        f"- ApplicationID: {app_id or 'not set'}\n"
+        f"- OpportunityID: {opp_id or 'not set'}\n\n"
+        "Recent thread context:\n"
+        f"{transcript or '- No prior messages.'}\n\n"
+        "Required output:\n"
+        "- Complete the judgement, research, writing, package QA, or routing work requested above.\n"
+        "- Update the related task/thread with a concise result summary and evidence path/link.\n"
+        "- If the work cannot be completed, mark it Blocked with the exact blocker and next owner.\n\n"
+        "Safety gates:\n"
+        "- Do not send email or submit a portal from this work item.\n"
+        "- Do not contact LinkedIn users automatically.\n"
+        "- Professor-facing documents must use approved templates/style QA before any external send.\n"
+        "- Repeated professor/supervisor recipients remain guarded unless explicitly resolved.\n"
+    )
+    return title, skill, prompt, context
+
+
+def create_codex_work_item_from_thread(thread_id: str, status: str = "Queued") -> dict[str, Any]:
+    detail = get_thread(thread_id)
+    if not detail.get("ok"):
+        return detail
+    thread = detail.get("thread") or {}
+    messages = detail.get("messages") or []
+    source = thread.get("source") or {}
+    task_id = thread.get("taskId") or ""
+    with connect() as conn:
+        existing = conn.execute(
+            """
+            SELECT * FROM codex_work_items
+            WHERE source_task_id = ? OR thread_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (task_id, thread_id),
+        ).fetchone()
+    if existing:
+        return {"ok": True, "workItem": row_to_codex_work_item(existing), "alreadyExists": True}
+    title, skill, prompt, context = build_codex_work_prompt(thread, messages, source)
+    now = utc_ts()
+    work_item_id = "codex_work_" + safe_task_part(task_id or thread_id)
+    assigned = normalized_staff_id(thread.get("responsible") or source.get("assignedTo"), "AIstaff_Manager")
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO codex_work_items (
+              work_item_id, source_task_id, thread_id, assigned_staff, skill_name, title,
+              prompt, context_json, status, priority, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                work_item_id,
+                task_id,
+                thread_id,
+                assigned,
+                skill,
+                title,
+                prompt,
+                json.dumps(context, default=str),
+                status,
+                source.get("priority") or "High",
+                now,
+                now,
+            ),
+        )
+        row = conn.execute("SELECT * FROM codex_work_items WHERE work_item_id = ?", (work_item_id,)).fetchone()
+    return {"ok": True, "workItem": row_to_codex_work_item(row), "alreadyExists": False}
+
+
+def list_codex_work_items(status: str = "open", staff: str = "", limit: int = 100) -> dict[str, Any]:
+    init_db()
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status and status.lower() not in {"all", "*"}:
+        if status.lower() == "open":
+            clauses.append("status NOT IN ('Done', 'Blocked', 'Cancelled')")
+        else:
+            clauses.append("status = ?")
+            params.append(status)
+    if staff:
+        clauses.append("assigned_staff = ?")
+        params.append(normalized_staff_id(staff, staff))
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    params.append(max(1, int(limit or 100)))
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM codex_work_items {where} ORDER BY created_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+    return {"ok": True, "workItems": [row_to_codex_work_item(row) for row in rows]}
+
+
+def get_codex_work_item(work_item_id: str) -> dict[str, Any]:
+    init_db()
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM codex_work_items WHERE work_item_id = ?", (work_item_id,)).fetchone()
+    if not row:
+        return {"ok": False, "error": f"Codex work item not found: {work_item_id}"}
+    return {"ok": True, "workItem": row_to_codex_work_item(row)}
+
+
+def mark_codex_work_item(payload: dict[str, Any]) -> dict[str, Any]:
+    work_item_id = str(payload.get("workItemId") or "").strip()
+    status = str(payload.get("status") or "").strip()
+    if not work_item_id or not status:
+        return {"ok": False, "error": "Missing workItemId or status."}
+    now = utc_ts()
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM codex_work_items WHERE work_item_id = ?", (work_item_id,)).fetchone()
+        if not row:
+            return {"ok": False, "error": f"Codex work item not found: {work_item_id}"}
+        started_at = row["started_at"]
+        completed_at = row["completed_at"]
+        if status in {"In Progress", "Copied"} and not started_at:
+            started_at = now
+        if status in {"Done", "Blocked", "Cancelled"}:
+            completed_at = now
+        conn.execute(
+            """
+            UPDATE codex_work_items
+            SET status = ?, updated_at = ?, started_at = ?, completed_at = ?,
+                result_summary = COALESCE(NULLIF(?, ''), result_summary),
+                evidence_link = COALESCE(NULLIF(?, ''), evidence_link),
+                last_error = COALESCE(NULLIF(?, ''), last_error)
+            WHERE work_item_id = ?
+            """,
+            (
+                status,
+                now,
+                started_at,
+                completed_at,
+                payload.get("resultSummary") or "",
+                payload.get("evidenceLink") or "",
+                payload.get("lastError") or "",
+                work_item_id,
+            ),
+        )
+    return get_codex_work_item(work_item_id)
+
+
+def submit_codex_work_result(payload: dict[str, Any]) -> dict[str, Any]:
+    work_item_id = str(payload.get("workItemId") or "").strip()
+    result = str(payload.get("resultSummary") or "").strip()
+    if not work_item_id:
+        return {"ok": False, "error": "Missing workItemId."}
+    if not result:
+        return {"ok": False, "error": "Missing resultSummary."}
+    marked = mark_codex_work_item(
+        {
+            "workItemId": work_item_id,
+            "status": payload.get("status") or "Done",
+            "resultSummary": result,
+            "evidenceLink": payload.get("evidenceLink") or "",
+            "lastError": payload.get("lastError") or "",
+        }
+    )
+    if not marked.get("ok"):
+        return marked
+    item = marked["workItem"]
+    thread_id = item.get("threadId") or ""
+    if thread_id:
+        add_thread_message(
+            {
+                "threadId": thread_id,
+                "senderType": "AI",
+                "senderId": item.get("assignedStaff") or "AIstaff_Manager",
+                "senderLabel": staff_label(item.get("assignedStaff")),
+                "body": result,
+                "evidenceLink": payload.get("evidenceLink") or "",
+                "metadata": {"codex_work_item": work_item_id, "status": item.get("status")},
+            }
+        )
+    return marked
+
+
+def ensure_codex_work_items_for_open_threads(limit: int = 200) -> dict[str, Any]:
+    init_db()
+    created: list[dict[str, Any]] = []
+    skipped = 0
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM task_threads
+            WHERE status = 'Open'
+              AND archived = 0
+            ORDER BY last_message_at DESC
+            LIMIT ?
+            """,
+            (max(1, int(limit or 200)),),
+        ).fetchall()
+    for row in rows:
+        if not codex_work_required(row):
+            skipped += 1
+            continue
+        result = create_codex_work_item_from_thread(row["thread_id"])
+        if result.get("ok") and not result.get("alreadyExists"):
+            created.append(result["workItem"])
+    return {"ok": True, "created": len(created), "skipped": skipped, "workItems": created}
+
+
+def update_snapshot_task_status(task_id: str, status: str, result_notes: str = "", evidence_link: str = "") -> None:
+    task_id = str(task_id or "").strip()
+    if not task_id:
+        return
+    snapshot = load_dashboard_snapshot() or {}
+    changed = False
+    for task in snapshot.get("tasks", []) or []:
+        if str(task.get("taskId") or task.get("Task ID") or "") == task_id:
+            task["status"] = status
+            task["completedAt"] = iso_like()
+            if result_notes:
+                task["resultNotes"] = result_notes
+            if evidence_link:
+                task["evidenceLink"] = evidence_link
+            changed = True
+    if changed:
+        save_dashboard_snapshot(snapshot, source="local")
+
+
+def update_thread_source_status(thread_id: str, status: str, result_notes: str = "") -> None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM task_threads WHERE thread_id = ?", (thread_id,)).fetchone()
+        if not row:
+            return
+        source = source_payload_for_thread(row)
+        source["status"] = status
+        if result_notes:
+            source["resultNotes"] = result_notes
+        conn.execute(
+            "UPDATE task_threads SET source_payload = ? WHERE thread_id = ?",
+            (json.dumps(source, default=str), thread_id),
+        )
+    update_snapshot_task_status(row["task_id"], status, result_notes)
+
+
+def thread_blob(row: sqlite3.Row | dict[str, Any]) -> str:
+    source = source_payload_for_thread(row)
+    return normalize_text(
+        compact_join(
+            [
+                row_value(row, "thread_id"),
+                row_value(row, "task_id"),
+                row_value(row, "application_id"),
+                row_value(row, "opportunity_id"),
+                row_value(row, "last_message_preview"),
+                source.get("taskType") or "",
+                source.get("taskCategory") or "",
+                source.get("nextAction") or "",
+                source.get("resultNotes") or "",
+                source.get("status") or "",
+            ]
+        )
+    )
+
+
+def style_qa_approved_application(application_id: str) -> tuple[bool, str]:
+    app_id = str(application_id or "").strip()
+    if not app_id:
+        return False, ""
+    for manifest_path in APPLICATION_PACKAGES_DIR.glob("**/deep_package_manifest.json"):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig", errors="ignore"))
+        except Exception:
+            continue
+        if str(manifest.get("application_id") or "") != app_id:
+            continue
+        marker = manifest_path.parent / "STYLE_QA_APPROVED.txt"
+        quality = manifest.get("document_quality") or {}
+        status = quality.get("style_quality_status") or quality.get("styleQualityStatus") or ""
+        if marker.exists() or approved_style_status(status):
+            return True, str(manifest_path)
+    return False, ""
+
+
+def close_local_thread(thread_id: str, reason: str, status: str = "Closed") -> bool:
+    detail = get_thread(thread_id)
+    if not detail.get("ok"):
+        return False
+    thread = detail.get("thread") or {}
+    if thread.get("status") == "Closed":
+        return False
+    close_thread(thread_id, closed_by="AIstaff_Manager", reason=reason)
+    update_thread_source_status(thread_id, status, reason)
+    return True
+
+
+def resolve_alex_open_issues() -> dict[str, Any]:
+    init_db()
+    work_items = ensure_codex_work_items_for_open_threads()
+    closed: list[dict[str, str]] = []
+    kept: list[dict[str, str]] = []
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM task_threads
+            WHERE status = 'Open'
+              AND archived = 0
+            ORDER BY last_message_at DESC
+            """
+        ).fetchall()
+    for row in rows:
+        thread_id = row["thread_id"]
+        task_id = row["task_id"]
+        app_id = row["application_id"] or ""
+        blob = thread_blob(row)
+        reason = ""
+        new_status = "Closed"
+        if app_id == "app_agh_drilling_knez_2026":
+            reason = "Dr. Knez path is handled directly by Iman and marked complete/no further follow-up."
+            new_status = "No Further Action"
+        elif "e2e_smoke_test" in blob or "smoke test" in blob:
+            reason = "Closed test/smoke task so it does not appear in Alex's real workload."
+        elif app_id in {"app_agh_geothermal_sowizdzal_2026", "app_kisd_igsmie_energy_transition_2026"}:
+            approved, evidence = style_qa_approved_application(app_id)
+            if approved and any(term in blob for term in ["document style", "style qa", "template style", "minimal-renderer", "not approved"]):
+                reason = "Style QA blocker resolved: approved-template package exists locally with STYLE_QA_APPROVED marker."
+                new_status = "Done"
+                if evidence:
+                    reason += f" Evidence: {evidence}"
+        if not reason and any(
+            term in blob
+            for term in [
+                "review task needing approval and either approve, reassign, or close",
+                "workflow reached a step that apps script can track",
+                "this task requires codex/human work outside apps script: review task needing approval",
+            ]
+        ):
+            if "routed it to" in blob or row["responsible"] in {"Human_Iman", "AIstaff_Manager"}:
+                reason = "Closed generic review/escalation noise; Alex already routed the concrete next action or converted it to internal work."
+        if not reason and "manager handoff" in blob and any(term in blob for term in ["routed the next stage", "routed it to"]):
+            reason = "Closed completed manager handoff; Alex already routed the next specialist stage."
+        if not reason and "reviewed the completed work and routed" in blob and row["responsible"] == "AIstaff_Manager":
+            reason = "Closed completed manager routing note; the next specialist stage is already queued."
+        if not reason and row["responsible"] == "AIstaff_Manager" and "no automatic next specialist stage" in blob:
+            reason = "Closed manager-owned closure note; no next specialist action was available."
+        if reason:
+            if close_local_thread(thread_id, reason, new_status):
+                closed.append({"threadId": thread_id, "taskId": task_id, "status": new_status, "reason": reason[:240]})
+        else:
+            if row["responsible"] in {"Human_Iman", "AIstaff_Manager"} or row["source_staff"] == "AIstaff_Manager":
+                kept.append({"threadId": thread_id, "taskId": task_id, "reason": "Still appears actionable or needs a real owner decision."})
+    snapshot = load_dashboard_snapshot() or {}
+    if snapshot:
+        summary = dict(snapshot.get("summary") or {})
+        summary["openCodexWorkItems"] = len(list_codex_work_items("open").get("workItems") or [])
+        snapshot["summary"] = summary
+        save_dashboard_snapshot(snapshot, source="local")
+    return {
+        "ok": True,
+        "codexWorkItemsCreated": work_items.get("created", 0),
+        "threadsClosed": len(closed),
+        "closed": closed,
+        "kept": kept[:40],
+        "openCodexWorkItems": len(list_codex_work_items("open").get("workItems") or []),
+    }
+
+
 def approve_skill_update(payload: dict[str, Any]) -> dict[str, Any]:
     init_db()
     learning_id = str(payload.get("learningId") or "").strip()
@@ -4433,9 +4967,71 @@ def normalize_task_table(payload: Dashboard) -> Dashboard:
             existing_ids.add(task_id)
     normalized["tasks"] = tasks
     summary = dict(normalized.get("summary") or {})
-    summary["humanTasks"] = len([row for row in tasks if is_human_responsible(row.get("assignedTo")) and not task_is_terminal(row)])
-    summary["openEscalations"] = len([row for row in tasks if row.get("taskCategory") in {TASK_CATEGORIES["human"], TASK_CATEGORIES["manager"], TASK_CATEGORIES["audit"], TASK_CATEGORIES["technical"], TASK_CATEGORIES["email"]} and not task_is_terminal(row)])
+    open_task_rows = [row for row in tasks if not task_is_terminal(row)]
+    summary["openTasks"] = len(open_task_rows)
+    summary["humanTasks"] = len([row for row in open_task_rows if is_human_responsible(row.get("assignedTo"))])
+    summary["openEscalations"] = len(
+        [
+            row
+            for row in open_task_rows
+            if normalized_staff_id(row.get("assignedTo"), "") in {"Human_Iman", "AIstaff_Manager"}
+            if row.get("taskCategory")
+            in {TASK_CATEGORIES["human"], TASK_CATEGORIES["manager"], TASK_CATEGORIES["audit"], TASK_CATEGORIES["technical"], TASK_CATEGORIES["email"]}
+        ]
+    )
+    summary["managerReview"] = summary["openEscalations"]
+    summary["waitingCodexWorker"] = len(
+        [row for row in open_task_rows if normalize_text(row.get("status")) == "waiting for codex worker"]
+    )
     normalized["summary"] = summary
+    return normalized
+
+
+def reconcile_snapshot_tasks_from_threads(payload: Dashboard) -> Dashboard:
+    normalized = dict(payload or {})
+    tasks = [dict(row) for row in normalized.get("tasks", []) or [] if isinstance(row, dict)]
+    if not tasks:
+        return normalized
+    task_ids = [str(row.get("taskId") or row.get("Task ID") or "") for row in tasks if row.get("taskId") or row.get("Task ID")]
+    if not task_ids:
+        return normalized
+    placeholders = ",".join("?" for _ in task_ids)
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT task_id, status, closed_at, last_message_preview, source_payload
+            FROM task_threads
+            WHERE task_id IN ({placeholders})
+            """,
+            task_ids,
+        ).fetchall()
+    by_task = {row["task_id"]: row for row in rows}
+    changed = False
+    for task in tasks:
+        task_id = str(task.get("taskId") or task.get("Task ID") or "")
+        thread = by_task.get(task_id)
+        if not thread:
+            continue
+        source: dict[str, Any] = {}
+        try:
+            source = json.loads(thread["source_payload"] or "{}")
+        except Exception:
+            source = {}
+        thread_status = str(thread["status"] or "")
+        source_status = str(source.get("status") or source.get("Status") or "")
+        if thread_status == "Closed":
+            final_status = source_status if source_status and source_status.lower() != "needs approval" else "Closed"
+            task["status"] = final_status
+            task["completedAt"] = iso_like(thread["closed_at"]) if thread["closed_at"] else iso_like()
+            task["resultNotes"] = source.get("resultNotes") or thread["last_message_preview"] or "Closed in local task thread."
+            changed = True
+        elif source_status and source_status != str(task.get("status") or ""):
+            task["status"] = source_status
+            if source.get("resultNotes"):
+                task["resultNotes"] = source.get("resultNotes")
+            changed = True
+    if changed:
+        normalized["tasks"] = tasks
     return normalized
 
 
@@ -4490,6 +5086,16 @@ def queue_action(action: str, payload: dict, method: str = "POST", apply_snapsho
             )
     if apply_snapshot:
         apply_local_action_to_snapshot(action, payload or {}, action_id)
+    if action == "appendAiStaffTask":
+        try:
+            task = local_task_from_payload(payload or {}, action_id)
+            thread_id = str(payload.get("threadId") or task.get("threadId") or thread_id_for_task(task.get("taskId")))
+            with connect() as conn:
+                thread = conn.execute("SELECT * FROM task_threads WHERE thread_id = ?", (thread_id,)).fetchone()
+            if thread and codex_work_required(thread):
+                create_codex_work_item_from_thread(thread_id)
+        except Exception as exc:
+            set_meta("codex_work_item_auto_create_error", str(exc)[:1000])
     if sync_online:
         message = "Saved locally and queued for the next Google Sheet sync."
     elif normalize_text(get_meta("crm_sync_enabled", "false")) != "true":

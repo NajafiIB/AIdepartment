@@ -376,6 +376,25 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
             json_response(self, local_store.list_skill_updates(params.get("status", "Pending")))
             return
 
+        if path == "/api/codex-work-items":
+            json_response(
+                self,
+                local_store.list_codex_work_items(
+                    status=params.get("status", "open"),
+                    staff=params.get("staff", ""),
+                    limit=int(params.get("limit") or 100),
+                ),
+            )
+            return
+
+        if path == "/api/codex-work-item":
+            work_item_id = params.get("id", "") or params.get("workItemId", "")
+            if not work_item_id:
+                json_response(self, {"ok": False, "error": "Missing workItemId."}, 400)
+                return
+            json_response(self, local_store.get_codex_work_item(work_item_id))
+            return
+
         if path == "/api/staff-wakeups":
             json_response(
                 self,
@@ -559,6 +578,29 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
                     thread_id=str(body.get("threadId") or ""),
                 ),
             )
+            return
+
+        if path == "/api/alex-resolve-issues":
+            json_response(self, local_store.resolve_alex_open_issues())
+            return
+
+        if path == "/api/codex-work-item/create-from-task":
+            thread_id = str(body.get("threadId") or "").strip()
+            task_id = str(body.get("taskId") or "").strip()
+            if not thread_id and task_id:
+                thread_id = local_store.thread_id_for_task(task_id)
+            if not thread_id:
+                json_response(self, {"ok": False, "error": "Missing threadId or taskId."}, 400)
+                return
+            json_response(self, local_store.create_codex_work_item_from_thread(thread_id))
+            return
+
+        if path == "/api/codex-work-item/mark":
+            json_response(self, local_store.mark_codex_work_item(body))
+            return
+
+        if path == "/api/codex-work-item/submit-result":
+            json_response(self, local_store.submit_codex_work_result(body))
             return
 
         if path == "/api/thread-close":
