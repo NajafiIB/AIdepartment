@@ -5263,6 +5263,197 @@ select:focus,
   font-size: 13px;
 }
 
+.designer-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.designer-summary-strip span {
+  min-height: 68px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 12px;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.designer-summary-strip strong {
+  color: var(--md-sys-color-on-surface);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.designer-section-card .ui-card-content {
+  display: grid;
+  gap: 14px;
+}
+
+.designer-status {
+  padding: 10px 12px;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.designer-object-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.designer-object-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.designer-object-card.is-locked {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 88%, var(--md-sys-color-tertiary-container));
+}
+
+.designer-object-head,
+.designer-object-actions,
+.designer-editor-head,
+.designer-editor-actions,
+.version-row,
+.backup-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.designer-object-head h3,
+.designer-editor-head h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.designer-object-head small,
+.version-row small,
+.backup-row small {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 12px;
+}
+
+.designer-object-summary {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  line-height: 1.45;
+}
+
+.designer-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.designer-editor {
+  width: min(920px, calc(100vw - 40px));
+  max-height: calc(100vh - 56px);
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface);
+  box-shadow: var(--md-sys-elevation-level3);
+  overflow: auto;
+}
+
+.designer-json-editor {
+  min-height: 420px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  font: 13px/1.55 Consolas, "Courier New", monospace;
+  resize: vertical;
+}
+
+.designer-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.governance-list {
+  display: grid;
+  gap: 10px;
+}
+
+.governance-list h3 {
+  margin: 10px 0 0;
+  font-size: 16px;
+}
+
+.governance-list p {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  line-height: 1.45;
+}
+
+.version-list,
+.backup-list {
+  display: grid;
+  gap: 10px;
+}
+
+.version-row,
+.backup-row {
+  padding: 14px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.version-row strong,
+.backup-row strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--md-sys-color-on-surface);
+}
+
+.version-row p,
+.backup-row p {
+  margin: 0 0 4px;
+  color: var(--md-sys-color-on-surface-variant);
+  word-break: break-word;
+}
+
+@media (max-width: 860px) {
+  .designer-split {
+    grid-template-columns: 1fr;
+  }
+
+  .designer-object-head,
+  .designer-object-actions,
+  .designer-editor-head,
+  .designer-editor-actions,
+  .version-row,
+  .backup-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .stage-strip {
   display: flex;
   align-items: center;

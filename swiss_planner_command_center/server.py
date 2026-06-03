@@ -87,10 +87,12 @@ def read_env_or_user_env(name: str) -> str:
     if winreg is not None:
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
-                return str(winreg.QueryValueEx(key, name)[0]).strip()
+                registry_value = str(winreg.QueryValueEx(key, name)[0]).strip()
+                if registry_value:
+                    return registry_value
         except OSError:
-            return ""
-    return ""
+            pass
+    return local_store.local_env_value(name, "")
 
 
 def expand_percent_env(value: str, label: str) -> str:
@@ -275,6 +277,18 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
 
         if path == "/api/capability-fabric":
             json_response(self, {"ok": True, "capabilityFabric": local_store.load_capability_fabric()})
+            return
+
+        if path == "/api/department-config":
+            json_response(self, local_store.department_config())
+            return
+
+        if path == "/api/department-versions":
+            json_response(self, local_store.list_department_versions(int(params.get("limit") or 80)))
+            return
+
+        if path == "/api/backups":
+            json_response(self, local_store.list_backups(int(params.get("limit") or 50)))
             return
 
         if path == "/api/fabric-note":
@@ -498,6 +512,26 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
 
         if path == "/api/fabric-note":
             json_response(self, local_store.write_fabric_note(body))
+            return
+
+        if path == "/api/fabric-object":
+            json_response(self, local_store.upsert_fabric_object(body))
+            return
+
+        if path == "/api/fabric-object/archive":
+            json_response(self, local_store.archive_fabric_object(body))
+            return
+
+        if path == "/api/department-version/rollback":
+            json_response(self, local_store.rollback_department_version(body))
+            return
+
+        if path == "/api/backup/create":
+            json_response(self, local_store.create_config_backup(body))
+            return
+
+        if path == "/api/backup/restore":
+            json_response(self, local_store.restore_config_backup(body))
             return
 
         json_response(self, {"ok": False, "error": "Unknown local endpoint."}, 404)

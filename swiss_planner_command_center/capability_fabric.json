@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "architecture": "Capability Orchestration Fabric",
   "status": "Active",
-  "lastReviewed": "2026-05-31",
+  "lastReviewed": "2026-06-03",
   "solutionModules": [
     {
       "id": "solution_swiss_planner_apply_department",
@@ -16,6 +16,19 @@
         "Swiss Planner Gmail Bridge"
       ],
       "operatingRule": "Solution module -> Capability -> Recipe -> Stage -> Lane -> Quality gate -> Output."
+    },
+    {
+      "id": "solution_sample_sales_research_department",
+      "label": "Sample Sales Research Department",
+      "summary": "Reusable sample department template for lead discovery, fit review, and CRM follow-up.",
+      "owner": "AIstaff_Manager",
+      "lifecycleStatus": "Sample",
+      "modulesUsing": [
+        "AI Department Platform Core"
+      ],
+      "operatingRule": "Department -> Capability -> Playbook -> Work Step -> Tool Lane -> QA Gate -> Output.",
+      "locked": false,
+      "workspaceEditable": true
     }
   ],
   "capabilities": [
@@ -1438,5 +1451,397 @@
     "aiBrain": "# AI Brain\n\nThis section defines which reasoning level is used for each kind of work.\n\n## Manager low-cost reasoning\n- AI ID: `ai_manager_low_cost`\n- Model: gpt-5-mini\n- Reasoning effort: minimal\n- Owner: `AIstaff_Manager`\n- Usage: Interpret human messages, classify intent, and route work.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Fit reasoning\n- AI ID: `ai_fit_reasoning`\n- Model: gpt-5-mini\n- Reasoning effort: low\n- Owner: `AIstaff_FitAnalyst`\n- Usage: Eligibility, fit scoring, and prioritization.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Research reasoning\n- AI ID: `ai_research_reasoning`\n- Model: gpt-5-mini or Codex\n- Reasoning effort: medium\n- Owner: `AIstaff_OpportunityHunter`\n- Usage: Opportunity search planning, source assessment, and professor-fit synthesis.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Document writing\n- AI ID: `ai_document_writing_high_quality`\n- Model: Codex / higher reasoning when needed\n- Reasoning effort: high\n- Owner: `AIstaff_ApplicationPackMaker`\n- Usage: CV/SOP/proposal quality and professor-specific framing.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Email safety reasoning\n- AI ID: `ai_email_safety_reasoning`\n- Model: gpt-5-mini\n- Reasoning effort: minimal\n- Owner: `AIstaff_ApplicationPackSender`\n- Usage: Check outbound wording for unsafe internal/system language.\n- Cost policy: Use the lowest level that can safely complete the work.\n",
     "outputTemplates": "# Output Templates\n\nThis section defines what each staff member must produce before a task can be marked done.\n\n## Opportunity Discovery\n- Owner: `AIstaff_OpportunityHunter`\n- Outputs: verified_opportunity_rows, evidence_links, research_leads\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Fit Assessment\n- Owner: `AIstaff_FitAnalyst`\n- Outputs: fit_score, application_candidate_rows, rejection_reason\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Professor Research Intelligence\n- Owner: `AIstaff_ProfessorResearchAnalyst`\n- Outputs: professor_fit_row, student_contact_leads, research_theme_summary\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Application Package Generation\n- Owner: `AIstaff_ApplicationPackMaker`\n- Outputs: academic_cv, research_proposal, sop, publication_list, package_index\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Outreach Email\n- Owner: `AIstaff_ApplicationPackSender`\n- Outputs: sent_email_log, blocked_send_reason, draft_or_manual_send_record\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Reply And Follow-up\n- Owner: `AIstaff_FollowUpController`\n- Outputs: reply_status_update, followup_task, thread_message\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## CRM Sync Activation\n- Owner: `AIstaff_CRMController`\n- Outputs: sync_status, audit_task, manager_report\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Workflow Automation\n- Owner: `AIstaff_Manager`\n- Outputs: daily_report, queued_staff_task, human_plan_request\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## AI Reasoning\n- Owner: `AIstaff_Manager`\n- Outputs: manager_reply, routed_task, skill_update_candidate\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n",
     "learningLibrary": "# Learning Library\n\nClosed threads can become Skill Update Candidates.\n\n## Rule\n- Human-approved learnings are appended to the related staff role file.\n- Do not auto-apply a learning without `Human_Iman` approval.\n- The Manager decides whether a human answer should become a department rule or a staff-specific rule.\n\n## Where Learnings Go\n- Department-wide rule: `swiss-planner-staff/SKILL.md`\n- Staff-specific rule: `swiss-planner-staff/roles/<StaffID>.md`\n"
+  },
+  "workspaces": [
+    {
+      "id": "workspace_iman_swiss_planner",
+      "label": "Iman Najafi Workspace",
+      "owner": "Human_Iman",
+      "members": [
+        "Human_Iman"
+      ],
+      "status": "Active",
+      "workspaceEditable": true
+    }
+  ],
+  "departments": [
+    {
+      "id": "department_swiss_planner_applications",
+      "label": "Swiss Planner Application Department",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "templateId": "template_swiss_planner_application_department",
+      "humanManager": "Human_Iman",
+      "aiManager": "AIstaff_Manager",
+      "status": "Active",
+      "workspaceEditable": true
+    }
+  ],
+  "departmentTemplates": [
+    {
+      "id": "template_swiss_planner_application_department",
+      "label": "Swiss Planner Application Department",
+      "purpose": "Find, evaluate, prepare, send, and follow up funded PhD/MSc applications.",
+      "solutionModuleId": "solution_swiss_planner_apply_department",
+      "capabilities": [
+        "opportunity_discovery",
+        "fit_assessment",
+        "professor_research_intelligence",
+        "application_package_generation",
+        "outreach_email",
+        "reply_followup",
+        "crm_sync_activation",
+        "workflow_automation",
+        "ai_reasoning"
+      ],
+      "staffProfiles": [
+        "Human_Iman",
+        "AIstaff_Manager",
+        "AIstaff_OpportunityHunter",
+        "AIstaff_FitAnalyst",
+        "AIstaff_ProfessorResearchAnalyst",
+        "AIstaff_ApplicationPackMaker",
+        "AIstaff_ApplicationPackSender",
+        "AIstaff_FollowUpController",
+        "AIstaff_CRMController"
+      ],
+      "status": "Active",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "template_sales_research_department_sample",
+      "label": "Sample Sales Research Department",
+      "purpose": "Sample reusable department template proving the platform is not Swiss Planner-only.",
+      "solutionModuleId": "solution_sample_sales_research_department",
+      "capabilities": [
+        "opportunity_discovery",
+        "fit_assessment",
+        "workflow_automation"
+      ],
+      "staffProfiles": [
+        "Human_Iman",
+        "AIstaff_Manager",
+        "AIstaff_OpportunityHunter",
+        "AIstaff_FitAnalyst",
+        "AIstaff_CRMController"
+      ],
+      "status": "Sample",
+      "locked": false,
+      "workspaceEditable": true
+    }
+  ],
+  "workspaceOverrides": [
+    {
+      "id": "override_iman_swiss_planner",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "departmentId": "department_swiss_planner_applications",
+      "humanManager": "Human_Iman",
+      "aiManagerAlias": "Alex",
+      "defaultLanguage": "English/Persian mixed accepted",
+      "status": "Active",
+      "workspaceEditable": true
+    }
+  ],
+  "staffProfiles": [
+    {
+      "id": "Human_Iman",
+      "label": "Iman / Human",
+      "alias": "Iman",
+      "profileTitle": "Department Owner / Human Manager",
+      "role": "Human Manager",
+      "managerId": "",
+      "contactPolicy": "Human gives instructions only to AI Manager.",
+      "avatarKind": "human-owner",
+      "workspaceEditable": false,
+      "locked": true
+    },
+    {
+      "id": "AIstaff_Manager",
+      "label": "AI Manager",
+      "alias": "Alex",
+      "profileTitle": "Department Manager",
+      "role": "Department Manager",
+      "managerId": "Human_Iman",
+      "intelligenceLevel": "Expert",
+      "contactPolicy": "Only AI Manager communicates directly with the human manager.",
+      "avatarKind": "human-ai",
+      "workspaceEditable": true,
+      "locked": false
+    },
+    {
+      "id": "AIstaff_OpportunityHunter",
+      "label": "OpportunityHunter",
+      "alias": "Ava",
+      "profileTitle": "Opportunity Research Specialist",
+      "role": "Specialist AI Staff",
+      "managerId": "AIstaff_Manager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false
+    },
+    {
+      "id": "AIstaff_FitAnalyst",
+      "label": "FitAnalyst",
+      "alias": "Leo",
+      "profileTitle": "Fit And Eligibility Analyst",
+      "role": "Specialist AI Staff",
+      "managerId": "AIstaff_Manager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false
+    },
+    {
+      "id": "AIstaff_ProfessorResearchAnalyst",
+      "label": "ProfessorResearchAnalyst",
+      "alias": "Nadia",
+      "profileTitle": "Professor Research Specialist",
+      "role": "Specialist AI Staff",
+      "managerId": "AIstaff_Manager",
+      "intelligenceLevel": "Expert",
+      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false
+    },
+    {
+      "id": "AIstaff_ApplicationPackMaker",
+      "label": "ApplicationPackMaker",
+      "alias": "Maya",
+      "profileTitle": "Application Package Specialist",
+      "role": "Specialist AI Staff",
+      "managerId": "AIstaff_Manager",
+      "intelligenceLevel": "Specialist",
+      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false
+    },
+    {
+      "id": "AIstaff_ApplicationPackSender",
+      "label": "ApplicationPackSender",
+      "alias": "Omar",
+      "profileTitle": "Outreach Safety Specialist",
+      "role": "Specialist AI Staff",
+      "managerId": "AIstaff_Manager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false
+    },
+    {
+      "id": "AIstaff_FollowUpController",
+      "label": "FollowUpController",
+      "alias": "Lina",
+      "profileTitle": "Follow-up Coordinator",
+      "role": "Specialist AI Staff",
+      "managerId": "AIstaff_Manager",
+      "intelligenceLevel": "Junior",
+      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false
+    },
+    {
+      "id": "AIstaff_CRMController",
+      "label": "CRMController",
+      "alias": "Noah",
+      "profileTitle": "CRM Operations Controller",
+      "role": "Specialist AI Staff",
+      "managerId": "AIstaff_Manager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false
+    }
+  ],
+  "outputTemplates": [
+    {
+      "id": "output_verified_opportunity",
+      "label": "Verified Opportunity Record",
+      "ownerStaff": "AIstaff_OpportunityHunter",
+      "requiredSections": [
+        "Official source",
+        "Funding/deadline",
+        "Eligibility",
+        "Why it fits"
+      ],
+      "storage": "Opportunity, Links, Professor Research Fit",
+      "qualityGates": [
+        "gate_official_evidence",
+        "gate_no_duplicate_opportunity"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "output_application_package",
+      "label": "Application Package",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "requiredSections": [
+        "Academic CV",
+        "Research proposal/concept note",
+        "SOP/motivation",
+        "Publication list",
+        "Checklist"
+      ],
+      "storage": "Drive package folder and Application Packages / Package Files rows",
+      "qualityGates": [
+        "gate_document_template_style",
+        "gate_professor_specificity",
+        "gate_package_folder_registered"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "output_supervisor_email",
+      "label": "Supervisor Outreach Email",
+      "ownerStaff": "AIstaff_ApplicationPackSender",
+      "requiredSections": [
+        "Recipient",
+        "Subject",
+        "Personalized body",
+        "Verified attachments",
+        "Safety result"
+      ],
+      "storage": "Email Send Queue and task/thread evidence",
+      "qualityGates": [
+        "gate_content_safety",
+        "gate_package_completeness",
+        "gate_attachment_access",
+        "gate_duplicate_recipient"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "output_operating_report",
+      "label": "Manager Operating Report",
+      "ownerStaff": "AIstaff_Manager",
+      "requiredSections": [
+        "Do first",
+        "KPI progress",
+        "Applications",
+        "AI staff",
+        "System health"
+      ],
+      "storage": "Reports page and AI Staff Reports",
+      "qualityGates": [
+        "gate_kpi_progress",
+        "gate_no_hidden_blocker"
+      ],
+      "workspaceEditable": true
+    }
+  ],
+  "kpis": [
+    {
+      "id": "kpi_weekly_verified_opportunities",
+      "label": "Verified Opportunities",
+      "periodType": "Weekly",
+      "targetUnit": "Opportunities",
+      "targetCount": 10,
+      "minimumEvidenceLevel": "Official source required",
+      "ownerStaff": "AIstaff_OpportunityHunter",
+      "workspaceEditable": true
+    },
+    {
+      "id": "kpi_weekly_application_packages",
+      "label": "Complete Application Packages",
+      "periodType": "Weekly",
+      "targetUnit": "Packages",
+      "targetCount": 2,
+      "minimumEvidenceLevel": "Package folder + QA gates passed",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "workspaceEditable": true
+    },
+    {
+      "id": "kpi_followup_compliance",
+      "label": "Follow-up Compliance",
+      "periodType": "Weekly",
+      "targetUnit": "Percent",
+      "targetCount": 100,
+      "minimumEvidenceLevel": "No active AI-owned entity without due follow-up",
+      "ownerStaff": "AIstaff_FollowUpController",
+      "workspaceEditable": true
+    }
+  ],
+  "reportDefinitions": [
+    {
+      "id": "report_manager_operating_view",
+      "label": "Manager Operating Report",
+      "purpose": "Explain what is happening, why it matters, and the next action.",
+      "sections": [
+        "Do First",
+        "KPI Progress",
+        "Applications",
+        "AI Staff",
+        "System Health"
+      ],
+      "defaultPeriod": "Last 7 days",
+      "workspaceEditable": true
+    },
+    {
+      "id": "report_department_health",
+      "label": "Department Health",
+      "purpose": "Show sync health, stale work, blockers, and backup/version state.",
+      "sections": [
+        "System Health",
+        "Blocked Work",
+        "Backups",
+        "Version History"
+      ],
+      "defaultPeriod": "Today",
+      "workspaceEditable": true
+    }
+  ],
+  "governance": {
+    "lockedPlatformRules": [
+      "Thread replies never send email by themselves.",
+      "Only AI Manager creates human-facing tasks.",
+      "External sends require queue approval, content safety, package completeness, and attachment verification."
+    ],
+    "workspaceEditableRules": [
+      "Staff aliases and avatars",
+      "Workspace operating notes",
+      "Tool assignments and non-locked QA gates",
+      "Output templates and KPI targets"
+    ],
+    "versioning": "Every designer save writes a Department Version row.",
+    "backupPolicy": "Create a local backup before major config changes.",
+    "learningPolicy": "Approved human learning is added only after explicit approval."
+  },
+  "permissions": {
+    "workspaceOwner": [
+      "view",
+      "message_manager",
+      "edit_workspace_rules",
+      "approve_learning",
+      "backup",
+      "rollback"
+    ],
+    "workspaceAdmin": [
+      "view",
+      "message_manager",
+      "edit_workspace_rules",
+      "approve_learning",
+      "backup"
+    ],
+    "workspaceDeveloper": [
+      "view",
+      "message_manager",
+      "edit_workspace_rules",
+      "connector_config",
+      "backup"
+    ],
+    "member": [
+      "view",
+      "message_manager"
+    ],
+    "viewer": [
+      "view"
+    ]
   }
 }

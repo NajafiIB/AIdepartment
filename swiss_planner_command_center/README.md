@@ -7,7 +7,7 @@ Local Windows dashboard for monitoring and running the Swiss Planner AI Staff wo
 Run:
 
 ```bat
-launch_swiss_planner_command_center.cmd
+swiss_planner_command_center\start_command_center.cmd
 ```
 
 For a portable GitHub clone, you can also run:
@@ -80,7 +80,7 @@ SWISS_PLANNER_WEBHOOK_URL
 SWISS_PLANNER_WEBHOOK_TOKEN
 ```
 
-If they are not set, it falls back to the local `run_swiss_planner_bridge.cmd` file. That fallback is useful on Iman's Windows machine, but it is intentionally not a GitHub source file.
+If they are not set, it reads the same keys from the repository-local `.env.local` file. If neither source exists, it falls back to the local `run_swiss_planner_bridge.cmd` file. That fallback is useful on Iman's Windows machine, but it is intentionally not a GitHub source file.
 
 The Apps Script bridge must include:
 

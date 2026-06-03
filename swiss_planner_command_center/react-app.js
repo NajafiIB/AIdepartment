@@ -620,11 +620,30 @@ function defaultManagerAvatar(staffId) {
 }
 
 function defaultStaffAvatar(staffId) {
+  const registry = registryStaffProfile(staffId);
+  if (registry && registry.avatarUrl) return registry.avatarUrl;
   return defaultManagerAvatar(staffId) || defaultSpecialistAvatar(staffId);
 }
 
 function defaultStaffAlias(staffId) {
-  return DEFAULT_STAFF_ALIASES[staffId] || "";
+  const registry = registryStaffProfile(staffId);
+  return (registry && (registry.alias || registry.displayName || registry.label)) || DEFAULT_STAFF_ALIASES[staffId] || "";
+}
+
+function activeFabric() {
+  return (typeof window !== "undefined" && window.__SWISS_PLANNER_FABRIC__) || {};
+}
+
+function registryStaffProfile(staffId) {
+  const id = String(staffId || "");
+  return ((activeFabric().staffProfiles || [])).find(row => row && row.id === id) || null;
+}
+
+function registryStaffIds(fabric = activeFabric()) {
+  return uniqueValues([
+    ...STAFF_ORDER,
+    ...((fabric.staffProfiles || []).map(row => row && row.id)),
+  ]);
 }
 
 function icon(name) {
@@ -722,6 +741,7 @@ function staffProfile(value) {
   if (isHumanResponsible(id)) {
     return { label: "Iman / Human", initials: "IN", icon: "user", tone: "human" };
   }
+  const registry = registryStaffProfile(id);
   const profiles = [
     ["Manager", "Manager", "MG", "user", "manager"],
     ["OpportunityHunter", "Opportunity Hunter", "OH", "search", "hunter"],
@@ -736,19 +756,21 @@ function staffProfile(value) {
   if (match) {
     const override = staffProfileOverride(id);
     const baseLabel = match[1];
-    const alias = String(override.alias || defaultStaffAlias(id) || "").trim();
+    const alias = String(override.alias || (registry && registry.alias) || defaultStaffAlias(id) || "").trim();
+    const label = alias || (registry && registry.label) || baseLabel;
     return {
-      label: alias || baseLabel,
-      systemLabel: baseLabel,
-      initials: (alias || baseLabel).split(/\s+/).map(part => part[0]).join("").slice(0, 3).toUpperCase(),
+      label,
+      systemLabel: (registry && registry.label) || baseLabel,
+      initials: label.split(/\s+/).map(part => part[0]).join("").slice(0, 3).toUpperCase(),
       icon: match[3],
       tone: match[4],
     };
   }
   const label = id.replace(/^AIstaff_/, "").replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim() || "Staff";
   const override = staffProfileOverride(id);
-  const alias = String(override.alias || defaultStaffAlias(id) || "").trim();
-  return { label: alias || label, systemLabel: label, initials: (alias || label).split(/\s+/).map(part => part[0]).join("").slice(0, 3).toUpperCase(), icon: "user", tone: "neutral" };
+  const alias = String(override.alias || (registry && registry.alias) || defaultStaffAlias(id) || "").trim();
+  const display = alias || (registry && registry.label) || label;
+  return { label: display, systemLabel: (registry && registry.label) || label, initials: display.split(/\s+/).map(part => part[0]).join("").slice(0, 3).toUpperCase(), icon: "user", tone: "neutral" };
 }
 
 function isHumanResponsible(value) {
@@ -1629,6 +1651,10 @@ function App() {
     const timer = window.setInterval(() => loadDashboard(false, true), 5 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    window.__SWISS_PLANNER_FABRIC__ = (dashboard && dashboard.capabilityFabric) || {};
+  }, [dashboard]);
 
   useEffect(() => {
     const ready = () => setMaterialReady(true);
@@ -3087,6 +3113,16 @@ function fabricOrFallback(dashboard = {}) {
     databases: fabric.databases || [],
     aiSupport: fabric.aiSupport || [],
     qualityGates: fabric.qualityGates || [],
+    workspaces: fabric.workspaces || [],
+    departments: fabric.departments || [],
+    departmentTemplates: fabric.departmentTemplates || [],
+    workspaceOverrides: fabric.workspaceOverrides || [],
+    staffProfiles: fabric.staffProfiles || [],
+    outputTemplates: fabric.outputTemplates || [],
+    kpis: fabric.kpis || [],
+    reportDefinitions: fabric.reportDefinitions || [],
+    governance: fabric.governance || {},
+    permissions: fabric.permissions || {},
     automations: fabric.automations || [],
     summary: fabric.summary || {},
     errors: fabric.errors || [],
@@ -3145,22 +3181,26 @@ function uniqueValues(values = []) {
 }
 
 function departmentStaffIds(dashboard = {}) {
-  return uniqueValues([...STAFF_ORDER, ...((dashboard.staff || []).map(row => row.staffId))]);
+  return uniqueValues([...registryStaffIds((dashboard.capabilityFabric || activeFabric())), ...((dashboard.staff || []).map(row => row.staffId))]);
 }
 
 function staffLevel(staffId) {
   const override = staffProfileOverride(staffId);
-  return override.aiLevel || STAFF_LEVELS[staffId] || (isHumanResponsible(staffId) ? "Human Manager" : "Senior");
+  const registry = registryStaffProfile(staffId);
+  return override.aiLevel || (registry && registry.intelligenceLevel) || STAFF_LEVELS[staffId] || (isHumanResponsible(staffId) ? "Human Manager" : "Senior");
 }
 
 function staffReportsTo(staffId) {
   if (isHumanResponsible(staffId)) return "";
-  return STAFF_REPORTS_TO[staffId] || "AIstaff_Manager";
+  const registry = registryStaffProfile(staffId);
+  return (registry && registry.managerId) || STAFF_REPORTS_TO[staffId] || "AIstaff_Manager";
 }
 
 function staffRolePurpose(staffId, fabric) {
   const override = staffProfileOverride(staffId);
   if (override.roleSummary) return override.roleSummary;
+  const registry = registryStaffProfile(staffId);
+  if (registry && (registry.roleSummary || registry.summary || registry.contactPolicy)) return registry.roleSummary || registry.summary || registry.contactPolicy;
   const capability = (fabric.capabilities || []).find(row => row.ownerStaff === staffId || row.owner === staffId);
   if (capability && capability.summary) return capability.summary;
   const config = staffStageConfig(staffId);
@@ -3170,6 +3210,8 @@ function staffRolePurpose(staffId, fabric) {
 function staffJobTitle(staffId) {
   const override = staffProfileOverride(staffId);
   if (override.profileTitle) return override.profileTitle;
+  const registry = registryStaffProfile(staffId);
+  if (registry && registry.profileTitle) return registry.profileTitle;
   const profile = staffProfile(staffId);
   if (isHumanResponsible(staffId)) return "Department Owner";
   if (staffId === "AIstaff_Manager") return "Department Manager";
@@ -4098,56 +4140,421 @@ function LearnedSkillCard({ row, compact = false, onStaffClick }) {
 }
 
 function SettingsView({ dashboard }) {
-  const [section, setSection] = useState("solutions");
-  const fabric = fabricOrFallback(dashboard);
+  const [section, setSection] = useState("departmentTemplates");
+  const [config, setConfig] = useState({ loading: true, error: "", fabric: fabricOrFallback(dashboard), versions: [], backups: [] });
+  const fabric = fabricOrFallback({ ...(dashboard || {}), capabilityFabric: config.fabric || (dashboard && dashboard.capabilityFabric) });
   const sections = [
-    ["solutions", "Solutions"],
+    ["departmentTemplates", "Department Templates"],
+    ["staffProfiles", "Staff Profiles"],
     ["capabilities", "Capabilities"],
-    ["recipes", "Recipes"],
-    ["stages", "Stages"],
-    ["lanes", "Lanes"],
-    ["connections", "Connections"],
-    ["databases", "Databases"],
-    ["ai", "AI Support"],
-    ["quality", "Quality"],
+    ["recipes", "Playbooks"],
+    ["stages", "Work Steps"],
+    ["lanes", "Tools & Lanes"],
+    ["connections", "Connected Apps"],
+    ["databases", "Knowledge Sources"],
+    ["aiSupport", "AI Brain"],
+    ["qualityGates", "QA Gates"],
+    ["outputTemplates", "Outputs"],
+    ["kpis", "KPIs"],
+    ["reportDefinitions", "Reports"],
+    ["governance", "Governance"],
+    ["history", "History"],
+    ["backup", "Backup / Restore"],
   ];
   const totals = {
-    capabilities: fabric.capabilities.length,
-    recipes: fabric.recipes.length,
-    stages: fabric.recipes.reduce((sum, recipe) => sum + ((recipe.stages || []).length), 0),
-    lanes: fabric.lanes.length,
-    connections: fabric.connections.length,
-    databases: fabric.databases.length,
-    ai: fabric.aiSupport.length,
-    quality: fabric.qualityGates.length,
+    departmentTemplates: (fabric.departmentTemplates || []).length,
+    staffProfiles: (fabric.staffProfiles || []).length,
+    capabilities: (fabric.capabilities || []).length,
+    recipes: (fabric.recipes || []).length,
+    stages: (fabric.recipes || []).reduce((sum, recipe) => sum + ((recipe.stages || []).length), 0),
+    lanes: (fabric.lanes || []).length,
+    connections: (fabric.connections || []).length,
+    databases: (fabric.databases || []).length,
+    aiSupport: (fabric.aiSupport || []).length,
+    qualityGates: (fabric.qualityGates || []).length,
+    outputTemplates: (fabric.outputTemplates || []).length,
+    kpis: (fabric.kpis || []).length,
+    reportDefinitions: (fabric.reportDefinitions || []).length,
+    history: (config.versions || []).length,
+    backup: (config.backups || []).length,
   };
+
+  async function loadConfig() {
+    setConfig(current => ({ ...current, loading: true, error: "" }));
+    try {
+      const data = await api("/api/department-config");
+      setConfig({
+        loading: false,
+        error: "",
+        fabric: data.capabilityFabric || fabric,
+        versions: data.versions || [],
+        backups: data.backups || [],
+      });
+      window.__SWISS_PLANNER_FABRIC__ = data.capabilityFabric || {};
+    } catch (error) {
+      setConfig(current => ({ ...current, loading: false, error: error.message || String(error) }));
+    }
+  }
+
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  const collectionSections = new Set(["departmentTemplates", "staffProfiles", "capabilities", "recipes", "lanes", "connections", "databases", "aiSupport", "qualityGates", "outputTemplates", "kpis", "reportDefinitions"]);
   return h(Fragment, null,
     h(Card, { className: "settings-hero" },
       h(CardHeader, {
-        eyebrow: "Settings",
-        title: "Capability Orchestration Fabric",
-        description: "Registry-driven map: solution modules, business capabilities, recipes, stages, lanes, supporting connections, databases, AI support, quality gates, and outputs.",
-        action: h(Badge, { tone: fabric.errors && fabric.errors.length ? "danger" : "success" }, fabric.errors && fabric.errors.length ? `${fabric.errors.length} registry issue(s)` : "Registry active"),
+        eyebrow: "Settings -> Department Designer",
+        title: "Configurable AI Department Platform",
+        description: "Swiss Planner is now the first department template. Edit workspace-level profiles, playbooks, tools, QA gates, KPIs, outputs, reports, and safe overrides from one place.",
+        action: h("div", { className: "panel-actions" },
+          h(Badge, { tone: fabric.errors && fabric.errors.length ? "danger" : "success" }, fabric.errors && fabric.errors.length ? `${fabric.errors.length} registry issue(s)` : "Registry active"),
+          h(Button, { actionKey: "department-config:refresh", variant: "outline", onClick: loadConfig }, icon("refresh"), "Refresh")
+        ),
       }),
       h(CardContent, null,
-        h("p", { className: "muted" }, "Normal relationship: Solution module -> Capability -> Recipe -> Stage -> Lane -> Quality gate -> Output. Supporting inputs feed stage/lane work: Databases + Connections + AI Support."),
+        h("p", { className: "muted" }, "Platform Core handles tasks, threads, routing, safety, reports, backups, and connectors. Department Templates define reusable teams. Workspace Overrides personalize the department for the client."),
+        config.error ? h("div", { className: "form-error" }, config.error) : null,
+        h("div", { className: "designer-summary-strip" },
+          h("span", null, h("strong", null, totals.departmentTemplates || 0), "Templates"),
+          h("span", null, h("strong", null, totals.staffProfiles || 0), "Staff profiles"),
+          h("span", null, h("strong", null, totals.lanes || 0), "Tool lanes"),
+          h("span", null, h("strong", null, totals.qualityGates || 0), "QA gates"),
+          h("span", null, h("strong", null, totals.backup || 0), "Backups")
+        ),
         h("div", { className: "settings-tabs", role: "tablist", "aria-label": "Settings sections" }, sections.map(([key, label]) =>
           h("button", { key, type: "button", className: cn("settings-tab", section === key && "active"), onClick: () => setSection(key) },
             h("span", null, label),
-            key !== "solutions" ? h("small", null, totals[key] || 0) : null
+            totals[key] !== undefined ? h("small", null, totals[key] || 0) : null
           )
         ))
       )
     ),
-    section === "solutions" ? h(SettingsSolutionsSection, { fabric }) : null,
-    section === "capabilities" ? h(SettingsCapabilitiesSection, { dashboard, fabric }) : null,
-    section === "recipes" ? h(SettingsRecipesSection, { fabric }) : null,
+    collectionSections.has(section) ? h(DesignerCollectionSection, { collection: section, fabric, refresh: loadConfig }) : null,
     section === "stages" ? h(SettingsStagesSection, { fabric }) : null,
-    section === "lanes" ? h(SettingsLanesSection, { fabric }) : null,
-    section === "connections" ? h(SettingsInventorySection, { rows: fabric.connections, title: "Connections", typeLabel: "Connection" }) : null,
-    section === "databases" ? h(SettingsInventorySection, { rows: fabric.databases, title: "Databases", typeLabel: "Database" }) : null,
-    section === "ai" ? h(SettingsAiSection, { fabric }) : null,
-    section === "quality" ? h(SettingsQualitySection, { fabric }) : null
+    section === "governance" ? h(GovernanceDesignerSection, { fabric }) : null,
+    section === "history" ? h(VersionHistorySection, { versions: config.versions, refresh: loadConfig }) : null,
+    section === "backup" ? h(BackupRestoreSection, { backups: config.backups, refresh: loadConfig }) : null
+  );
+}
+
+const DESIGNER_META = {
+  departmentTemplates: {
+    eyebrow: "Template",
+    title: "Department Templates",
+    description: "Reusable blueprints. Swiss Planner is active; sample templates prove the platform can host another department without source-code edits.",
+    empty: { id: "template_new_department", label: "New Department Template", purpose: "Describe what this department does.", status: "Draft", capabilities: [], staffProfiles: [], workspaceEditable: true },
+  },
+  staffProfiles: {
+    eyebrow: "Profile",
+    title: "Staff Profiles",
+    description: "Human-friendly aliases, titles, levels, reporting line, avatar policy, and contact rules for the org explorer.",
+    empty: { id: "AIstaff_NewSpecialist", label: "New Specialist", alias: "New", profileTitle: "AI Specialist", role: "Specialist AI Staff", managerId: "AIstaff_Manager", intelligenceLevel: "Junior", workspaceEditable: true },
+  },
+  capabilities: {
+    eyebrow: "Capability",
+    title: "What The Department Can Do",
+    description: "Business responsibilities owned by AI staff.",
+    empty: { id: "new_capability", label: "New Capability", summary: "Describe the responsibility.", lifecycleStatus: "Draft", ownerStaff: "AIstaff_Manager", recipes: [], requiredConnections: [], databases: [], aiSupport: [], qualityGates: [], outputs: [], workspaceEditable: true },
+  },
+  recipes: {
+    eyebrow: "Playbook",
+    title: "Playbooks",
+    description: "Standard operating methods with work steps and handoffs.",
+    empty: { id: "recipe_new_playbook", capabilityId: "new_capability", label: "New Playbook", summary: "Describe the playbook.", ownerStaff: "AIstaff_Manager", stages: [], outputs: [], workspaceEditable: true },
+  },
+  lanes: {
+    eyebrow: "Tool Lane",
+    title: "Tools & Lanes",
+    description: "How a staff member uses a tool, connector, database, model, and evidence rule.",
+    empty: { id: "lane_new_tool_route", label: "New Tool Route", routeType: "tool route", ownerStaff: "AIstaff_Manager", connections: [], databases: [], aiSupport: [], qualityGates: [], workspaceEditable: true },
+  },
+  connections: {
+    eyebrow: "Connected App",
+    title: "Connected Apps",
+    description: "External apps, APIs, bridges, and local tools available to the department.",
+    empty: { id: "new_connection", label: "New Connected App", status: "Draft", type: "connector", requiredFor: [], workspaceEditable: true },
+  },
+  databases: {
+    eyebrow: "Knowledge Source",
+    title: "Knowledge / Data Sources",
+    description: "Tables, files, memory, CRM data, and local stores used by staff.",
+    empty: { id: "new_database", label: "New Knowledge Source", status: "Draft", type: "database", workspaceEditable: true },
+  },
+  aiSupport: {
+    eyebrow: "AI Brain",
+    title: "AI Brain",
+    description: "Model, reasoning level, cost policy, fallback behavior, and allowed staff.",
+    empty: { id: "ai_new_brain", label: "New AI Brain", model: "gpt-5-mini", reasoningEffort: "low", ownerStaff: "AIstaff_Manager", usage: "Describe when to use it.", workspaceEditable: true },
+  },
+  qualityGates: {
+    eyebrow: "QA Gate",
+    title: "QA Gates",
+    description: "Blocking or advisory checks that decide whether work can continue.",
+    empty: { id: "gate_new_quality_check", label: "New Quality Check", rule: "Describe the check.", severity: "Blocking", workspaceEditable: true },
+  },
+  outputTemplates: {
+    eyebrow: "Output",
+    title: "Output Templates",
+    description: "Deliverable standards for documents, reports, CRM updates, emails, and evidence packages.",
+    empty: { id: "output_new_deliverable", label: "New Deliverable", ownerStaff: "AIstaff_Manager", requiredSections: [], storage: "Define storage.", qualityGates: [], workspaceEditable: true },
+  },
+  kpis: {
+    eyebrow: "KPI",
+    title: "KPIs",
+    description: "Targets that drive the Manager cycle and stop/continue decisions.",
+    empty: { id: "kpi_new_target", label: "New KPI", periodType: "Weekly", targetUnit: "Tasks", targetCount: 1, ownerStaff: "AIstaff_Manager", workspaceEditable: true },
+  },
+  reportDefinitions: {
+    eyebrow: "Report",
+    title: "Report Definitions",
+    description: "Manager-readable report sections, periods, and decision focus.",
+    empty: { id: "report_new_view", label: "New Report", purpose: "Explain what the report should help decide.", sections: [], defaultPeriod: "Last 7 days", workspaceEditable: true },
+  },
+};
+
+function designerMeta(collection) {
+  return DESIGNER_META[collection] || { eyebrow: "Object", title: collection, description: "", empty: { id: `${collection}_new`, label: "New Object", workspaceEditable: true } };
+}
+
+function designerSummary(item = {}) {
+  return item.summary || item.purpose || item.rule || item.usage || item.storage || item.contactPolicy || item.minimumEvidenceLevel || item.defaultPeriod || "";
+}
+
+function designerOwner(item = {}) {
+  return item.ownerStaff || item.owner || item.aiManager || item.humanManager || item.managerId || "";
+}
+
+function DesignerCollectionSection({ collection, fabric, refresh }) {
+  const meta = designerMeta(collection);
+  const [editor, setEditor] = useState(null);
+  const rows = Array.isArray(fabric[collection]) ? fabric[collection] : [];
+  const [status, setStatus] = useState("");
+
+  function openEditor(item) {
+    setEditor({
+      item: jsonPretty(item),
+      originalId: item.id || "",
+      error: "",
+      saving: false,
+      isNew: !item.id || item.__new,
+    });
+  }
+
+  async function saveEditor(event) {
+    event.preventDefault();
+    if (!editor) return;
+    setEditor(current => ({ ...current, saving: true, error: "" }));
+    try {
+      const item = JSON.parse(editor.item);
+      const result = await api("/api/fabric-object", {
+        method: "POST",
+        body: JSON.stringify({ collection, item, reason: "Updated from Department Designer.", updatedBy: "Human_Iman" }),
+      });
+      setStatus(`Saved ${item.id}. Version: ${((result.version || {}).versionId) || "recorded"}.`);
+      setEditor(null);
+      await refresh();
+    } catch (error) {
+      setEditor(current => ({ ...current, saving: false, error: error.message || String(error) }));
+    }
+  }
+
+  async function archiveItem(item) {
+    if (!item || !item.id) return;
+    if (!window.confirm(`Archive ${item.label || item.id}?`)) return;
+    try {
+      await api("/api/fabric-object/archive", {
+        method: "POST",
+        body: JSON.stringify({ collection, objectId: item.id, reason: "Archived from Department Designer.", updatedBy: "Human_Iman" }),
+      });
+      setStatus(`Archived ${item.id}.`);
+      await refresh();
+    } catch (error) {
+      setStatus(error.message || String(error));
+    }
+  }
+
+  return h(Card, { className: "designer-section-card" },
+    h(CardHeader, {
+      eyebrow: "Department Designer",
+      title: meta.title,
+      description: meta.description,
+      action: h(Button, { onClick: () => openEditor({ ...meta.empty, id: `${meta.empty.id}_${Date.now()}`, __new: true }) }, icon("plus"), "Add object"),
+    }),
+    h(CardContent, null,
+      status ? h("div", { className: "designer-status" }, status) : null,
+      rows.length ? h("div", { className: "designer-object-grid" }, rows.map(item =>
+        h("article", { className: cn("designer-object-card", item.locked && "is-locked"), key: item.id || JSON.stringify(item).slice(0, 30) },
+          h("div", { className: "designer-object-head" },
+            h("div", null,
+              h("p", { className: "eyebrow" }, meta.eyebrow),
+              h("h3", null, item.label || item.name || item.id || "Object"),
+              item.id ? h("small", null, item.id) : null
+            ),
+            h(Badge, { tone: item.locked ? "warn" : undefined }, item.locked ? "Locked" : (item.status || item.lifecycleStatus || "Editable"))
+          ),
+          designerSummary(item) ? h("p", { className: "designer-object-summary" }, shortText(designerSummary(item), 210)) : null,
+          h(DetailList, { rows: [
+            { label: "Owner", value: designerOwner(item) ? h(StaffChip, { staffId: designerOwner(item) }) : "Not assigned", raw: Boolean(designerOwner(item)) },
+            { label: "Workspace editable", value: item.workspaceEditable === false ? "No" : "Yes" },
+            { label: "Updated", value: fmtDate(item.updatedAt) },
+          ] }),
+          h("div", { className: "designer-object-actions" },
+            h(Button, { variant: "outline", onClick: () => openEditor(item) }, icon("file"), item.locked ? "View JSON" : "Edit JSON"),
+            item.locked ? null : h(Button, { variant: "ghost", onClick: () => archiveItem(item) }, "Archive")
+          )
+        )
+      )) : h(EmptyState, { title: `No ${meta.title.toLowerCase()} yet`, body: "Add one from the designer. It will be versioned and backed up before saving." }),
+      editor ? h(DesignerObjectEditor, { editor, setEditor, collection, meta, saveEditor }) : null
+    )
+  );
+}
+
+function jsonPretty(value) {
+  return JSON.stringify(value || {}, null, 2);
+}
+
+function DesignerObjectEditor({ editor, setEditor, collection, meta, saveEditor }) {
+  return h("div", { className: "designer-editor-backdrop", role: "dialog", "aria-modal": "true" },
+    h("form", { className: "designer-editor", onSubmit: saveEditor },
+      h("div", { className: "designer-editor-head" },
+        h("div", null,
+          h("p", { className: "eyebrow" }, meta.eyebrow),
+          h("h3", null, editor.isNew ? `Add ${meta.eyebrow}` : `Edit ${meta.eyebrow}`),
+          h("p", null, `Collection: ${collection}`)
+        ),
+        h(Button, { type: "button", variant: "ghost", size: "icon", onClick: () => setEditor(null), title: "Close" }, icon("x"))
+      ),
+      h("div", { className: "skill-editor-warning" },
+        h("strong", null, "Safe JSON editor"),
+        h("span", null, "Saves are validated, backed up, and versioned. Platform-locked objects cannot be overwritten from this workspace screen.")
+      ),
+      editor.error ? h("div", { className: "form-error" }, editor.error) : null,
+      h("textarea", {
+        className: "designer-json-editor",
+        value: editor.item,
+        spellCheck: false,
+        disabled: editor.saving,
+        onChange: event => setEditor(current => ({ ...current, item: event.target.value })),
+      }),
+      h("div", { className: "designer-editor-actions" },
+        h(Button, { type: "button", variant: "ghost", onClick: () => setEditor(null) }, "Cancel"),
+        h(Button, { type: "submit", pending: editor.saving, pendingLabel: "Saving..." }, "Save version")
+      )
+    )
+  );
+}
+
+function GovernanceDesignerSection({ fabric }) {
+  const governance = fabric.governance || {};
+  const permissions = fabric.permissions || {};
+  return h("section", { className: "designer-split" },
+    h(Card, null,
+      h(CardHeader, { title: "Governance", description: "Locked platform policy and workspace-editable rules." }),
+      h(CardContent, null,
+        h("div", { className: "governance-list" },
+          h("h3", null, "Locked Platform Rules"),
+          (governance.lockedPlatformRules || []).map(rule => h("p", { key: rule }, h(Badge, { tone: "warn" }, "Locked"), " ", rule)),
+          h("h3", null, "Workspace Editable Rules"),
+          (governance.workspaceEditableRules || []).map(rule => h("p", { key: rule }, h(Badge, { tone: "success" }, "Editable"), " ", rule)),
+          h(DetailList, { rows: [
+            { label: "Versioning", value: governance.versioning },
+            { label: "Backup policy", value: governance.backupPolicy },
+            { label: "Learning policy", value: governance.learningPolicy },
+          ] })
+        )
+      )
+    ),
+    h(Card, null,
+      h(CardHeader, { title: "Workspace Permissions", description: "Client roles see the friendly department surface; platform developers keep the technical COF view." }),
+      h(CardContent, { className: "settings-list" }, Object.entries(permissions).map(([role, rights]) =>
+        h("article", { className: "settings-card", key: role },
+          h("h3", null, role),
+          h("p", null, Array.isArray(rights) ? rights.join(", ") : String(rights))
+        )
+      ))
+    )
+  );
+}
+
+function VersionHistorySection({ versions, refresh }) {
+  const [status, setStatus] = useState("");
+  async function rollback(versionId) {
+    const confirmText = window.prompt("Type ROLLBACK to restore this object version.");
+    if (confirmText !== "ROLLBACK") return;
+    try {
+      await api("/api/department-version/rollback", {
+        method: "POST",
+        body: JSON.stringify({ versionId, confirmRollback: "ROLLBACK", updatedBy: "Human_Iman" }),
+      });
+      setStatus(`Rolled back ${versionId}.`);
+      await refresh();
+    } catch (error) {
+      setStatus(error.message || String(error));
+    }
+  }
+  return h(Card, { className: "designer-section-card" },
+    h(CardHeader, { title: "Version History", description: "Every designer save creates a version row. Rollback restores only the selected object." }),
+    h(CardContent, null,
+      status ? h("div", { className: "designer-status" }, status) : null,
+      versions && versions.length ? h("div", { className: "version-list" }, versions.map(row =>
+        h("article", { className: "version-row", key: row.versionId },
+          h("div", null,
+            h("strong", null, row.action || "Change"),
+            h("p", null, `${row.objectType} / ${row.objectId}`),
+            h("small", null, `${fmtDate(row.createdAt)} by ${row.createdBy || "Human_Iman"}${row.reason ? ` - ${row.reason}` : ""}`)
+          ),
+          h(Button, { variant: "outline", onClick: () => rollback(row.versionId) }, "Rollback")
+        )
+      )) : h(EmptyState, { title: "No versions yet", body: "Save a designer object or department note to create the first version row." })
+    )
+  );
+}
+
+function BackupRestoreSection({ backups, refresh }) {
+  const [status, setStatus] = useState("");
+  async function createBackup() {
+    try {
+      const result = await api("/api/backup/create", { method: "POST", body: JSON.stringify({ reason: "Manual backup from Department Designer." }) });
+      setStatus(`Backup created: ${result.backupId}`);
+      await refresh();
+    } catch (error) {
+      setStatus(error.message || String(error));
+    }
+  }
+  async function restoreBackup(row) {
+    const confirmText = window.prompt("Restore fabric from this backup? Type RESTORE to continue. A pre-restore backup will be created.");
+    if (confirmText !== "RESTORE") return;
+    try {
+      await api("/api/backup/restore", { method: "POST", body: JSON.stringify({ backupId: row.backupId, confirmRestore: "RESTORE", updatedBy: "Human_Iman" }) });
+      setStatus(`Restored fabric from ${row.backupId}.`);
+      await refresh();
+    } catch (error) {
+      setStatus(error.message || String(error));
+    }
+  }
+  return h(Card, { className: "designer-section-card" },
+    h(CardHeader, {
+      title: "Backup / Restore",
+      description: "Backups include local SQLite files, the capability fabric, staff skills, and package manifests. Restore currently replaces the fabric only, safely.",
+      action: h(Button, { actionKey: "backup:create", onClick: createBackup }, icon("database"), "Create backup"),
+    }),
+    h(CardContent, null,
+      status ? h("div", { className: "designer-status" }, status) : null,
+      backups && backups.length ? h("div", { className: "backup-list" }, backups.map(row =>
+        h("article", { className: "backup-row", key: row.backupId },
+          h("div", null,
+            h("strong", null, row.backupId),
+            h("p", null, row.path),
+            h("small", null, `${fmtDate(row.createdAt)} | ${row.status} | ${(row.included || []).length} file(s)`)
+          ),
+          h("div", { className: "designer-object-actions" },
+            h(Badge, { tone: row.status === "Done" ? "success" : "danger" }, row.status),
+            row.status === "Done" ? h(Button, { variant: "outline", onClick: () => restoreBackup(row) }, "Restore fabric") : null
+          )
+        )
+      )) : h(EmptyState, { title: "No backups yet", body: "Create a backup before large configuration changes." })
+    )
   );
 }
 

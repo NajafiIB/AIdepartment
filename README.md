@@ -13,8 +13,8 @@ This repository currently contains the Swiss Planner AI Staff Command Center: a 
 ## Local Setup
 
 1. Install Python 3.10+.
-2. Set local environment variables from `.env.example`.
-3. Start the dashboard:
+2. Copy `.env.example` to `.env.local` and fill local bridge values, or set the same values as Windows user environment variables.
+3. Start the dashboard by double-clicking `swiss_planner_command_center/start_command_center.cmd`, or run:
 
 ```powershell
 python .\swiss_planner_command_center\server.py
@@ -27,6 +27,8 @@ http://127.0.0.1:8765/
 ```
 
 The local database is created at `swiss_planner_command_center/swiss_planner_local.db` and is intentionally ignored by Git.
+
+For a clean setup on another Windows computer, use [docs/INSTALL_ON_NEW_SYSTEM.md](docs/INSTALL_ON_NEW_SYSTEM.md).
 
 ## Bridge Setup
 

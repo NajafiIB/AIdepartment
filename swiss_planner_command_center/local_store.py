@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sqlite3
 import threading
 import time
 import urllib.error
 import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any, Callable
 
@@ -22,6 +24,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 CAPABILITY_FABRIC_PATH = Path(__file__).resolve().parent / "capability_fabric.json"
 STAFF_SKILL_DIR = Path(r"C:\Users\sonse\.codex\skills\swiss-planner-staff")
 LOCAL_ENV_PATH = ROOT_DIR / ".env.local"
+BACKUP_DIR = ROOT_DIR / "backups"
 
 FABRIC_NOTE_SECTIONS = {
     "workMap": "Work Map",
@@ -53,6 +56,27 @@ DEFAULT_STAFF_ALIASES = {
     "AIstaff_FollowUpController": "Lina",
     "AIstaff_CRMController": "Noah",
 }
+
+FABRIC_COLLECTION_LABELS = {
+    "solutionModules": "Department Solutions",
+    "workspaces": "Workspaces",
+    "departments": "Departments",
+    "departmentTemplates": "Department Templates",
+    "workspaceOverrides": "Workspace Overrides",
+    "staffProfiles": "Staff Profiles",
+    "capabilities": "Capabilities",
+    "recipes": "Playbooks",
+    "lanes": "Tool Lanes",
+    "connections": "Connected Apps",
+    "databases": "Knowledge / Data Sources",
+    "aiSupport": "AI Brain",
+    "qualityGates": "QA Gates",
+    "outputTemplates": "Output Templates",
+    "kpis": "KPIs",
+    "reportDefinitions": "Report Definitions",
+}
+
+EDITABLE_FABRIC_COLLECTIONS = set(FABRIC_COLLECTION_LABELS)
 
 APPLICATION_PACKAGES_DIR = ROOT_DIR / "Application Packages"
 APPROVED_STYLE_QA_STATUSES = {
@@ -175,6 +199,26 @@ def init_db() -> None:
               completed_at REAL,
               result TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS department_versions (
+              version_id TEXT PRIMARY KEY,
+              object_type TEXT NOT NULL,
+              object_id TEXT NOT NULL,
+              action TEXT NOT NULL,
+              before_payload TEXT NOT NULL DEFAULT '',
+              after_payload TEXT NOT NULL DEFAULT '',
+              created_at REAL NOT NULL,
+              created_by TEXT NOT NULL DEFAULT 'Human_Iman',
+              reason TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS backup_runs (
+              backup_id TEXT PRIMARY KEY,
+              created_at REAL NOT NULL,
+              status TEXT NOT NULL,
+              path TEXT NOT NULL DEFAULT '',
+              included TEXT NOT NULL DEFAULT '',
+              error TEXT NOT NULL DEFAULT '',
+              notes TEXT NOT NULL DEFAULT ''
+            );
             CREATE INDEX IF NOT EXISTS idx_task_threads_responsible
               ON task_threads (responsible, status, archived, last_message_at);
             CREATE INDEX IF NOT EXISTS idx_task_threads_task
@@ -185,6 +229,10 @@ def init_db() -> None:
               ON skill_updates (status, staff_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_staff_wakeups_staff
               ON staff_wakeups (staff_id, status, run_after);
+            CREATE INDEX IF NOT EXISTS idx_department_versions_object
+              ON department_versions (object_type, object_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_backup_runs_created
+              ON backup_runs (created_at);
             """
         )
     if not get_meta("autopilot_enabled"):
@@ -335,6 +383,305 @@ def record_worker_run(mode: str, status: str, action: str, result: Any, notes: s
                 notes[:2000],
             ),
         )
+
+
+def json_clone(value: Any) -> Any:
+    return json.loads(json.dumps(value, default=str))
+
+
+def default_staff_profiles() -> list[dict[str, Any]]:
+    titles = {
+        "AIstaff_Manager": "Department Manager",
+        "AIstaff_OpportunityHunter": "Opportunity Research Specialist",
+        "AIstaff_FitAnalyst": "Fit And Eligibility Analyst",
+        "AIstaff_ProfessorResearchAnalyst": "Professor Research Specialist",
+        "AIstaff_ApplicationPackMaker": "Application Package Specialist",
+        "AIstaff_ApplicationPackSender": "Outreach Safety Specialist",
+        "AIstaff_FollowUpController": "Follow-up Coordinator",
+        "AIstaff_CRMController": "CRM Operations Controller",
+    }
+    levels = {
+        "AIstaff_Manager": "Expert",
+        "AIstaff_OpportunityHunter": "Senior",
+        "AIstaff_FitAnalyst": "Senior",
+        "AIstaff_ProfessorResearchAnalyst": "Expert",
+        "AIstaff_ApplicationPackMaker": "Specialist",
+        "AIstaff_ApplicationPackSender": "Senior",
+        "AIstaff_FollowUpController": "Junior",
+        "AIstaff_CRMController": "Senior",
+    }
+    rows = [
+        {
+            "id": "Human_Iman",
+            "label": "Iman / Human",
+            "alias": "Iman",
+            "profileTitle": "Department Owner / Human Manager",
+            "role": "Human Manager",
+            "managerId": "",
+            "contactPolicy": "Human gives instructions only to AI Manager.",
+            "avatarKind": "human-owner",
+            "workspaceEditable": False,
+            "locked": True,
+        },
+        {
+            "id": "AIstaff_Manager",
+            "label": "AI Manager",
+            "alias": DEFAULT_STAFF_ALIASES["AIstaff_Manager"],
+            "profileTitle": titles["AIstaff_Manager"],
+            "role": "Department Manager",
+            "managerId": "Human_Iman",
+            "intelligenceLevel": levels["AIstaff_Manager"],
+            "contactPolicy": "Only AI Manager communicates directly with the human manager.",
+            "avatarKind": "human-ai",
+            "workspaceEditable": True,
+            "locked": False,
+        },
+    ]
+    for staff_id, alias in DEFAULT_STAFF_ALIASES.items():
+        if staff_id == "AIstaff_Manager":
+            continue
+        rows.append(
+            {
+                "id": staff_id,
+                "label": staff_id.replace("AIstaff_", "").replace("_", " "),
+                "alias": alias,
+                "profileTitle": titles.get(staff_id, "AI Specialist"),
+                "role": "Specialist AI Staff",
+                "managerId": "AIstaff_Manager",
+                "intelligenceLevel": levels.get(staff_id, "Senior"),
+                "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+                "avatarKind": "abstract-ai",
+                "workspaceEditable": True,
+                "locked": False,
+            }
+        )
+    return rows
+
+
+def default_output_templates() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "output_verified_opportunity",
+            "label": "Verified Opportunity Record",
+            "ownerStaff": "AIstaff_OpportunityHunter",
+            "requiredSections": ["Official source", "Funding/deadline", "Eligibility", "Why it fits"],
+            "storage": "Opportunity, Links, Professor Research Fit",
+            "qualityGates": ["gate_official_evidence", "gate_no_duplicate_opportunity"],
+            "workspaceEditable": True,
+        },
+        {
+            "id": "output_application_package",
+            "label": "Application Package",
+            "ownerStaff": "AIstaff_ApplicationPackMaker",
+            "requiredSections": ["Academic CV", "Research proposal/concept note", "SOP/motivation", "Publication list", "Checklist"],
+            "storage": "Drive package folder and Application Packages / Package Files rows",
+            "qualityGates": ["gate_document_template_style", "gate_professor_specificity", "gate_package_folder_registered"],
+            "workspaceEditable": True,
+        },
+        {
+            "id": "output_supervisor_email",
+            "label": "Supervisor Outreach Email",
+            "ownerStaff": "AIstaff_ApplicationPackSender",
+            "requiredSections": ["Recipient", "Subject", "Personalized body", "Verified attachments", "Safety result"],
+            "storage": "Email Send Queue and task/thread evidence",
+            "qualityGates": ["gate_content_safety", "gate_package_completeness", "gate_attachment_access", "gate_duplicate_recipient"],
+            "workspaceEditable": True,
+        },
+        {
+            "id": "output_operating_report",
+            "label": "Manager Operating Report",
+            "ownerStaff": "AIstaff_Manager",
+            "requiredSections": ["Do first", "KPI progress", "Applications", "AI staff", "System health"],
+            "storage": "Reports page and AI Staff Reports",
+            "qualityGates": ["gate_kpi_progress", "gate_no_hidden_blocker"],
+            "workspaceEditable": True,
+        },
+    ]
+
+
+def default_report_definitions() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "report_manager_operating_view",
+            "label": "Manager Operating Report",
+            "purpose": "Explain what is happening, why it matters, and the next action.",
+            "sections": ["Do First", "KPI Progress", "Applications", "AI Staff", "System Health"],
+            "defaultPeriod": "Last 7 days",
+            "workspaceEditable": True,
+        },
+        {
+            "id": "report_department_health",
+            "label": "Department Health",
+            "purpose": "Show sync health, stale work, blockers, and backup/version state.",
+            "sections": ["System Health", "Blocked Work", "Backups", "Version History"],
+            "defaultPeriod": "Today",
+            "workspaceEditable": True,
+        },
+    ]
+
+
+def default_kpis() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "kpi_weekly_verified_opportunities",
+            "label": "Verified Opportunities",
+            "periodType": "Weekly",
+            "targetUnit": "Opportunities",
+            "targetCount": 10,
+            "minimumEvidenceLevel": "Official source required",
+            "ownerStaff": "AIstaff_OpportunityHunter",
+            "workspaceEditable": True,
+        },
+        {
+            "id": "kpi_weekly_application_packages",
+            "label": "Complete Application Packages",
+            "periodType": "Weekly",
+            "targetUnit": "Packages",
+            "targetCount": 2,
+            "minimumEvidenceLevel": "Package folder + QA gates passed",
+            "ownerStaff": "AIstaff_ApplicationPackMaker",
+            "workspaceEditable": True,
+        },
+        {
+            "id": "kpi_followup_compliance",
+            "label": "Follow-up Compliance",
+            "periodType": "Weekly",
+            "targetUnit": "Percent",
+            "targetCount": 100,
+            "minimumEvidenceLevel": "No active AI-owned entity without due follow-up",
+            "ownerStaff": "AIstaff_FollowUpController",
+            "workspaceEditable": True,
+        },
+    ]
+
+
+def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, list[dict[str, Any]] | dict[str, Any]]:
+    return {
+        "workspaces": [
+            {
+                "id": "workspace_iman_swiss_planner",
+                "label": "Iman Najafi Workspace",
+                "owner": "Human_Iman",
+                "members": ["Human_Iman"],
+                "status": "Active",
+                "workspaceEditable": True,
+            }
+        ],
+        "departments": [
+            {
+                "id": "department_swiss_planner_applications",
+                "label": "Swiss Planner Application Department",
+                "workspaceId": "workspace_iman_swiss_planner",
+                "templateId": "template_swiss_planner_application_department",
+                "humanManager": "Human_Iman",
+                "aiManager": "AIstaff_Manager",
+                "status": "Active",
+                "workspaceEditable": True,
+            }
+        ],
+        "departmentTemplates": [
+            {
+                "id": "template_swiss_planner_application_department",
+                "label": "Swiss Planner Application Department",
+                "purpose": "Find, evaluate, prepare, send, and follow up funded PhD/MSc applications.",
+                "solutionModuleId": "solution_swiss_planner_apply_department",
+                "capabilities": [row.get("id") for row in fabric.get("capabilities", []) or [] if isinstance(row, dict)],
+                "staffProfiles": [row.get("id") for row in default_staff_profiles()],
+                "status": "Active",
+                "locked": True,
+                "workspaceEditable": False,
+            },
+            {
+                "id": "template_sales_research_department_sample",
+                "label": "Sample Sales Research Department",
+                "purpose": "Sample reusable department template proving the platform is not Swiss Planner-only.",
+                "solutionModuleId": "solution_sample_sales_research_department",
+                "capabilities": ["opportunity_discovery", "fit_assessment", "workflow_automation"],
+                "staffProfiles": ["Human_Iman", "AIstaff_Manager", "AIstaff_OpportunityHunter", "AIstaff_FitAnalyst", "AIstaff_CRMController"],
+                "status": "Sample",
+                "locked": False,
+                "workspaceEditable": True,
+            },
+        ],
+        "workspaceOverrides": [
+            {
+                "id": "override_iman_swiss_planner",
+                "workspaceId": "workspace_iman_swiss_planner",
+                "departmentId": "department_swiss_planner_applications",
+                "humanManager": "Human_Iman",
+                "aiManagerAlias": DEFAULT_STAFF_ALIASES["AIstaff_Manager"],
+                "defaultLanguage": "English/Persian mixed accepted",
+                "status": "Active",
+                "workspaceEditable": True,
+            }
+        ],
+        "staffProfiles": default_staff_profiles(),
+        "outputTemplates": default_output_templates(),
+        "kpis": default_kpis(),
+        "reportDefinitions": default_report_definitions(),
+        "governance": {
+            "lockedPlatformRules": [
+                "Thread replies never send email by themselves.",
+                "Only AI Manager creates human-facing tasks.",
+                "External sends require queue approval, content safety, package completeness, and attachment verification.",
+            ],
+            "workspaceEditableRules": [
+                "Staff aliases and avatars",
+                "Workspace operating notes",
+                "Tool assignments and non-locked QA gates",
+                "Output templates and KPI targets",
+            ],
+            "versioning": "Every designer save writes a Department Version row.",
+            "backupPolicy": "Create a local backup before major config changes.",
+            "learningPolicy": "Approved human learning is added only after explicit approval.",
+        },
+        "permissions": {
+            "workspaceOwner": ["view", "message_manager", "edit_workspace_rules", "approve_learning", "backup", "rollback"],
+            "workspaceAdmin": ["view", "message_manager", "edit_workspace_rules", "approve_learning", "backup"],
+            "workspaceDeveloper": ["view", "message_manager", "edit_workspace_rules", "connector_config", "backup"],
+            "member": ["view", "message_manager"],
+            "viewer": ["view"],
+        },
+    }
+
+
+def merge_default_rows(existing: list[Any], defaults: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = [row for row in (existing or []) if isinstance(row, dict)]
+    ids = {str(row.get("id")) for row in rows if row.get("id")}
+    for default in defaults:
+        if str(default.get("id")) not in ids:
+            rows.append(json_clone(default))
+            ids.add(str(default.get("id")))
+    return rows
+
+
+def normalize_capability_fabric(fabric: dict[str, Any]) -> dict[str, Any]:
+    fabric = json_clone(fabric or {})
+    defaults = default_department_platform_objects(fabric)
+    for collection, default_rows in defaults.items():
+        if isinstance(default_rows, list):
+            fabric[collection] = merge_default_rows(fabric.get(collection, []), default_rows)
+        elif collection not in fabric or not isinstance(fabric.get(collection), dict):
+            fabric[collection] = json_clone(default_rows)
+    if not any(row.get("id") == "solution_sample_sales_research_department" for row in fabric.get("solutionModules", []) if isinstance(row, dict)):
+        fabric.setdefault("solutionModules", []).append(
+            {
+                "id": "solution_sample_sales_research_department",
+                "label": "Sample Sales Research Department",
+                "summary": "Reusable sample department template for lead discovery, fit review, and CRM follow-up.",
+                "owner": "AIstaff_Manager",
+                "lifecycleStatus": "Sample",
+                "modulesUsing": ["AI Department Platform Core"],
+                "operatingRule": "Department -> Capability -> Playbook -> Work Step -> Tool Lane -> QA Gate -> Output.",
+                "locked": False,
+                "workspaceEditable": True,
+            }
+        )
+    fabric.setdefault("schemaVersion", "1.0")
+    fabric.setdefault("architecture", "Capability Orchestration Fabric")
+    fabric.setdefault("status", "Active")
+    fabric.setdefault("lastReviewed", time.strftime("%Y-%m-%d", time.localtime()))
+    return fabric
 
 
 def validate_capability_fabric(fabric: dict[str, Any]) -> list[str]:
@@ -567,6 +914,7 @@ def load_capability_fabric() -> dict[str, Any]:
             "automations": [],
             "operatingNotes": {},
         }
+    fabric = normalize_capability_fabric(fabric)
     errors = validate_capability_fabric(fabric)
     if not isinstance(fabric.get("operatingNotes"), dict):
         fabric["operatingNotes"] = {}
@@ -581,6 +929,12 @@ def load_capability_fabric() -> dict[str, Any]:
         "databases": len(fabric.get("databases", []) or []),
         "aiSupport": len(fabric.get("aiSupport", []) or []),
         "qualityGates": len(fabric.get("qualityGates", []) or []),
+        "departmentTemplates": len(fabric.get("departmentTemplates", []) or []),
+        "departments": len(fabric.get("departments", []) or []),
+        "staffProfiles": len(fabric.get("staffProfiles", []) or []),
+        "outputTemplates": len(fabric.get("outputTemplates", []) or []),
+        "kpis": len(fabric.get("kpis", []) or []),
+        "reportDefinitions": len(fabric.get("reportDefinitions", []) or []),
         "automations": len(fabric.get("automations", []) or []),
         "operatingNotes": len(fabric.get("operatingNotes", {}) or {}),
         "errors": len(errors),
@@ -618,6 +972,7 @@ def write_fabric_note(payload: dict[str, Any]) -> dict[str, Any]:
         fabric = json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8"))
     except Exception as exc:
         return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+    fabric = normalize_capability_fabric(fabric)
     if not isinstance(fabric.get("operatingNotes"), dict):
         fabric["operatingNotes"] = {}
     fabric["operatingNotes"][section] = content.replace("\r\n", "\n")
@@ -625,8 +980,404 @@ def write_fabric_note(payload: dict[str, Any]) -> dict[str, Any]:
     errors = validate_capability_fabric(fabric)
     if errors:
         return {"ok": False, "error": "Capability fabric validation failed.", "errors": errors}
+    record_department_version(
+        object_type="operatingNotes",
+        object_id=section,
+        action="Update operating note",
+        before_payload={section: (load_capability_fabric().get("operatingNotes") or {}).get(section, "")},
+        after_payload={section: content.replace("\r\n", "\n")},
+        created_by=str(payload.get("updatedBy") or "Human_Iman"),
+        reason=str(payload.get("reason") or "Department settings note updated."),
+    )
     CAPABILITY_FABRIC_PATH.write_text(json.dumps(fabric, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return read_fabric_note(section)
+
+
+def record_department_version(
+    object_type: str,
+    object_id: str,
+    action: str,
+    before_payload: Any,
+    after_payload: Any,
+    created_by: str = "Human_Iman",
+    reason: str = "",
+) -> dict[str, Any]:
+    init_db()
+    version_id = "version_" + str(uuid.uuid4())
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO department_versions (
+              version_id, object_type, object_id, action, before_payload, after_payload,
+              created_at, created_by, reason
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                version_id,
+                object_type,
+                object_id,
+                action,
+                json.dumps(before_payload, ensure_ascii=False, default=str),
+                json.dumps(after_payload, ensure_ascii=False, default=str),
+                utc_ts(),
+                created_by or "Human_Iman",
+                reason or "",
+            ),
+        )
+    return {"ok": True, "versionId": version_id}
+
+
+def list_department_versions(limit: int = 80) -> dict[str, Any]:
+    init_db()
+    safe_limit = max(1, min(int(limit or 80), 250))
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM department_versions ORDER BY created_at DESC LIMIT ?",
+            (safe_limit,),
+        ).fetchall()
+    return {
+        "ok": True,
+        "versions": [
+            {
+                "versionId": row["version_id"],
+                "objectType": row["object_type"],
+                "objectId": row["object_id"],
+                "action": row["action"],
+                "createdAt": iso_like(row["created_at"]),
+                "createdBy": row["created_by"],
+                "reason": row["reason"],
+                "beforePayload": row["before_payload"],
+                "afterPayload": row["after_payload"],
+            }
+            for row in rows
+        ],
+    }
+
+
+def collection_rows(fabric: dict[str, Any], collection: str) -> list[dict[str, Any]]:
+    rows = fabric.setdefault(collection, [])
+    if not isinstance(rows, list):
+        fabric[collection] = []
+        rows = fabric[collection]
+    return rows
+
+
+def find_collection_item(rows: list[dict[str, Any]], object_id: str) -> tuple[int, dict[str, Any] | None]:
+    for index, row in enumerate(rows):
+        if isinstance(row, dict) and str(row.get("id")) == str(object_id):
+            return index, row
+    return -1, None
+
+
+def write_capability_fabric(fabric: dict[str, Any]) -> dict[str, Any]:
+    fabric = normalize_capability_fabric(fabric)
+    fabric["lastReviewed"] = time.strftime("%Y-%m-%d", time.localtime())
+    errors = validate_capability_fabric(fabric)
+    if errors:
+        return {"ok": False, "error": "Capability fabric validation failed.", "errors": errors}
+    CAPABILITY_FABRIC_PATH.write_text(json.dumps(fabric, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return {"ok": True, "capabilityFabric": load_capability_fabric()}
+
+
+def upsert_fabric_object(payload: dict[str, Any]) -> dict[str, Any]:
+    collection = str(payload.get("collection") or "").strip()
+    item = payload.get("item")
+    if collection not in EDITABLE_FABRIC_COLLECTIONS:
+        return {"ok": False, "error": f"Unsupported designer collection: {collection}"}
+    if not isinstance(item, dict):
+        return {"ok": False, "error": "Designer save requires an object."}
+    object_id = str(item.get("id") or payload.get("objectId") or "").strip()
+    if not object_id:
+        return {"ok": False, "error": "Object must include an id."}
+    try:
+        fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+    rows = collection_rows(fabric, collection)
+    index, existing = find_collection_item(rows, object_id)
+    if existing and existing.get("locked") and not payload.get("allowLocked"):
+        return {
+            "ok": False,
+            "error": f"{FABRIC_COLLECTION_LABELS.get(collection, collection)} item {object_id} is platform-locked.",
+            "locked": True,
+        }
+    updated = json_clone(item)
+    updated["id"] = object_id
+    updated["updatedAt"] = iso_like()
+    updated["updatedBy"] = payload.get("updatedBy") or "Human_Iman"
+    action = "Update designer object" if existing else "Create designer object"
+    if index >= 0:
+        rows[index] = updated
+    else:
+        rows.append(updated)
+    backup = create_config_backup({"reason": f"Before {action}: {collection}/{object_id}", "notes": "Automatic pre-save backup."})
+    result = write_capability_fabric(fabric)
+    if not result.get("ok"):
+        return result
+    version = record_department_version(
+        object_type=collection,
+        object_id=object_id,
+        action=action,
+        before_payload=existing or {},
+        after_payload=updated,
+        created_by=str(payload.get("updatedBy") or "Human_Iman"),
+        reason=str(payload.get("reason") or ""),
+    )
+    result["version"] = version
+    result["backup"] = backup
+    return result
+
+
+def archive_fabric_object(payload: dict[str, Any]) -> dict[str, Any]:
+    collection = str(payload.get("collection") or "").strip()
+    object_id = str(payload.get("objectId") or payload.get("id") or "").strip()
+    if collection not in EDITABLE_FABRIC_COLLECTIONS:
+        return {"ok": False, "error": f"Unsupported designer collection: {collection}"}
+    if not object_id:
+        return {"ok": False, "error": "Missing objectId."}
+    try:
+        fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+    rows = collection_rows(fabric, collection)
+    index, existing = find_collection_item(rows, object_id)
+    if index < 0 or not existing:
+        return {"ok": False, "error": f"Object not found: {collection}/{object_id}"}
+    if existing.get("locked"):
+        return {"ok": False, "error": "Platform-locked objects cannot be archived from workspace settings.", "locked": True}
+    updated = {**existing, "lifecycleStatus": "Archived", "status": "Archived", "archived": True, "updatedAt": iso_like(), "updatedBy": payload.get("updatedBy") or "Human_Iman"}
+    rows[index] = updated
+    backup = create_config_backup({"reason": f"Before archive: {collection}/{object_id}", "notes": "Automatic pre-archive backup."})
+    result = write_capability_fabric(fabric)
+    if not result.get("ok"):
+        return result
+    version = record_department_version(
+        object_type=collection,
+        object_id=object_id,
+        action="Archive designer object",
+        before_payload=existing,
+        after_payload=updated,
+        created_by=str(payload.get("updatedBy") or "Human_Iman"),
+        reason=str(payload.get("reason") or ""),
+    )
+    result["version"] = version
+    result["backup"] = backup
+    return result
+
+
+def rollback_department_version(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    version_id = str(payload.get("versionId") or "").strip()
+    if not version_id:
+        return {"ok": False, "error": "Missing versionId."}
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM department_versions WHERE version_id = ?", (version_id,)).fetchone()
+    if not row:
+        return {"ok": False, "error": f"Version not found: {version_id}"}
+    collection = row["object_type"]
+    object_id = row["object_id"]
+    if collection not in EDITABLE_FABRIC_COLLECTIONS and collection != "operatingNotes":
+        return {"ok": False, "error": f"Cannot rollback unsupported object type: {collection}"}
+    if str(payload.get("confirmRollback") or "").strip().upper() != "ROLLBACK":
+        return {"ok": False, "error": "Rollback requires confirmRollback = ROLLBACK."}
+    before_payload = json.loads(row["before_payload"] or "{}")
+    try:
+        fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+    if collection == "operatingNotes":
+        notes = fabric.setdefault("operatingNotes", {})
+        previous = notes.get(object_id, "")
+        restored = before_payload.get(object_id, "") if isinstance(before_payload, dict) else ""
+        notes[object_id] = restored
+        current_before = {object_id: previous}
+        current_after = {object_id: restored}
+    else:
+        rows = collection_rows(fabric, collection)
+        index, existing = find_collection_item(rows, object_id)
+        if before_payload:
+            restored = json_clone(before_payload)
+            restored["updatedAt"] = iso_like()
+            restored["updatedBy"] = payload.get("updatedBy") or "Human_Iman"
+            if index >= 0:
+                rows[index] = restored
+            else:
+                rows.append(restored)
+            current_after = restored
+        else:
+            if index >= 0:
+                rows.pop(index)
+            current_after = {}
+        current_before = existing or {}
+    backup = create_config_backup({"reason": f"Before rollback: {version_id}", "notes": "Automatic pre-rollback backup."})
+    result = write_capability_fabric(fabric)
+    if not result.get("ok"):
+        return result
+    version = record_department_version(
+        object_type=collection,
+        object_id=object_id,
+        action=f"Rollback to {version_id}",
+        before_payload=current_before,
+        after_payload=current_after,
+        created_by=str(payload.get("updatedBy") or "Human_Iman"),
+        reason=str(payload.get("reason") or "Rollback requested from Department Designer."),
+    )
+    result["version"] = version
+    result["backup"] = backup
+    return result
+
+
+def backup_manifest_paths() -> list[Path]:
+    paths: list[Path] = []
+    if APPLICATION_PACKAGES_DIR.exists():
+        for candidate in APPLICATION_PACKAGES_DIR.rglob("*"):
+            if candidate.is_file() and "manifest" in candidate.name.lower():
+                paths.append(candidate)
+    return paths[:200]
+
+
+def create_config_backup(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = payload or {}
+    init_db()
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backup_id = "backup_" + time.strftime("%Y%m%d_%H%M%S", time.localtime()) + "_" + str(uuid.uuid4())[:8]
+    zip_path = BACKUP_DIR / f"{backup_id}.zip"
+    included: list[str] = []
+    try:
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            if CAPABILITY_FABRIC_PATH.exists():
+                archive.write(CAPABILITY_FABRIC_PATH, "swiss_planner_command_center/capability_fabric.json")
+                included.append("capability_fabric.json")
+            for suffix in ["", "-wal", "-shm"]:
+                db_file = Path(str(DB_PATH) + suffix)
+                if db_file.exists():
+                    archive.write(db_file, f"swiss_planner_command_center/{db_file.name}")
+                    included.append(db_file.name)
+            if STAFF_SKILL_DIR.exists():
+                for skill_file in [STAFF_SKILL_DIR / "SKILL.md", *list((STAFF_SKILL_DIR / "roles").glob("*.md"))]:
+                    if skill_file.exists():
+                        rel = "skills/swiss-planner-staff/" + str(skill_file.relative_to(STAFF_SKILL_DIR)).replace("\\", "/")
+                        archive.write(skill_file, rel)
+                        included.append(rel)
+            for manifest in backup_manifest_paths():
+                rel = "package_manifests/" + str(manifest.relative_to(ROOT_DIR)).replace("\\", "/")
+                archive.write(manifest, rel)
+                included.append(rel)
+        status = "Done"
+        error = ""
+    except Exception as exc:
+        status = "Error"
+        error = str(exc)
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO backup_runs (backup_id, created_at, status, path, included, error, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                backup_id,
+                utc_ts(),
+                status,
+                str(zip_path),
+                json.dumps(included, ensure_ascii=False),
+                error,
+                str(payload.get("reason") or payload.get("notes") or ""),
+            ),
+        )
+    return {
+        "ok": status == "Done",
+        "backupId": backup_id,
+        "status": status,
+        "path": str(zip_path),
+        "included": included,
+        "error": error,
+    }
+
+
+def list_backups(limit: int = 50) -> dict[str, Any]:
+    init_db()
+    safe_limit = max(1, min(int(limit or 50), 200))
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM backup_runs ORDER BY created_at DESC LIMIT ?",
+            (safe_limit,),
+        ).fetchall()
+    return {
+        "ok": True,
+        "backups": [
+            {
+                "backupId": row["backup_id"],
+                "createdAt": iso_like(row["created_at"]),
+                "status": row["status"],
+                "path": row["path"],
+                "included": json.loads(row["included"] or "[]"),
+                "error": row["error"],
+                "notes": row["notes"],
+            }
+            for row in rows
+        ],
+    }
+
+
+def restore_config_backup(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    if str(payload.get("confirmRestore") or "").strip().upper() != "RESTORE":
+        return {"ok": False, "error": "Restore requires confirmRestore = RESTORE."}
+    backup_id = str(payload.get("backupId") or "").strip()
+    path = str(payload.get("path") or "").strip()
+    if backup_id and not path:
+        with connect() as conn:
+            row = conn.execute("SELECT path FROM backup_runs WHERE backup_id = ?", (backup_id,)).fetchone()
+        if row:
+            path = row["path"]
+    if not path:
+        return {"ok": False, "error": "Missing backupId or path."}
+    zip_path = Path(path).resolve()
+    backup_root = BACKUP_DIR.resolve()
+    if backup_root not in zip_path.parents and zip_path != backup_root:
+        return {"ok": False, "error": "Restore path must be inside the local backups folder."}
+    if not zip_path.exists():
+        return {"ok": False, "error": f"Backup file not found: {zip_path}"}
+    pre_restore = create_config_backup({"reason": "Automatic backup before restore."})
+    try:
+        with zipfile.ZipFile(zip_path, "r") as archive:
+            raw = archive.read("swiss_planner_command_center/capability_fabric.json").decode("utf-8")
+            restored_fabric = normalize_capability_fabric(json.loads(raw))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not read fabric from backup: {exc}", "preRestoreBackup": pre_restore}
+    current = load_capability_fabric()
+    result = write_capability_fabric(restored_fabric)
+    if not result.get("ok"):
+        return {**result, "preRestoreBackup": pre_restore}
+    record_department_version(
+        object_type="capability_fabric",
+        object_id=str(backup_id or zip_path.name),
+        action="Restore fabric backup",
+        before_payload=current,
+        after_payload=restored_fabric,
+        created_by=str(payload.get("updatedBy") or "Human_Iman"),
+        reason=str(payload.get("reason") or "Restore requested from Department Designer."),
+    )
+    result["preRestoreBackup"] = pre_restore
+    return result
+
+
+def department_config() -> dict[str, Any]:
+    fabric = load_capability_fabric()
+    return {
+        "ok": True,
+        "capabilityFabric": fabric,
+        "collections": [
+            {"key": key, "label": label, "count": len(fabric.get(key, []) or [])}
+            for key, label in FABRIC_COLLECTION_LABELS.items()
+            if isinstance(fabric.get(key, []), list)
+        ],
+        "governance": fabric.get("governance") or {},
+        "permissions": fabric.get("permissions") or {},
+        "versions": list_department_versions(25).get("versions", []),
+        "backups": list_backups(15).get("backups", []),
+    }
 
 
 def capability_fabric_manager_context() -> dict[str, Any]:
