@@ -1557,6 +1557,18 @@ def document_quality_status(max_issues: int = 40) -> dict[str, Any]:
         manifest_path = warning_path.parent / "deep_package_manifest.json"
         if str(manifest_path) in seen:
             continue
+        marker = warning_path.parent / "STYLE_QA_APPROVED.txt"
+        if marker.exists():
+            continue
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig", errors="ignore"))
+                quality = manifest.get("document_quality") or {}
+                status = quality.get("style_quality_status") or quality.get("styleQualityStatus") or ""
+                if approved_style_status(status):
+                    continue
+            except Exception:
+                pass
         issues.append(
             {
                 "kind": "Document Template Style",
@@ -3162,6 +3174,263 @@ def queue_manager_routed_task(
     return queue_action("appendAiStaffTask", payload, method="POST", sync_online=False)
 
 
+def handoff_blocker_route(source_staff: str, source: dict[str, Any], body: str) -> tuple[str, str, str] | None:
+    text = normalize_text(
+        compact_join(
+            [
+                body,
+                source.get("nextAction") or "",
+                source.get("resultNotes") or "",
+                source.get("lastError") or "",
+                source.get("failureStatus") or "",
+                source.get("status") or "",
+            ]
+        )
+    )
+    blocker_terms = [
+        "blocked",
+        "failed",
+        "missing",
+        "incomplete",
+        "not approved",
+        "attachment verification",
+        "access failed",
+        "duplicate recipient",
+        "repeated professor",
+        "needs approval",
+        "needs human review",
+        "style not approved",
+        "template style",
+        "cancelled",
+        "no further action",
+    ]
+    if not any(term in text for term in blocker_terms):
+        return None
+    if source_staff == "AIstaff_ApplicationPackSender" and any(
+        term in text for term in ["package incomplete", "missing file", "attachment", "document", "style", "template"]
+    ):
+        return "AIstaff_ApplicationPackMaker", "Package QA", TASK_CATEGORIES["application"]
+    if source_staff == "AIstaff_ApplicationPackMaker" and any(term in text for term in ["attachment", "folder", "drive", "package file"]):
+        return "AIstaff_CRMController", "CRM Health", TASK_CATEGORIES["audit"]
+    if source_staff == "AIstaff_OpportunityHunter" and any(term in text for term in ["eligibility", "deadline", "funding", "duplicate"]):
+        return "AIstaff_FitAnalyst", "Fit Review", TASK_CATEGORIES["research"]
+    if source_staff == "AIstaff_FitAnalyst" and any(term in text for term in ["professor", "supervisor", "evidence"]):
+        return "AIstaff_ProfessorResearchAnalyst", "Professor Research", TASK_CATEGORIES["research"]
+    if any(term in text for term in ["sync", "webhook", "token", "bridge", "crm", "apps script", "database"]):
+        return "AIstaff_CRMController", "CRM Health", TASK_CATEGORIES["audit"]
+    return "AIstaff_Manager", "Manager Guidance", TASK_CATEGORIES["manager"]
+
+
+def next_staff_after_completed_staff(source_staff: str, source: dict[str, Any] | None = None, body: str = "") -> tuple[str, str, str]:
+    source_staff = normalized_staff_id(source_staff, "AIstaff_Manager")
+    source = source or {}
+    blocker_route = handoff_blocker_route(source_staff, source, body)
+    if blocker_route:
+        return blocker_route
+    if source_staff == "AIstaff_OpportunityHunter":
+        return "AIstaff_FitAnalyst", "Fit Review", TASK_CATEGORIES["research"]
+    if source_staff == "AIstaff_FitAnalyst":
+        return "AIstaff_ProfessorResearchAnalyst", "Professor Research", TASK_CATEGORIES["research"]
+    if source_staff == "AIstaff_ProfessorResearchAnalyst":
+        return "AIstaff_ApplicationPackMaker", "Package", TASK_CATEGORIES["application"]
+    if source_staff == "AIstaff_ApplicationPackMaker":
+        return "AIstaff_ApplicationPackSender", "Outreach", TASK_CATEGORIES["email"]
+    if source_staff == "AIstaff_ApplicationPackSender":
+        return "AIstaff_FollowUpController", "Follow-up", TASK_CATEGORIES["audit"]
+    if source_staff == "AIstaff_FollowUpController":
+        return "AIstaff_CRMController", "CRM Health", TASK_CATEGORIES["audit"]
+    if source_staff == "AIstaff_CRMController":
+        return "AIstaff_Manager", "Manager Guidance", TASK_CATEGORIES["manager"]
+    category = source.get("taskCategory") or source.get("Task Category") or TASK_CATEGORIES["manager"]
+    return "AIstaff_Manager", "Manager Guidance", str(category)
+
+
+def next_staff_for_manager_self_task(source: dict[str, Any], body: str) -> tuple[str, str, str]:
+    text = normalize_text(
+        compact_join(
+            [
+                body,
+                source.get("taskType") or "",
+                source.get("taskCategory") or "",
+                source.get("nextAction") or "",
+                source.get("completionCriteria") or "",
+                source.get("resultNotes") or "",
+                source.get("lastError") or "",
+            ]
+        )
+    )
+    if (
+        "review task needing approval and either approve, reassign, or close" in text
+        or "review follow up: this task requires codex/human work outside apps script: review task needing approval" in text
+    ):
+        return "AIstaff_Manager", "Manager Guidance", TASK_CATEGORIES["manager"]
+    route_text = text
+    for safety_phrase in [
+        "do not send external email",
+        "do not send",
+        "no email is sent",
+        "no email was sent",
+        "will not send any email",
+        "replying does not send",
+        "never send email",
+    ]:
+        route_text = route_text.replace(safety_phrase, "")
+    if any(term in text for term in ["crm", "sync", "audit", "health", "webhook", "apps script", "token", "database", "technical"]):
+        return "AIstaff_CRMController", "CRM Health", TASK_CATEGORIES["audit"]
+    if any(term in route_text for term in ["follow", "reply", "waiting", "response"]):
+        return "AIstaff_FollowUpController", "Follow-up", TASK_CATEGORIES["audit"]
+    if any(term in route_text for term in ["email queue", "blocked email", "queue row", "attachment", "recipient", "outreach", "gmail", "send queue", "process queue"]):
+        return "AIstaff_ApplicationPackSender", "Outreach", TASK_CATEGORIES["email"]
+    if any(term in route_text for term in ["professor", "supervisor", "publication", "research fit"]):
+        return "AIstaff_ProfessorResearchAnalyst", "Professor Research", TASK_CATEGORIES["research"]
+    if any(term in route_text for term in ["fit", "eligibility", "shortlist", "score", "priorit"]):
+        return "AIstaff_FitAnalyst", "Fit Review", TASK_CATEGORIES["research"]
+    if any(term in route_text for term in ["package", "proposal", "cv", "resume", "sop", "document", "template", "style"]):
+        return "AIstaff_ApplicationPackMaker", "Package", TASK_CATEGORIES["application"]
+    if any(term in route_text for term in ["find", "opportunit", "phd", "msc", "research work"]):
+        return "AIstaff_OpportunityHunter", "Research", TASK_CATEGORIES["research"]
+    return "AIstaff_Manager", "Manager Guidance", TASK_CATEGORIES["manager"]
+
+
+def manager_staff_handoff_decision(thread: sqlite3.Row | dict[str, Any], staff_body: str, sender_staff: str = "") -> dict[str, Any]:
+    source = source_payload_for_thread(thread)
+    source_staff = normalized_staff_id(sender_staff, "") or normalized_staff_id(source.get("sourceStaff") or row_value(thread, "source_staff"), "AIstaff_Manager")
+    route_staff, task_type, task_category = next_staff_after_completed_staff(source_staff, source, staff_body)
+    thread_id = str(row_value(thread, "thread_id") or row_value(thread, "threadId") or "")
+    source_task_id = source.get("sourceTaskId") or source.get("taskId") or row_value(thread, "task_id") or ""
+    next_action = source.get("nextAction") or staff_body or row_value(thread, "last_message_preview") or ""
+    if route_staff == "AIstaff_Manager":
+        reply = (
+            f"Thanks, {staff_label(source_staff)}. I reviewed the completed work and there is no automatic next specialist stage. "
+            "I will keep this as a manager-owned closure/blocker decision."
+        )
+        routed_action = ""
+    else:
+        reply = (
+            f"Thanks, {staff_label(source_staff)}. I reviewed the completed work and routed the next stage to "
+            f"{staff_label(route_staff)}. Iman is not being asked unless a real decision becomes necessary."
+        )
+        routed_action = (
+            f"Continue from Manager handoff {thread_id}. Source task: {source_task_id}. "
+            f"Completed staff result: {thread_preview(staff_body or next_action, 900)}. "
+            "Use the related application/opportunity evidence, update the task thread with the result, and report back to AIstaff_Manager when complete. "
+            "Do not send external email or submit a portal from this task."
+        )
+    return {
+        "reply": reply,
+        "intent": "staff_completion_handoff",
+        "createRoutedTask": route_staff not in {"", "AIstaff_Manager", "Human_Iman"},
+        "createFitReviewTask": False,
+        "routeStaff": route_staff,
+        "taskType": task_type,
+        "taskCategory": task_category,
+        "routedNextAction": routed_action,
+        "routedTaskReason": f"Alex routed completed work reported by {staff_label(source_staff)}.",
+        "confidence": 1,
+        "source": "staff_handoff_rules",
+    }
+
+
+def manager_self_task_decision(thread: sqlite3.Row | dict[str, Any], body: str) -> dict[str, Any]:
+    source = source_payload_for_thread(thread)
+    route_staff, task_type, task_category = next_staff_for_manager_self_task(source, body)
+    if route_staff == "AIstaff_Manager":
+        reply = (
+            "I reviewed this internal manager item. It does not have enough concrete routing information, so I will keep it manager-owned "
+            "until a clearer next action or human decision is available."
+        )
+        routed_action = ""
+    else:
+        reply = (
+            f"I reviewed this internal manager item and routed it to {staff_label(route_staff)}. "
+            "Iman is not being asked unless the next staff finds a real decision point."
+        )
+        routed_action = (
+            f"Handle Alex's internal review item from thread {row_value(thread, 'thread_id')}. "
+            f"Original request: {thread_preview(body or source.get('nextAction') or '', 900)}. "
+            "Complete or block with evidence, then report back to AIstaff_Manager."
+        )
+    return {
+        "reply": reply,
+        "intent": "manager_internal_routing",
+        "createRoutedTask": route_staff not in {"", "AIstaff_Manager", "Human_Iman"},
+        "createFitReviewTask": False,
+        "routeStaff": route_staff,
+        "taskType": task_type,
+        "taskCategory": task_category,
+        "routedNextAction": routed_action,
+        "routedTaskReason": "Alex routed an internal manager-owned review/audit item.",
+        "confidence": 1,
+        "source": "manager_self_rules",
+    }
+
+
+def append_manager_internal_reply(
+    conn: sqlite3.Connection,
+    thread: sqlite3.Row | dict[str, Any],
+    body: str,
+    unread_for: str = "None",
+) -> dict[str, Any]:
+    now = utc_ts()
+    message_id = "msg_" + str(uuid.uuid4())
+    thread_id = row_value(thread, "thread_id")
+    task_id = row_value(thread, "task_id")
+    conn.execute(
+        """
+        INSERT INTO thread_messages (
+          message_id, thread_id, task_id, sender_type, sender_id, sender_label,
+          body, language, created_at, read_by_human, read_by_staff, evidence_link, metadata
+        )
+        VALUES (?, ?, ?, 'AI Staff', 'AIstaff_Manager', ?, ?, 'natural', ?, 1, 1, '', ?)
+        """,
+        (
+            message_id,
+            thread_id,
+            task_id,
+            staff_label("AIstaff_Manager"),
+            body,
+            now,
+            json.dumps({"auto_manager_reply": True, "internal_staff_handoff": True}, default=str),
+        ),
+    )
+    conn.execute(
+        """
+        UPDATE task_threads
+        SET last_message_at = ?,
+            last_message_preview = ?,
+            unread_for = ?
+        WHERE thread_id = ?
+        """,
+        (now, thread_preview(body), unread_for, thread_id),
+    )
+    conn.execute(
+        """
+        UPDATE staff_wakeups
+        SET status = 'Completed',
+            completed_at = ?,
+            result = ?
+        WHERE thread_id = ?
+          AND staff_id = 'AIstaff_Manager'
+          AND status IN ('Queued', 'Presented')
+        """,
+        (now, "Manager handled specialist handoff.", thread_id),
+    )
+    return {
+        "messageId": message_id,
+        "threadId": thread_id,
+        "taskId": task_id,
+        "senderType": "AI Staff",
+        "senderId": "AIstaff_Manager",
+        "senderLabel": staff_label("AIstaff_Manager"),
+        "body": body,
+        "language": "natural",
+        "createdAt": iso_like(now),
+        "readByHuman": True,
+        "readByStaff": True,
+        "evidenceLink": "",
+    }
+
+
 def recent_thread_message_context(thread_id: str, limit: int = 10) -> list[dict[str, str]]:
     with connect() as conn:
         rows = conn.execute(
@@ -3513,6 +3782,7 @@ def process_manager_auto_replies(limit: int = 10, thread_id: str = "") -> dict[s
     replies: list[dict[str, Any]] = []
     followthrough_threads: list[tuple[str, str]] = []
     route_requests: list[tuple[dict[str, Any], str, dict[str, Any], str]] = []
+    staff_handoff_routes: list[tuple[dict[str, Any], str, dict[str, Any], str]] = []
     routed_tasks: list[dict[str, Any]] = []
     with connect() as conn:
         params: list[Any] = []
@@ -3543,22 +3813,37 @@ def process_manager_auto_replies(limit: int = 10, thread_id: str = "") -> dict[s
             ).fetchone()
             if not latest:
                 continue
-            if not (normalize_text(latest["sender_type"]).startswith("human") or is_human_responsible(latest["sender_id"])):
+            latest_is_human = normalize_text(latest["sender_type"]).startswith("human") or is_human_responsible(latest["sender_id"])
+            latest_staff = normalized_staff_id(latest["sender_id"], "")
+            latest_is_staff_handoff = latest_staff.startswith("AIstaff_") and latest_staff != "AIstaff_Manager"
+            latest_is_manager_self_task = latest_staff == "AIstaff_Manager"
+            if latest_is_human:
+                decision = manager_auto_reply_decision(thread, latest["body"] or "")
+                message = append_manager_reply(conn, thread, decision["reply"])
+            elif latest_is_staff_handoff:
+                decision = manager_staff_handoff_decision(thread, latest["body"] or "", latest_staff)
+                message = append_manager_internal_reply(conn, thread, decision["reply"])
+            elif latest_is_manager_self_task:
+                decision = manager_self_task_decision(thread, latest["body"] or "")
+                message = append_manager_internal_reply(conn, thread, decision["reply"])
+            else:
                 continue
-            decision = manager_auto_reply_decision(thread, latest["body"] or "")
-            message = append_manager_reply(conn, thread, decision["reply"])
             replies.append(message)
-            if manager_routed_task_should_create(decision):
+            if (latest_is_staff_handoff or latest_is_manager_self_task) and manager_routed_task_should_create(decision):
+                staff_handoff_routes.append((dict(thread), latest["body"] or "", decision, latest["message_id"] or ""))
+            elif manager_routed_task_should_create(decision):
                 route_requests.append((dict(thread), latest["body"] or "", decision, latest["message_id"] or ""))
-            if decision.get("createFitReviewTask") or is_full_process_request(latest["body"] or "") or (
+            if latest_is_human and (decision.get("createFitReviewTask") or is_full_process_request(latest["body"] or "") or (
                 is_false_cancel_correction(latest["body"] or "") and is_full_process_request(thread_text_blob(conn, thread["thread_id"], latest["body"] or ""))
-            ):
+            )):
                 followthrough_threads.append((thread["thread_id"], latest["body"] or ""))
             processed += 1
     followthrough: list[dict[str, Any]] = []
     for target_thread_id, body in followthrough_threads:
         followthrough.append(queue_full_process_followthrough(target_thread_id, body))
     for route_thread, body, decision, message_id in route_requests:
+        routed_tasks.append(queue_manager_routed_task(route_thread, body, decision, message_id))
+    for route_thread, body, decision, message_id in staff_handoff_routes:
         routed_tasks.append(queue_manager_routed_task(route_thread, body, decision, message_id))
     for message in replies:
         queue_action("appendAiStaffThreadMessage", message_sync_payload(message), method="POST", apply_snapshot=False, sync_online=False)
@@ -3576,27 +3861,42 @@ def process_manager_thread_now(thread_id: str) -> dict[str, Any]:
             SELECT *
             FROM thread_messages
             WHERE thread_id = ?
-              AND (sender_type = 'Human' OR sender_id IN ('Human_Iman', 'Human', 'Iman / Human'))
+              AND (
+                sender_type = 'Human'
+                OR sender_id IN ('Human_Iman', 'Human', 'Iman / Human')
+                OR (sender_id LIKE 'AIstaff_%' AND sender_id != 'AIstaff_Manager')
+              )
             ORDER BY created_at DESC
             LIMIT 1
             """,
             (thread_id,),
         ).fetchone()
         if not latest:
-            return {"ok": False, "error": "No human message found for Manager interpretation."}
+            return {"ok": False, "error": "No human or specialist message found for Manager interpretation."}
         thread_dict = dict(thread)
         latest_dict = dict(latest)
-    decision = manager_auto_reply_decision(thread_dict, latest_dict.get("body") or "")
+    latest_staff = normalized_staff_id(latest_dict.get("sender_id"), "")
+    latest_is_staff_handoff = latest_staff.startswith("AIstaff_") and latest_staff != "AIstaff_Manager"
+    latest_is_manager_self_task = latest_staff == "AIstaff_Manager"
+    if latest_is_staff_handoff:
+        decision = manager_staff_handoff_decision(thread_dict, latest_dict.get("body") or "", latest_staff)
+    elif latest_is_manager_self_task:
+        decision = manager_self_task_decision(thread_dict, latest_dict.get("body") or "")
+    else:
+        decision = manager_auto_reply_decision(thread_dict, latest_dict.get("body") or "")
     with connect() as conn:
         fresh_thread = conn.execute("SELECT * FROM task_threads WHERE thread_id = ?", (thread_id,)).fetchone()
         if not fresh_thread:
             return {"ok": False, "error": f"Thread not found after decision: {thread_id}"}
-        message = append_manager_reply(conn, fresh_thread, decision["reply"])
+        if latest_is_staff_handoff or latest_is_manager_self_task:
+            message = append_manager_internal_reply(conn, fresh_thread, decision["reply"])
+        else:
+            message = append_manager_reply(conn, fresh_thread, decision["reply"])
     routed = None
     if manager_routed_task_should_create(decision):
         routed = queue_manager_routed_task(thread_dict, latest_dict.get("body") or "", decision, latest_dict.get("message_id") or "")
     followthrough = None
-    if decision.get("createFitReviewTask") or is_full_process_request(latest_dict.get("body") or ""):
+    if not latest_is_staff_handoff and (decision.get("createFitReviewTask") or is_full_process_request(latest_dict.get("body") or "")):
         followthrough = queue_full_process_followthrough(thread_id, latest_dict.get("body") or "")
     queue_action("appendAiStaffThreadMessage", message_sync_payload(message), method="POST", apply_snapshot=False, sync_online=False)
     return {"ok": True, "processed": 1, "decision": decision, "reply": message, "routedTask": routed, "followthrough": followthrough}
@@ -4489,7 +4789,416 @@ def sync_pending_actions(bridge_call: BridgeCall, max_actions: int = 25) -> dict
     return {"synced": synced, "errors": errors, "processed": len(rows)}
 
 
+def task_lookup_value(row: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
+def is_completed_specialist_task(row: dict[str, Any]) -> bool:
+    assigned = normalized_staff_id(task_lookup_value(row, "assignedTo", "Assigned To"), "")
+    if not assigned.startswith("AIstaff_") or assigned == "AIstaff_Manager":
+        return False
+    task_id = task_lookup_value(row, "taskId", "Task ID")
+    text = normalize_text(
+        compact_join(
+            [
+                task_id,
+                task_lookup_value(row, "taskType", "Task Type"),
+                task_lookup_value(row, "taskCategory", "Task Category"),
+                task_lookup_value(row, "status", "Status"),
+                task_lookup_value(row, "priority", "Priority"),
+                task_lookup_value(row, "resultNotes", "Result Notes"),
+                task_lookup_value(row, "nextAction", "Next Action"),
+            ]
+        )
+    )
+    if any(term in text for term in ["smoke", "e2e", "process engine", "security rotate", "test only"]):
+        return False
+    status = normalize_text(task_lookup_value(row, "status", "Status"))
+    completed_at = task_lookup_value(row, "completedAt", "Completed At")
+    if status == "done":
+        return True
+    if completed_at and ("done" in status or "ready" in status or "prepared" in status or "sent" in status):
+        return True
+    return False
+
+
+def manager_handoff_recommendation(row: dict[str, Any], assigned: str) -> str:
+    result = compact_join(
+        [
+            task_lookup_value(row, "resultNotes", "Result Notes"),
+            task_lookup_value(row, "nextAction", "Next Action"),
+            task_lookup_value(row, "completionCriteria", "Completion Criteria"),
+        ]
+    ).lower()
+    if assigned == "AIstaff_OpportunityHunter":
+        return "Review the verified opportunities, pick the strongest viable leads, and create Fit Analyst tasks or Application rows for the candidates that should move forward."
+    if assigned == "AIstaff_FitAnalyst":
+        return "Confirm the shortlist decision, reject weak/expired cases, and route viable applications to Professor Research Analyst or Application Pack Maker."
+    if assigned == "AIstaff_ProfessorResearchAnalyst":
+        return "Check whether supervisor evidence is strong enough, then route the application to Package Maker or mark the research-fit blocker."
+    if assigned == "AIstaff_ApplicationPackMaker":
+        return "Check package completeness/style QA, then route verified packages to Application Pack Sender or return missing-document tasks."
+    if assigned == "AIstaff_ApplicationPackSender":
+        return "Check send outcome and safety status, then create a Follow-up Controller task or close the outreach path."
+    if assigned == "AIstaff_FollowUpController":
+        return "Review reply/follow-up outcome, update the application status, and create the next follow-up or closure decision."
+    if assigned == "AIstaff_CRMController":
+        return "Review CRM health output, clear stale blockers, and create the next operational task if any entity is still active."
+    if "next:" in result:
+        return "Read the staff result, extract the stated next step, and create the next staff task instead of leaving the work as a note."
+    return "Review the staff result and decide the next responsible staff, human question, or closure."
+
+
+def historical_completion_needs_manager_handoff(row: dict[str, Any], assigned: str) -> bool:
+    """Retrofit manager routing for completed specialist work created before handoff automation existed."""
+    text = normalize_text(
+        compact_join(
+            [
+                task_lookup_value(row, "resultNotes", "Result Notes"),
+                task_lookup_value(row, "nextAction", "Next Action"),
+                task_lookup_value(row, "completionCriteria", "Completion Criteria"),
+                task_lookup_value(row, "successStatus", "Success Status"),
+            ]
+        )
+    )
+    if "next:" in text or "next step" in text or "route" in text:
+        return True
+    if assigned == "AIstaff_OpportunityHunter":
+        return "opportunit" in text and any(term in text for term in ["added", "found", "complete", "verified"])
+    if assigned == "AIstaff_FitAnalyst":
+        return any(term in text for term in ["shortlist", "fit", "viable", "reject", "approved"])
+    if assigned == "AIstaff_ProfessorResearchAnalyst":
+        return any(term in text for term in ["professor", "supervisor", "research fit", "evidence"])
+    if assigned == "AIstaff_ApplicationPackMaker":
+        return any(term in text for term in ["package", "proposal", "cv", "sop", "uploaded", "prepared"])
+    if assigned == "AIstaff_ApplicationPackSender":
+        return any(term in text for term in ["sent", "blocked", "queue", "attachment", "reply"])
+    if assigned in {"AIstaff_FollowUpController", "AIstaff_CRMController"}:
+        return any(term in text for term in ["follow", "reply", "crm", "health", "blocked", "stale"])
+    return False
+
+
+def ensure_manager_handoffs_for_completed_staff_tasks(
+    snapshot: Dashboard | None,
+    previous_snapshot: Dashboard | None = None,
+    max_items: int = 8,
+) -> dict[str, Any]:
+    """Create Alex review tasks when specialist work completes with no next-stage owner."""
+    created: list[str] = []
+    skipped: list[str] = []
+    previous_terminal: set[str] = set()
+    for old in (previous_snapshot or {}).get("tasks", []) or []:
+        if not isinstance(old, dict):
+            continue
+        if is_completed_specialist_task(old):
+            old_source = task_lookup_value(old, "sourceTaskId", "Source Task ID") or task_lookup_value(old, "taskId", "Task ID")
+            if old_source:
+                previous_terminal.add(old_source)
+    for row in (snapshot or {}).get("tasks", []) or []:
+        if not isinstance(row, dict) or not is_completed_specialist_task(row):
+            continue
+        source_task_id = task_lookup_value(row, "sourceTaskId", "Source Task ID") or task_lookup_value(row, "taskId", "Task ID")
+        if not source_task_id:
+            continue
+        handoff_task_id = "staff_task_manager_handoff_" + safe_task_part(source_task_id)
+        if local_or_pending_task_exists(handoff_task_id):
+            skipped.append(source_task_id)
+            continue
+        assigned = normalized_staff_id(task_lookup_value(row, "assignedTo", "Assigned To"), "AIstaff_Manager")
+        is_new_completion = source_task_id not in previous_terminal
+        result_notes = compact_join(
+            [
+                task_lookup_value(row, "resultNotes", "Result Notes"),
+                task_lookup_value(row, "lastError", "Last Error"),
+            ]
+        )
+        if not is_new_completion and not historical_completion_needs_manager_handoff(row, assigned):
+            skipped.append(source_task_id)
+            continue
+        if len(created) >= max_items:
+            break
+        task_type = task_lookup_value(row, "taskType", "Task Type") or "Completed Work"
+        payload = {
+            "taskId": handoff_task_id,
+            "taskType": "Manager Handoff",
+            "taskCategory": TASK_CATEGORIES["manager"],
+            "taskTemplateId": "template_staff_completion_manager_handoff",
+            "assignedTo": "AIstaff_Manager",
+            "createdBy": assigned,
+            "sourceStaff": assigned,
+            "targetStaff": "AIstaff_Manager",
+            "entityId": task_lookup_value(row, "entityId", "EntityID"),
+            "relatedApplicationId": task_lookup_value(row, "applicationId", "ApplicationID", "Related ApplicationID"),
+            "relatedOpportunityId": task_lookup_value(row, "opportunityId", "Opportunity ID", "Related Opportunity ID"),
+            "priority": task_lookup_value(row, "priority", "Priority") or "High",
+            "runAfter": iso_like(),
+            "dueAt": iso_like(utc_ts() + 2 * 60 * 60),
+            "nextAction": (
+                f"{staff_label(assigned)} completed {task_type}. Review the result and decide the next pipeline action. "
+                + manager_handoff_recommendation(row, assigned)
+            ),
+            "completionCriteria": (
+                "Alex records the next owner and creates a downstream task, closes the path, or asks Iman only if a real human decision is needed."
+            ),
+            "successStatus": "Next Stage Routed",
+            "failureStatus": "Blocked - Manager Routing Needed",
+            "status": "Queued",
+            "evidenceLink": task_lookup_value(row, "evidenceLink", "Evidence Link"),
+            "resultNotes": compact_join(
+                [
+                    f"Source task: {source_task_id}",
+                    f"Staff result: {result_notes}",
+                    f"Completed at: {task_lookup_value(row, 'completedAt', 'Completed At')}",
+                ],
+                " | ",
+            ),
+            "threadId": task_lookup_value(row, "threadId", "ThreadID"),
+            "sourceTaskId": source_task_id,
+        }
+        queue_action("appendAiStaffTask", payload, method="POST", sync_online=False)
+        created.append(handoff_task_id)
+    return {"created": created, "skipped": skipped[:20], "createdCount": len(created)}
+
+
+def application_id_from_row(row: dict[str, Any]) -> str:
+    return task_lookup_value(row, "applicationId", "ApplicationID", "Application ID", "relatedApplicationId", "Related ApplicationID")
+
+
+def is_real_pipeline_application(row: dict[str, Any]) -> bool:
+    app_id = application_id_from_row(row)
+    text = normalize_text(
+        compact_join(
+            [
+                app_id,
+                task_lookup_value(row, "label", "Label", "applicationLabel"),
+                task_lookup_value(row, "currentStage", "Current Stage", "stage", "Stage"),
+                task_lookup_value(row, "currentStatus", "Current Status", "status", "Status"),
+                task_lookup_value(row, "notes", "Notes"),
+            ]
+        )
+    )
+    if not app_id or any(term in text for term in ["smoke", "e2e", "process engine", "test"]):
+        return False
+    terminal_terms = [
+        "cancelled",
+        "closed",
+        "no further action",
+        "completed",
+        "complete",
+        "done",
+        "do not pursue",
+        "rejected",
+    ]
+    return not any(term in text for term in terminal_terms)
+
+
+def task_belongs_to_application(row: dict[str, Any], app_id: str) -> bool:
+    if not app_id:
+        return False
+    direct = application_id_from_row(row)
+    entity = task_lookup_value(row, "entityId", "EntityID")
+    text = compact_join([direct, entity, task_lookup_value(row, "sourceTaskId", "Source Task ID")])
+    return app_id in text
+
+
+def is_open_pipeline_task(row: dict[str, Any]) -> bool:
+    if task_is_terminal(row):
+        return False
+    status = normalize_text(task_lookup_value(row, "status", "Status"))
+    if any(term in status for term in ["cancelled", "closed", "done", "sent", "submitted", "no further action"]):
+        return False
+    return bool(task_lookup_value(row, "taskId", "Task ID"))
+
+
+def active_task_for_application_exists(snapshot: Dashboard | None, app_id: str) -> bool:
+    for task in (snapshot or {}).get("tasks", []) or []:
+        if isinstance(task, dict) and is_open_pipeline_task(task) and task_belongs_to_application(task, app_id):
+            return True
+    return False
+
+
+def active_followup_for_application_exists(snapshot: Dashboard | None, app_id: str) -> bool:
+    if not app_id:
+        return False
+    for follow_up in (snapshot or {}).get("followUps", []) or []:
+        if not isinstance(follow_up, dict):
+            continue
+        status = normalize_text(task_lookup_value(follow_up, "status", "Status"))
+        active = normalize_text(task_lookup_value(follow_up, "active", "Active"))
+        if status in {"done", "closed", "cancelled", "no further action"} or active in {"false", "0", "no"}:
+            continue
+        text = compact_join(
+            [
+                task_lookup_value(follow_up, "applicationId", "ApplicationID", "relatedApplicationId", "Related ApplicationID"),
+                task_lookup_value(follow_up, "entityId", "EntityID"),
+                task_lookup_value(follow_up, "reason", "Reason"),
+                task_lookup_value(follow_up, "nextAction", "Next Action"),
+            ]
+        )
+        if app_id in text:
+            return True
+    return False
+
+
+def active_work_for_application_exists(snapshot: Dashboard | None, app_id: str) -> bool:
+    return active_task_for_application_exists(snapshot, app_id) or active_followup_for_application_exists(snapshot, app_id)
+
+
+def next_staff_for_application_stage(app: dict[str, Any]) -> tuple[str, str, str]:
+    text = normalize_text(
+        compact_join(
+            [
+                task_lookup_value(app, "currentStage", "Current Stage", "stage", "Stage"),
+                task_lookup_value(app, "currentStatus", "Current Status", "status", "Status"),
+                task_lookup_value(app, "notes", "Notes"),
+            ]
+        )
+    )
+    if any(term in text for term in ["sent", "waiting for reply", "reply received", "follow"]):
+        return "AIstaff_FollowUpController", "Follow-up", TASK_CATEGORIES["audit"]
+    if any(term in text for term in ["send ready", "outreach", "email", "attachment", "queue", "package verified"]):
+        return "AIstaff_ApplicationPackSender", "Outreach", TASK_CATEGORIES["email"]
+    if any(term in text for term in ["package", "proposal", "cv", "sop", "document", "portal submission prep"]):
+        return "AIstaff_ApplicationPackMaker", "Package", TASK_CATEGORIES["application"]
+    if any(term in text for term in ["professor", "supervisor", "research fit", "student outreach"]):
+        return "AIstaff_ProfessorResearchAnalyst", "Professor Research", TASK_CATEGORIES["research"]
+    if any(term in text for term in ["fit", "eligibility", "opportunity verified", "application created", "data gathering"]):
+        return "AIstaff_FitAnalyst", "Fit Review", TASK_CATEGORIES["research"]
+    return "AIstaff_Manager", "Manager Guidance", TASK_CATEGORIES["manager"]
+
+
+def pipeline_entry_work_exists(snapshot: Dashboard | None) -> bool:
+    entry_staff = {"AIstaff_OpportunityHunter", "AIstaff_FitAnalyst", "AIstaff_ProfessorResearchAnalyst"}
+    for task in (snapshot or {}).get("tasks", []) or []:
+        if not isinstance(task, dict) or not is_open_pipeline_task(task):
+            continue
+        assigned = normalized_staff_id(task_lookup_value(task, "assignedTo", "Assigned To"), "")
+        if assigned in entry_staff:
+            return True
+    wakeups = ((snapshot or {}).get("staffWakeups") or {}).get("byStaff") or {}
+    for staff_id in entry_staff:
+        try:
+            if int((wakeups.get(staff_id) or {}).get("queued") or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    for app in (snapshot or {}).get("applications", []) or []:
+        if not isinstance(app, dict) or not is_real_pipeline_application(app):
+            continue
+        stage = normalize_text(
+            compact_join(
+                [
+                    task_lookup_value(app, "currentStage", "Current Stage", "stage", "Stage"),
+                    task_lookup_value(app, "currentStatus", "Current Status", "status", "Status"),
+                ]
+            )
+        )
+        if any(term in stage for term in ["opportunity verified", "fit", "data gathering", "application created", "professor"]):
+            return True
+    return False
+
+
+def ensure_pipeline_continuity(snapshot: Dashboard | None, max_application_gaps: int = 3) -> dict[str, Any]:
+    created: list[str] = []
+    skipped: list[str] = []
+    for app in (snapshot or {}).get("applications", []) or []:
+        if not isinstance(app, dict) or not is_real_pipeline_application(app):
+            continue
+        app_id = application_id_from_row(app)
+        if not app_id:
+            continue
+        if active_work_for_application_exists(snapshot, app_id):
+            skipped.append(app_id)
+            continue
+        if len(created) >= max_application_gaps:
+            break
+        staff_id, task_type, category = next_staff_for_application_stage(app)
+        task_id = "staff_task_pipeline_reconnect_" + safe_task_part(app_id)
+        if local_or_pending_task_exists(task_id):
+            skipped.append(app_id)
+            continue
+        queue_action(
+            "appendAiStaffTask",
+            {
+                "taskId": task_id,
+                "taskType": task_type,
+                "taskCategory": category,
+                "taskTemplateId": "template_pipeline_continuity_reconnect",
+                "assignedTo": staff_id,
+                "createdBy": "AIstaff_Manager",
+                "sourceStaff": "AIstaff_Manager",
+                "targetStaff": staff_id,
+                "entityId": task_lookup_value(app, "entityId", "EntityID") or f"entity_application_{app_id}",
+                "relatedApplicationId": app_id,
+                "relatedOpportunityId": task_lookup_value(app, "opportunityId", "Opportunity ID", "relatedOpportunityId"),
+                "priority": "High",
+                "runAfter": iso_like(),
+                "dueAt": iso_like(utc_ts() + 4 * 60 * 60),
+                "nextAction": (
+                    f"Pipeline continuity check found active application {app_id} without an active task or follow-up. "
+                    "Review the current stage/status, create the correct next work item, or close/block the application with a specific reason. "
+                    "Report the result back to AIstaff_Manager."
+                ),
+                "completionCriteria": "The application has a clear next task, follow-up, closure, or blocker recorded.",
+                "successStatus": "Pipeline Reconnected",
+                "failureStatus": "Blocked - Pipeline Gap",
+                "status": "Waiting for Codex Worker" if staff_id != "AIstaff_Manager" else "Queued",
+                "evidenceLink": "",
+                "resultNotes": "Created automatically by the local pipeline continuity guard.",
+            },
+            method="POST",
+            sync_online=False,
+        )
+        created.append(task_id)
+
+    entry_task_id = "staff_task_pipeline_entry_hunt_" + local_day_key()
+    entry_created = False
+    if not pipeline_entry_work_exists(snapshot) and not local_or_pending_task_exists(entry_task_id):
+        result = queue_action(
+            "appendAiStaffTask",
+            {
+                "taskId": entry_task_id,
+                "taskType": "Research",
+                "taskCategory": TASK_CATEGORIES["research"],
+                "taskTemplateId": "template_pipeline_entry_opportunity_hunt",
+                "assignedTo": "AIstaff_OpportunityHunter",
+                "createdBy": "AIstaff_Manager",
+                "sourceStaff": "AIstaff_Manager",
+                "targetStaff": "AIstaff_OpportunityHunter",
+                "priority": "High",
+                "runAfter": iso_like(),
+                "dueAt": iso_like(utc_ts() + 6 * 60 * 60),
+                "nextAction": (
+                    "No active top-of-pipeline entry work was found. Find 3 verified new funded PhD opportunities aligned with "
+                    "Iman's Europe/Krakow/Switzerland finance-energy priorities, add evidence links, and report candidates to AIstaff_Manager."
+                ),
+                "completionCriteria": "At least 3 official-evidence opportunities are added or a clear blocker is recorded.",
+                "successStatus": "Pipeline Entry Added",
+                "failureStatus": "Blocked - No Pipeline Entry",
+                "status": "Waiting for Codex Worker",
+                "resultNotes": "Created automatically by the local pipeline continuity guard because no entry work was active.",
+            },
+            method="POST",
+            sync_online=False,
+        )
+        entry_created = bool(result.get("ok"))
+        if entry_created:
+            created.append(entry_task_id)
+
+    return {
+        "created": created,
+        "skipped": skipped[:30],
+        "createdCount": len(created),
+        "entryCreated": entry_created,
+    }
+
+
 def sync_from_sheet(bridge_call: BridgeCall, run_audit: bool = False) -> dict[str, Any]:
+    previous_snapshot = load_dashboard_snapshot() or {}
     pending = sync_pending_actions(bridge_call)
     dashboard = bridge_call("getAiStaffDashboard", {"limit": 80, "runAudit": "true" if run_audit else "false"}, "GET")
     if dashboard.get("ok") is False:
@@ -4498,10 +5207,18 @@ def sync_from_sheet(bridge_call: BridgeCall, run_audit: bool = False) -> dict[st
         return {"ok": False, "pending": pending, "error": error}
     if isinstance(dashboard.get("result"), dict):
         dashboard = dashboard["result"]
-    save_dashboard_snapshot(dashboard, source="bridge")
+    saved = save_dashboard_snapshot(dashboard, source="bridge")
+    manager_handoffs = ensure_manager_handoffs_for_completed_staff_tasks(saved, previous_snapshot)
+    pipeline_continuity = ensure_pipeline_continuity(load_dashboard_snapshot() or saved)
     set_meta("last_sheet_sync", iso_like())
     set_meta("last_sync_error", "")
-    return {"ok": True, "pending": pending, "dashboard": True}
+    return {
+        "ok": True,
+        "pending": pending,
+        "dashboard": True,
+        "managerHandoffs": manager_handoffs,
+        "pipelineContinuity": pipeline_continuity,
+    }
 
 
 def summary_number(snapshot: Dashboard | None, key: str) -> int:
@@ -4556,6 +5273,11 @@ def run_autopilot_cycle(bridge_call: BridgeCall, force: bool = False) -> dict[st
         return result
 
     snapshot = load_dashboard_snapshot()
+    continuity = {"createdCount": 0}
+    if snapshot:
+        continuity = ensure_pipeline_continuity(snapshot)
+        if continuity.get("createdCount"):
+            snapshot = load_dashboard_snapshot()
     state = evaluate_daily_kpi_state(snapshot, progress)
     action = "none"
     result: Any = {}
@@ -4567,6 +5289,10 @@ def run_autopilot_cycle(bridge_call: BridgeCall, force: bool = False) -> dict[st
             if result.get("ok"):
                 progress["sheetSyncs"] = int(progress.get("sheetSyncs", 0)) + 1
             snapshot = load_dashboard_snapshot()
+            if snapshot:
+                continuity = ensure_pipeline_continuity(snapshot)
+                if continuity.get("createdCount"):
+                    snapshot = load_dashboard_snapshot()
         elif progress.get("crmHealthChecks", 0) < config["dailyTargets"]["crmHealthChecks"]:
             action = "crm_health"
             steps = []
@@ -4601,14 +5327,22 @@ def run_autopilot_cycle(bridge_call: BridgeCall, force: bool = False) -> dict[st
             snapshot = load_dashboard_snapshot()
         else:
             action = "monitor"
-            result = {"ok": True, "message": state["reason"]}
+            result = {"ok": True, "message": state["reason"], "pipelineContinuity": continuity}
 
         state = evaluate_daily_kpi_state(snapshot, progress)
         progress["state"] = state["state"]
         progress["reason"] = state["reason"]
         save_daily_progress(progress)
         record_worker_run("Autopilot", state["state"], action, result, state["reason"])
-        return {"ok": True, "state": state["state"], "reason": state["reason"], "action": action, "result": result, "progress": progress}
+        return {
+            "ok": True,
+            "state": state["state"],
+            "reason": state["reason"],
+            "action": action,
+            "result": result,
+            "progress": progress,
+            "pipelineContinuity": continuity,
+        }
     except Exception as exc:
         progress["state"] = "Error"
         progress["reason"] = str(exc)
