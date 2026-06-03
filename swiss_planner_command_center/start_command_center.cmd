@@ -14,8 +14,8 @@ if errorlevel 1 (
 if not exist ".env.local" (
   echo.
   echo No .env.local file was found.
-  echo Copy .env.example to .env.local and fill SWISS_PLANNER_WEBHOOK_URL and SWISS_PLANNER_WEBHOOK_TOKEN.
-  echo The app can also read those values from Windows user environment variables.
+  echo This is okay. The app will start in local-only mode.
+  echo Copy .env.example to .env.local only if you want optional Manager Brain or CRM bridge settings.
   echo.
 )
 

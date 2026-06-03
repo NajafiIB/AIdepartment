@@ -1,39 +1,41 @@
-# Swiss Planner Staff Report Template
+# GCC Lab Tender Staff Report Template
 
 ## Daily Report
 
 **Summary**
 
-One paragraph explaining what moved forward today and whether the current KPI pace is healthy.
+One paragraph explaining which Leads moved, whether deadlines/quotes are healthy, and what is blocked.
 
 **KPI Progress**
 
-- Opportunities:
-- Professor research-fit records:
-- Student/contact leads:
-- Packages:
-- Outreach drafts:
+- Tender Leads reviewed:
+- Tender documents extracted:
+- Supplier/partner matches:
+- Quotation requests:
+- Tender packages:
 - Follow-ups:
-- Replies:
+- Replies/quotes:
 
 **Completed Work**
 
-- Research:
-- Packages:
-- Outreach:
+- Lead review:
+- Fit / eligibility:
+- Supplier mapping:
+- Tender package:
+- Supplier outreach:
 - CRM health:
 
 **Blockers**
 
-- Missing documents:
-- Drive/package access:
-- Evidence gaps:
+- Missing tender files:
+- Missing quote evidence:
+- Supplier/contact gaps:
+- Compliance or eligibility issues:
 - Approval waiting:
-- University-specific risks:
 
 **Approval Requests**
 
-List only actions that need Iman approval, especially sends, portal submissions, or final package decisions.
+List only actions that need Iman approval, especially supplier outreach, bid/no-bid decisions, portal submissions, or final tender package decisions.
 
 **Recommended Next Actions**
 
@@ -53,16 +55,16 @@ Use concise text:
 
 **Pipeline Health**
 
-- New leads:
-- High-fit applications:
+- New Leads:
+- Fit-approved Leads:
+- Supplier matches:
+- Quotes waiting:
 - Packages ready:
-- Drafts waiting:
-- Replies received:
 - Follow-ups overdue:
 
 **Strategic Notes**
 
-Mention geography, field fit, deadline risk, and whether the strategy should shift.
+Mention tender type, geography, supplier coverage, deadline risk, and whether the bid strategy should shift.
 
 **Next Week Plan**
 

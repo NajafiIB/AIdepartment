@@ -6,16 +6,22 @@
   "solutionModules": [
     {
       "id": "solution_swiss_planner_apply_department",
-      "label": "Swiss Planner Apply Department",
-      "summary": "Find, evaluate, prepare, send, and follow up funded PhD/MSc application opportunities for Iman Najafi.",
+      "label": "GCC lab Tender Lead AI Department",
+      "summary": "Review GCClab CRM Lead cases and tender files, assess fit, match existing suppliers or partners, discover new suppliers when needed, request quotations, prepare tender packages, and follow up until submission or closure.",
       "owner": "AIstaff_Manager",
       "lifecycleStatus": "Active",
       "modulesUsing": [
-        "Swiss Planner Command Center",
-        "Swiss Planner Google Sheet CRM",
-        "Swiss Planner Gmail Bridge"
+        "GCClab CRM / Blue Mark Business Sphere",
+        "Lead",
+        "Companies",
+        "Contacts",
+        "Tasks List",
+        "LeadMatchedSuppliers",
+        "LeadMatchedProducts",
+        "Products_Registered",
+        "LeadExtractedProducts_Request/Result"
       ],
-      "operatingRule": "Solution module -> Capability -> Recipe -> Stage -> Lane -> Quality gate -> Output."
+      "operatingRule": "Lead -> tender document review -> fit/eligibility -> supplier/partner match -> quotation outreach -> tender package -> follow-up -> submit / close."
     },
     {
       "id": "solution_sample_sales_research_department",
@@ -34,8 +40,8 @@
   "capabilities": [
     {
       "id": "opportunity_discovery",
-      "label": "Opportunity Discovery",
-      "summary": "Find funded PhD/MSc opportunities and verify them against official sources before promotion.",
+      "label": "Tender Lead Intake And Document Review",
+      "summary": "Receive Lead records and files from GCClab CRM, read tender PDFs/specs/forms, extract scope, deadlines, eligibility clauses, and first blockers.",
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_OpportunityHunter",
       "recipes": [
@@ -48,9 +54,11 @@
         "linkedin_lead_search"
       ],
       "databases": [
-        "db_opportunity",
-        "db_links",
-        "db_professor_research_fit"
+        "db_lead",
+        "db_tasks_list",
+        "db_files_manager",
+        "db_lead_extracted_products_request",
+        "db_lead_extracted_products_result"
       ],
       "aiSupport": [
         "ai_research_reasoning"
@@ -61,23 +69,23 @@
       ],
       "qualityGates": [
         "gate_official_evidence",
-        "gate_no_duplicate_opportunity"
+        "gate_no_duplicate_tender case"
       ],
       "outputs": [
-        "verified_opportunity_rows",
-        "evidence_links",
-        "research_leads"
+        "lead_case_brief",
+        "tender_requirement_matrix",
+        "missing_document_list"
       ],
       "confidence": "Medium"
     },
     {
       "id": "fit_assessment",
-      "label": "Fit Assessment",
-      "summary": "Score opportunities for eligibility, funding, location, Iman's background, and private-market/project-finance relevance.",
+      "label": "Fit, Eligibility And Supplier Match",
+      "summary": "Check whether GCC lab can bid directly, needs a partner, or needs supplier quotations; match Companies, Contacts, Products_Registered, LeadMatchedSuppliers, and vendor lists.",
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_FitAnalyst",
       "recipes": [
-        "recipe_convert_opportunity_to_application"
+        "recipe_convert_tender case_to_Lead"
       ],
       "requiredConnections": [
         "google_sheet_crm"
@@ -86,9 +94,13 @@
         "official_web_sources"
       ],
       "databases": [
-        "db_opportunity",
-        "db_application",
-        "db_ai_staff_entities"
+        "db_lead",
+        "db_companies",
+        "db_contacts",
+        "db_products_registered",
+        "db_lead_matched_suppliers",
+        "db_lead_matched_products",
+        "db_qualifications"
       ],
       "aiSupport": [
         "ai_manager_low_cost",
@@ -104,19 +116,19 @@
       ],
       "outputs": [
         "fit_score",
-        "application_candidate_rows",
-        "rejection_reason"
+        "bid_no_bid_recommendation",
+        "supplier_partner_shortlist"
       ],
       "confidence": "Medium"
     },
     {
       "id": "professor_research_intelligence",
-      "label": "Professor Research Intelligence",
-      "summary": "Build supervisor research-fit briefs from official profiles, publication evidence, and student/contact routes.",
+      "label": "Supplier Discovery And Mapping",
+      "summary": "When no suitable supplier or partner exists in GCC lab data, find ideal suppliers, map contacts, and prepare evidence-backed candidates for outreach.",
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_ProfessorResearchAnalyst",
       "recipes": [
-        "recipe_build_professor_research_fit"
+        "recipe_build_supplier_research_fit"
       ],
       "requiredConnections": [
         "official_web_sources"
@@ -126,9 +138,10 @@
         "linkedin_lead_search"
       ],
       "databases": [
-        "db_professor_research_fit",
-        "db_student_outreach",
-        "db_links"
+        "db_companies",
+        "db_contacts",
+        "db_products_registered",
+        "db_lead_matched_suppliers"
       ],
       "aiSupport": [
         "ai_research_reasoning"
@@ -137,24 +150,23 @@
         "daily_kpi_cycle"
       ],
       "qualityGates": [
-        "gate_professor_evidence",
+        "gate_supplier_evidence",
         "gate_source_freshness"
       ],
       "outputs": [
-        "professor_fit_row",
-        "student_contact_leads",
-        "research_theme_summary"
+        "new_supplier_candidates",
+        "supplier_contact_map"
       ],
       "confidence": "Medium"
     },
     {
       "id": "application_package_generation",
-      "label": "Application Package Generation",
-      "summary": "Prepare tailored CV, SOP, proposal/concept note, publication list, checklist, and package folders.",
+      "label": "Tender Package Preparation",
+      "summary": "Prepare compliance matrices, required tender forms, technical response, commercial summary, supplier quotation evidence, and submission checklist.",
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_ApplicationPackMaker",
       "recipes": [
-        "recipe_prepare_supervisor_package"
+        "recipe_prepare_supplier_package"
       ],
       "requiredConnections": [
         "google_drive_packages",
@@ -164,10 +176,11 @@
         "official_web_sources"
       ],
       "databases": [
-        "db_application",
-        "db_application_docs",
-        "db_application_packages",
-        "db_package_files"
+        "db_lead",
+        "db_docs",
+        "db_files_manager",
+        "db_lead_costs",
+        "db_orders"
       ],
       "aiSupport": [
         "ai_document_writing_high_quality"
@@ -177,22 +190,20 @@
       ],
       "qualityGates": [
         "gate_document_template_style",
-        "gate_professor_specificity",
+        "gate_supplier_specificity",
         "gate_package_folder_registered"
       ],
       "outputs": [
-        "academic_cv",
-        "research_proposal",
-        "sop",
-        "publication_list",
-        "package_index"
+        "tender_submission_package",
+        "compliance_matrix",
+        "commercial_summary"
       ],
       "confidence": "Medium"
     },
     {
       "id": "outreach_email",
-      "label": "Outreach Email",
-      "summary": "Queue, verify, and send supervisor/admissions outreach only after content, package, and attachment gates pass.",
+      "label": "Supplier Quotation Outreach",
+      "summary": "Ask selected suppliers whether they are interested and request price, technical confirmation, lead time, validity, exclusions, and required quote evidence.",
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_ApplicationPackSender",
       "recipes": [
@@ -205,9 +216,11 @@
       ],
       "recommendedConnections": [],
       "databases": [
-        "db_email_send_queue",
-        "db_gmail_sent_log",
-        "db_outreach_queue"
+        "db_contacts",
+        "db_companies",
+        "db_emails_log",
+        "db_lead_matched_suppliers",
+        "db_lead_costs"
       ],
       "aiSupport": [
         "ai_email_safety_reasoning"
@@ -222,16 +235,16 @@
         "gate_duplicate_recipient"
       ],
       "outputs": [
-        "sent_email_log",
-        "blocked_send_reason",
-        "draft_or_manual_send_record"
+        "quotation_request_log",
+        "supplier_interest_status",
+        "price_list"
       ],
       "confidence": "High"
     },
     {
       "id": "reply_followup",
-      "label": "Reply And Follow-up",
-      "summary": "Sync inbound replies, reconcile application status, create follow-ups, and route supervisor decisions through Manager.",
+      "label": "Supplier And Client Follow-up",
+      "summary": "Track supplier quotation replies, tender Q&A, client or tender-owner clarifications, and post-submission response status.",
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_FollowUpController",
       "recipes": [
@@ -243,9 +256,10 @@
       ],
       "recommendedConnections": [],
       "databases": [
-        "db_gmail_inbox_log",
-        "db_ai_staff_followups",
-        "db_ai_staff_tasks"
+        "db_tasks_list",
+        "db_emails_log",
+        "db_lead",
+        "db_contacts"
       ],
       "aiSupport": [
         "ai_manager_low_cost"
@@ -258,16 +272,16 @@
         "gate_followup_due_date"
       ],
       "outputs": [
-        "reply_status_update",
         "followup_task",
-        "thread_message"
+        "reply_status_update",
+        "blocked_response_report"
       ],
       "confidence": "Medium"
     },
     {
       "id": "crm_sync_activation",
-      "label": "CRM Sync Activation",
-      "summary": "Keep local SQLite, Google Sheet CRM, AppSheet-compatible tables, tasks, threads, and event trail synchronized.",
+      "label": "GCClab CRM Case Sync",
+      "summary": "Keep local task threads aligned with GCClab CRM tables when CRM sync is enabled, especially Lead, Tasks List, Companies, Contacts, LeadMatchedSuppliers, and LeadMatchedProducts.",
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_CRMController",
       "recipes": [
@@ -280,9 +294,12 @@
       "recommendedConnections": [],
       "databases": [
         "db_local_sqlite",
-        "db_ai_staff_event_log",
-        "db_ai_staff_tasks",
-        "db_ai_staff_threads"
+        "db_lead",
+        "db_tasks_list",
+        "db_companies",
+        "db_contacts",
+        "db_lead_matched_suppliers",
+        "db_lead_matched_products"
       ],
       "aiSupport": [
         "ai_manager_low_cost"
@@ -305,8 +322,8 @@
     },
     {
       "id": "workflow_automation",
-      "label": "Workflow Automation",
-      "summary": "Run local and scheduled cycles until KPI targets are met or the next action is blocked by human/Codex work.",
+      "label": "Tender Workflow Automation",
+      "summary": "Run lead/case review cycles until the next action is blocked by missing tender files, supplier quote, human decision, or CRM transfer.",
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_Manager",
       "recipes": [
@@ -344,8 +361,8 @@
     },
     {
       "id": "ai_reasoning",
-      "label": "AI Reasoning",
-      "summary": "Provide low-cost Manager interpretation and higher-quality Codex/AI reasoning for research, fit, and document tasks.",
+      "label": "Manager Routing And AI Reasoning",
+      "summary": "Interpret human instructions and transferred Lead payloads, route work to the correct AI staff, and keep supplier/client communication gated.",
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_Manager",
       "recipes": [
@@ -385,8 +402,8 @@
     {
       "id": "recipe_find_verified_opportunities",
       "capabilityId": "opportunity_discovery",
-      "label": "Find Verified Opportunities",
-      "summary": "Search sources, verify official evidence, record leads, and hand off to Fit Analyst.",
+      "label": "Intake And Review Tender Lead",
+      "summary": "Receive a Lead and files, read tender documents, extract scope/deadlines/requirements, and hand off to Leo for fit and supplier matching.",
       "ownerStaff": "AIstaff_OpportunityHunter",
       "stages": [
         {
@@ -412,12 +429,12 @@
         },
         {
           "id": "stage_record_opportunity",
-          "label": "Record Opportunity",
+          "label": "Record Tender Case",
           "lanes": [
             "lane_google_sheets_crm"
           ],
           "qualityGates": [
-            "gate_no_duplicate_opportunity"
+            "gate_no_duplicate_tender case"
           ]
         },
         {
@@ -432,15 +449,15 @@
         }
       ],
       "outputs": [
-        "verified_opportunity_rows",
-        "evidence_links"
+        "lead_case_brief",
+        "tender_requirement_matrix"
       ]
     },
     {
       "id": "recipe_convert_opportunity_to_application",
       "capabilityId": "fit_assessment",
-      "label": "Convert Opportunity To Application",
-      "summary": "Score opportunity, reject blockers, or create application entity and package tasks.",
+      "label": "Assess Tender Fit And Supplier Route",
+      "summary": "Score GCC lab fit, compliance, deadline, partner need, and existing supplier/partner match; decide direct bid, partner bid, quote route, or no-bid.",
       "ownerStaff": "AIstaff_FitAnalyst",
       "stages": [
         {
@@ -467,7 +484,7 @@
         },
         {
           "id": "stage_create_application",
-          "label": "Create Application Entity",
+          "label": "Create Lead Entity",
           "lanes": [
             "lane_google_sheets_crm",
             "lane_local_thread_tasks"
@@ -479,14 +496,15 @@
       ],
       "outputs": [
         "fit_score",
-        "application_candidate_rows"
+        "bid_no_bid_recommendation",
+        "supplier_partner_shortlist"
       ]
     },
     {
       "id": "recipe_build_professor_research_fit",
       "capabilityId": "professor_research_intelligence",
-      "label": "Build Professor Research Fit",
-      "summary": "Gather supervisor evidence, research themes, students/contact routes, and fit notes.",
+      "label": "Map New Suppliers",
+      "summary": "Find and evidence new suppliers when GCC lab has no suitable existing supplier or partner.",
       "ownerStaff": "AIstaff_ProfessorResearchAnalyst",
       "stages": [
         {
@@ -496,7 +514,7 @@
             "lane_official_web_search"
           ],
           "qualityGates": [
-            "gate_professor_evidence"
+            "gate_supplier_evidence"
           ]
         },
         {
@@ -522,15 +540,15 @@
         }
       ],
       "outputs": [
-        "professor_fit_row",
-        "research_theme_summary"
+        "new_supplier_candidates",
+        "supplier_contact_map"
       ]
     },
     {
       "id": "recipe_prepare_supervisor_package",
       "capabilityId": "application_package_generation",
-      "label": "Prepare Supervisor Package",
-      "summary": "Produce package docs in the selected template, register Drive folder, and prepare package verification.",
+      "label": "Prepare Tender Submission Package",
+      "summary": "Build compliance matrix, technical response, commercial summary, required forms, quotation evidence, and submission checklist.",
       "ownerStaff": "AIstaff_ApplicationPackMaker",
       "stages": [
         {
@@ -541,7 +559,7 @@
             "lane_google_drive_packages"
           ],
           "qualityGates": [
-            "gate_professor_specificity"
+            "gate_supplier_specificity"
           ]
         },
         {
@@ -578,17 +596,16 @@
         }
       ],
       "outputs": [
-        "academic_cv",
-        "research_proposal",
-        "publication_list",
-        "package_index"
+        "tender_submission_package",
+        "compliance_matrix",
+        "commercial_summary"
       ]
     },
     {
       "id": "recipe_safely_send_outreach",
       "capabilityId": "outreach_email",
-      "label": "Safely Send Outreach",
-      "summary": "Verify queue, content, package, and attachments before sending or blocking.",
+      "label": "Request Supplier Quotations Safely",
+      "summary": "Prepare approved supplier quotation requests and collect interest, pricing, delivery, validity, and exclusions.",
       "ownerStaff": "AIstaff_ApplicationPackSender",
       "stages": [
         {
@@ -646,15 +663,15 @@
         }
       ],
       "outputs": [
-        "sent_email_log",
-        "blocked_send_reason"
+        "quotation_request_log",
+        "price_list"
       ]
     },
     {
       "id": "recipe_reconcile_reply_and_follow_up",
       "capabilityId": "reply_followup",
-      "label": "Reconcile Reply And Follow Up",
-      "summary": "Sync inbound replies, match to threads, update application status, and create follow-up tasks.",
+      "label": "Follow Up Supplier And Tender Replies",
+      "summary": "Reconcile replies to Lead, supplier/contact, Q&A, quotation, or submission status and create due follow-ups.",
       "ownerStaff": "AIstaff_FollowUpController",
       "stages": [
         {
@@ -697,8 +714,8 @@
     {
       "id": "recipe_run_crm_health_cycle",
       "capabilityId": "crm_sync_activation",
-      "label": "Run CRM Health Cycle",
-      "summary": "Sync local/online records, audit active entities, and raise process tasks instead of hidden warnings.",
+      "label": "Run GCClab CRM Case Health Cycle",
+      "summary": "Audit local/CRM lead case links, supplier matches, quote status, missing files, and stale tasks.",
       "ownerStaff": "AIstaff_CRMController",
       "stages": [
         {
@@ -743,8 +760,8 @@
     {
       "id": "recipe_run_daily_kpi_cycle",
       "capabilityId": "workflow_automation",
-      "label": "Run Daily KPI Cycle",
-      "summary": "Run due tasks/follow-ups until KPI targets are complete or a safe blocker is reached.",
+      "label": "Run Tender Case KPI Cycle",
+      "summary": "Advance tender lead review, supplier matching, quotation follow-up, and package readiness until blocked or complete.",
       "ownerStaff": "AIstaff_Manager",
       "stages": [
         {
@@ -888,7 +905,7 @@
       ],
       "qualityGates": [
         "gate_document_template_style",
-        "gate_professor_specificity"
+        "gate_supplier_specificity"
       ]
     },
     {
@@ -919,8 +936,8 @@
         "google_sheet_crm"
       ],
       "databases": [
-        "db_opportunity",
-        "db_application",
+        "db_tender case",
+        "db_applications",
         "db_ai_staff_tasks",
         "db_ai_staff_event_log"
       ],
@@ -1053,8 +1070,8 @@
       "status": "Available",
       "type": "web/evidence",
       "requiredFor": [
-        "opportunity_discovery",
-        "professor_research_intelligence"
+        "tender case_discovery",
+        "supplier_research_intelligence"
       ]
     },
     {
@@ -1063,7 +1080,7 @@
       "status": "Available",
       "type": "publication evidence",
       "requiredFor": [
-        "professor_research_intelligence"
+        "supplier_research_intelligence"
       ]
     },
     {
@@ -1075,7 +1092,7 @@
     },
     {
       "id": "google_sheet_crm",
-      "label": "Swiss Planner Google Sheet CRM",
+      "label": "GCC lab AI department Google Sheet CRM",
       "status": "Connected",
       "type": "database",
       "requiredFor": [
@@ -1130,14 +1147,14 @@
     },
     {
       "id": "db_opportunity",
-      "label": "Opportunity",
-      "status": "Active",
+      "label": "Tender Case",
+      "status": "Legacy label - replaced by GCClab Lead workflow",
       "type": "Google Sheet tab"
     },
     {
       "id": "db_application",
-      "label": "Application",
-      "status": "Active",
+      "label": "Lead",
+      "status": "Legacy label - replaced by GCClab Lead workflow",
       "type": "Google Sheet tab"
     },
     {
@@ -1148,32 +1165,32 @@
     },
     {
       "id": "db_application_docs",
-      "label": "Application Docs",
-      "status": "Active",
+      "label": "Tender Docs",
+      "status": "Legacy label - replaced by GCClab Lead workflow",
       "type": "Google Sheet tab"
     },
     {
       "id": "db_application_packages",
-      "label": "Application Packages",
-      "status": "Active",
+      "label": "Tender Packages",
+      "status": "Legacy label - replaced by GCClab Lead workflow",
       "type": "Google Sheet tab"
     },
     {
       "id": "db_package_files",
-      "label": "Package Files",
-      "status": "Active",
+      "label": "Tender Package Files",
+      "status": "Legacy label - replaced by GCClab Lead workflow",
       "type": "Google Sheet tab"
     },
     {
       "id": "db_email_send_queue",
-      "label": "Email Send Queue",
+      "label": "Supplier Outreach Queue",
       "status": "Active",
       "type": "Google Sheet tab"
     },
     {
       "id": "db_outreach_queue",
       "label": "Outreach Queue",
-      "status": "Active",
+      "status": "Legacy label - replaced by GCClab Lead workflow",
       "type": "Google Sheet tab"
     },
     {
@@ -1190,14 +1207,14 @@
     },
     {
       "id": "db_professor_research_fit",
-      "label": "Professor Research Fit",
-      "status": "Active",
+      "label": "Supplier Mapping / Qualification Fit",
+      "status": "Legacy label - replaced by GCClab Lead workflow",
       "type": "Google Sheet tab"
     },
     {
       "id": "db_student_outreach",
       "label": "Student Outreach",
-      "status": "Active",
+      "status": "Legacy label - replaced by GCClab Lead workflow",
       "type": "Google Sheet tab"
     },
     {
@@ -1241,6 +1258,111 @@
       "label": "AI Staff Event Log",
       "status": "Active",
       "type": "Google Sheet tab"
+    },
+    {
+      "id": "db_lead",
+      "label": "Lead",
+      "status": "Core",
+      "type": "GCClab CRM table",
+      "key": "Lead ID"
+    },
+    {
+      "id": "db_business_opportunities",
+      "label": "BusinessOpportunities",
+      "status": "Early intake",
+      "type": "GCClab CRM table",
+      "key": "BizOpp ID"
+    },
+    {
+      "id": "db_companies",
+      "label": "Companies",
+      "status": "Core",
+      "type": "GCClab CRM table",
+      "key": "ID"
+    },
+    {
+      "id": "db_contacts",
+      "label": "Contacts",
+      "status": "Core",
+      "type": "GCClab CRM table",
+      "key": "Corporate Emails"
+    },
+    {
+      "id": "db_tasks_list",
+      "label": "Tasks List",
+      "status": "Core",
+      "type": "GCClab CRM table",
+      "key": "ID"
+    },
+    {
+      "id": "db_lead_matched_suppliers",
+      "label": "LeadMatchedSuppliers",
+      "status": "Core",
+      "type": "GCClab CRM table",
+      "key": "LeadMatchedSuppliersID"
+    },
+    {
+      "id": "db_lead_matched_products",
+      "label": "LeadMatchedProducts",
+      "status": "Core",
+      "type": "GCClab CRM table",
+      "key": "LeadMatchedProductsID"
+    },
+    {
+      "id": "db_products_registered",
+      "label": "Products_Registered",
+      "status": "Core",
+      "type": "GCClab CRM table",
+      "key": "Company_Product ID"
+    },
+    {
+      "id": "db_lead_extracted_products_request",
+      "label": "LeadExtractedProducts_Request",
+      "status": "Supporting",
+      "type": "GCClab CRM table"
+    },
+    {
+      "id": "db_lead_extracted_products_result",
+      "label": "LeadExtractedProducts_Result",
+      "status": "Supporting",
+      "type": "GCClab CRM table"
+    },
+    {
+      "id": "db_qualifications",
+      "label": "Qualifications",
+      "status": "Supporting",
+      "type": "GCClab CRM table"
+    },
+    {
+      "id": "db_emails_log",
+      "label": "EmailsLog",
+      "status": "Supporting",
+      "type": "GCClab CRM table"
+    },
+    {
+      "id": "db_lead_costs",
+      "label": "LeadCosts",
+      "status": "Supporting",
+      "type": "GCClab CRM table"
+    },
+    {
+      "id": "db_files_manager",
+      "label": "Files Manager",
+      "status": "Supporting",
+      "type": "GCClab CRM table"
+    },
+    {
+      "id": "db_docs",
+      "label": "Docs",
+      "status": "Supporting",
+      "type": "GCClab CRM table"
+    },
+    {
+      "id": "db_orders",
+      "label": "Orders",
+      "status": "Post-win",
+      "type": "GCClab CRM table",
+      "key": "Order ID"
     }
   ],
   "aiSupport": [
@@ -1266,7 +1388,7 @@
       "model": "gpt-5-mini or Codex",
       "reasoningEffort": "medium",
       "ownerStaff": "AIstaff_OpportunityHunter",
-      "usage": "Opportunity search planning, source assessment, and professor-fit synthesis."
+      "usage": "Tender Case search planning, source assessment, and supplier-fit synthesis."
     },
     {
       "id": "ai_document_writing_high_quality",
@@ -1274,11 +1396,11 @@
       "model": "Codex / higher reasoning when needed",
       "reasoningEffort": "high",
       "ownerStaff": "AIstaff_ApplicationPackMaker",
-      "usage": "CV/SOP/proposal quality and professor-specific framing."
+      "usage": "tender response/compliance quality and supplier-specific framing."
     },
     {
       "id": "ai_email_safety_reasoning",
-      "label": "Email safety reasoning",
+      "label": "Outreach safety reasoning",
       "model": "gpt-5-mini",
       "reasoningEffort": "minimal",
       "ownerStaff": "AIstaff_ApplicationPackSender",
@@ -1288,83 +1410,83 @@
   "qualityGates": [
     {
       "id": "gate_official_evidence",
-      "label": "Official Evidence",
-      "rule": "Serious opportunity rows require an official university/funder/institute source link."
+      "label": "Tender / Supplier Evidence",
+      "rule": "Tender facts, supplier matches, vendor status, and portal details must cite tender files, official source, GCClab CRM table, or supplier evidence."
     },
     {
       "id": "gate_no_duplicate_opportunity",
-      "label": "No Duplicate Opportunity",
-      "rule": "Do not add duplicate opportunity rows; update existing row instead."
+      "label": "No Duplicate Lead Case",
+      "rule": "Do not create duplicate Lead-case work; update the existing Lead, task, or thread instead."
     },
     {
       "id": "gate_eligibility_check",
-      "label": "Eligibility Check",
-      "rule": "Reject or downgrade hard-ineligible opportunities, including graduation-date constraints."
+      "label": "Compliance Requirements",
+      "rule": "Mandatory tender eligibility, registration, certificate, technical, commercial, and legal requirements must be extracted and assigned."
     },
     {
       "id": "gate_deadline_check",
-      "label": "Deadline Check",
-      "rule": "Deadline must be active or have a clear late-application rationale."
+      "label": "Tender Deadline Check",
+      "rule": "Closing date, Q&A deadline, job date, and urgent risks must be known or explicitly marked missing."
     },
     {
       "id": "gate_minimum_fit_score",
-      "label": "Minimum Fit Score",
-      "rule": "Fit Analyst must score against geography, funding, field, finance/energy relevance, and probability."
+      "label": "GCC Capability Fit",
+      "rule": "Leo must score whether GCC lab can bid directly, needs a partner, needs supplier quotes, or should no-bid."
     },
     {
       "id": "gate_professor_evidence",
-      "label": "Professor Evidence",
-      "rule": "Professor fit must cite a profile, topic, or publication source."
+      "label": "Supplier Source Evidence",
+      "rule": "Nadia supplier candidates must cite company website, registry, verified vendor list, LinkedIn/company evidence, or CRM evidence."
     },
     {
       "id": "gate_source_freshness",
       "label": "Source Freshness",
-      "rule": "Current opportunity/funding/deadline facts must be verified against current sources."
+      "rule": "Current tender case/scope/deadline facts must be verified against current sources."
     },
     {
       "id": "gate_document_template_style",
       "label": "Document Template Style",
-      "rule": "Generated docs must use the agreed Harvard/academic/proposal templates, not plain placeholder formatting."
+      "rule": "Generated docs must use the agreed Harvard/academic/tender response templates, not plain placeholder formatting."
     },
     {
       "id": "gate_professor_specificity",
-      "label": "Professor Specificity",
-      "rule": "Proposal/SOP/email must refer to the supervisor/topic/funding evidence and Iman's relevant background."
+      "label": "Tender Specificity",
+      "rule": "Tender package and supplier outreach must refer to the actual Lead, tender scope, requirements, and supplier quote needs."
     },
     {
       "id": "gate_package_folder_registered",
-      "label": "Package Folder Registered",
-      "rule": "Each serious application has one package folder and package index under the configured Drive parent."
+      "label": "Tender Files Registered",
+      "rule": "Every active tender case needs transferred Lead files or explicit missing-file blocker."
     },
     {
       "id": "gate_content_safety",
       "label": "Content Safety",
-      "rule": "Outbound email cannot mention internal failures, package archive problems, or system instructions."
+      "rule": "Outbound supplier outreach cannot mention internal failures, package archive problems, or system instructions."
     },
     {
       "id": "gate_package_completeness",
-      "label": "Package Completeness",
-      "rule": "Supervisor outreach requires CV + proposal/concept note + publication list unless explicitly fit-inquiry/no-attachment."
+      "label": "Tender Package Completeness",
+      "rule": "Tender package needs compliance matrix, forms, technical response, commercial summary, supplier quotes, and submission checklist or explicit blockers."
     },
     {
       "id": "gate_attachment_access",
-      "label": "Attachment Access",
-      "rule": "All attachment Drive URLs must be accessible to the Gmail bridge before sending."
+      "label": "Tender File Access",
+      "rule": "Transferred files and supplier quote evidence must be accessible before package preparation or submission."
     },
     {
       "id": "gate_duplicate_recipient",
-      "label": "Duplicate Recipient",
-      "rule": "Repeated professor/supervisor recipients require Manager/Human review before a second send."
+      "label": "Duplicate Supplier Recipient",
+      "rule": "Repeated supplier/contact outreach requires review unless it is a planned follow-up in the same case."
     },
     {
       "id": "gate_reply_match_confidence",
       "label": "Reply Match Confidence",
-      "rule": "Inbound replies must match by thread, recipient/sender domain, or application/opportunity evidence."
+      "rule": "Replies must match by Lead, supplier/contact, thread, email domain, or tender reference before status updates."
     },
     {
       "id": "gate_followup_due_date",
       "label": "Follow-up Due Date",
-      "rule": "Waiting-for-reply items need an active follow-up unless closed/cancelled/submitted."
+      "rule": "Every waiting supplier/client/tender-owner action needs a due follow-up unless closed or submitted."
     },
     {
       "id": "gate_sync_error_check",
@@ -1393,7 +1515,7 @@
     },
     {
       "id": "gate_no_email_from_chat",
-      "label": "No Email From Chat",
+      "label": "No Outreach From Chat",
       "rule": "Thread replies never send email by themselves."
     },
     {
@@ -1419,7 +1541,7 @@
       "status": "Active",
       "capabilities": [
         "workflow_automation",
-        "opportunity_discovery",
+        "tender case_discovery",
         "fit_assessment",
         "application_package_generation"
       ]
@@ -1444,18 +1566,18 @@
     }
   ],
   "operatingNotes": {
-    "workMap": "# Work Map\n\nThis section explains how department work moves from responsibility to execution.\n\n## Opportunity Discovery\n- Owner: `AIstaff_OpportunityHunter`\n- Purpose: Find funded PhD/MSc opportunities and verify them against official sources before promotion.\n- Recipes: Find Verified Opportunities\n- Quality gates: Official Evidence, No Duplicate Opportunity\n- Outputs: verified_opportunity_rows, evidence_links, research_leads\n\n## Fit Assessment\n- Owner: `AIstaff_FitAnalyst`\n- Purpose: Score opportunities for eligibility, funding, location, Iman's background, and private-market/project-finance relevance.\n- Recipes: Convert Opportunity To Application\n- Quality gates: Eligibility Check, Deadline Check, Minimum Fit Score\n- Outputs: fit_score, application_candidate_rows, rejection_reason\n\n## Professor Research Intelligence\n- Owner: `AIstaff_ProfessorResearchAnalyst`\n- Purpose: Build supervisor research-fit briefs from official profiles, publication evidence, and student/contact routes.\n- Recipes: Build Professor Research Fit\n- Quality gates: Professor Evidence, Source Freshness\n- Outputs: professor_fit_row, student_contact_leads, research_theme_summary\n\n## Application Package Generation\n- Owner: `AIstaff_ApplicationPackMaker`\n- Purpose: Prepare tailored CV, SOP, proposal/concept note, publication list, checklist, and package folders.\n- Recipes: Prepare Supervisor Package\n- Quality gates: Document Template Style, Professor Specificity, Package Folder Registered\n- Outputs: academic_cv, research_proposal, sop, publication_list, package_index\n\n## Outreach Email\n- Owner: `AIstaff_ApplicationPackSender`\n- Purpose: Queue, verify, and send supervisor/admissions outreach only after content, package, and attachment gates pass.\n- Recipes: Safely Send Outreach\n- Quality gates: Content Safety, Package Completeness, Attachment Access, Duplicate Recipient\n- Outputs: sent_email_log, blocked_send_reason, draft_or_manual_send_record\n\n## Reply And Follow-up\n- Owner: `AIstaff_FollowUpController`\n- Purpose: Sync inbound replies, reconcile application status, create follow-ups, and route supervisor decisions through Manager.\n- Recipes: Reconcile Reply And Follow Up\n- Quality gates: Reply Match Confidence, Follow-up Due Date\n- Outputs: reply_status_update, followup_task, thread_message\n\n## CRM Sync Activation\n- Owner: `AIstaff_CRMController`\n- Purpose: Keep local SQLite, Google Sheet CRM, AppSheet-compatible tables, tasks, threads, and event trail synchronized.\n- Recipes: Run CRM Health Cycle\n- Quality gates: Sync Error Check, Active Entity Follow-up, Event Log Trace\n- Outputs: sync_status, audit_task, manager_report\n\n## Workflow Automation\n- Owner: `AIstaff_Manager`\n- Purpose: Run local and scheduled cycles until KPI targets are met or the next action is blocked by human/Codex work.\n- Recipes: Run Daily KPI Cycle\n- Quality gates: KPI Progress, No Hidden Blocker\n- Outputs: daily_report, queued_staff_task, human_plan_request\n\n## AI Reasoning\n- Owner: `AIstaff_Manager`\n- Purpose: Provide low-cost Manager interpretation and higher-quality Codex/AI reasoning for research, fit, and document tasks.\n- Recipes: Interpret And Route Manager Thread\n- Quality gates: No Email From Chat, Safe Routing\n- Outputs: manager_reply, routed_task, skill_update_candidate\n",
-    "lanesTools": "# Lanes & Tools\n\nUse this section to define how every lane/tool should be used, what it needs, and when it must stop.\n\n## OpenAI Manager Brain\n- Lane ID: `lane_openai_manager_brain`\n- Route type: AI reasoning\n- Owner: `AIstaff_Manager`\n- Connections: OpenAI API\n- Databases: AI Staff Threads\n- AI support: Manager low-cost reasoning\n- Quality gates: Safe Routing, No Email From Chat\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## AI Reasoning\n- Lane ID: `lane_ai_reasoning`\n- Route type: AI reasoning\n- Owner: `AIstaff_Manager`\n- Connections: OpenAI API\n- Databases: AI Staff Tasks, AI Staff Threads\n- AI support: Manager low-cost reasoning, Fit reasoning, Research reasoning\n- Quality gates: Safe Routing\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Codex Document Worker\n- Lane ID: `lane_codex_document_worker`\n- Route type: human-supervised AI worker\n- Owner: `AIstaff_ApplicationPackMaker`\n- Connections: Codex Worker, Google Drive Package Folder\n- Databases: Application Docs, Application Packages\n- AI support: Document writing\n- Quality gates: Document Template Style, Professor Specificity\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Official Web Search\n- Lane ID: `lane_official_web_search`\n- Route type: external search\n- Owner: `AIstaff_OpportunityHunter`\n- Connections: Official Web Sources\n- Databases: Links\n- AI support: Research reasoning\n- Quality gates: Official Evidence, Source Freshness\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Google Sheets CRM\n- Lane ID: `lane_google_sheets_crm`\n- Route type: database/writeback\n- Owner: `AIstaff_CRMController`\n- Connections: Swiss Planner Google Sheet CRM\n- Databases: Opportunity, Application, AI Staff Tasks, AI Staff Event Log\n- AI support: None\n- Quality gates: Sync Error Check, Event Log Trace\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Google Drive Packages\n- Lane ID: `lane_google_drive_packages`\n- Route type: document storage\n- Owner: `AIstaff_ApplicationPackMaker`\n- Connections: Google Drive Package Folder\n- Databases: Application Packages, Package Files\n- AI support: None\n- Quality gates: Package Folder Registered, Attachment Access\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Gmail Bridge\n- Lane ID: `lane_gmail_bridge`\n- Route type: email operation\n- Owner: `AIstaff_ApplicationPackSender`\n- Connections: Gmail Bridge, Apps Script Bridge\n- Databases: Email Send Queue, Gmail Sent Log, Gmail Inbox Log\n- AI support: Email safety reasoning\n- Quality gates: Content Safety, Package Completeness, Attachment Access, Duplicate Recipient\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Apps Script Bridge\n- Lane ID: `lane_apps_script_bridge`\n- Route type: automation adapter\n- Owner: `AIstaff_CRMController`\n- Connections: Apps Script Bridge\n- Databases: AI Staff Tasks, Package Files, Email Send Queue\n- AI support: None\n- Quality gates: Sync Error Check\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Local Task Threads\n- Lane ID: `lane_local_thread_tasks`\n- Route type: local workflow\n- Owner: `AIstaff_Manager`\n- Connections: Windows Command Center\n- Databases: Local SQLite task-thread store, AI Staff Threads, AI Staff Thread Messages\n- AI support: Manager low-cost reasoning\n- Quality gates: No Hidden Blocker, Event Log Trace\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n\n## Local SQLite Store\n- Lane ID: `lane_local_sqlite`\n- Route type: local database\n- Owner: `AIstaff_CRMController`\n- Connections: Windows Command Center\n- Databases: Local SQLite task-thread store\n- AI support: None\n- Quality gates: Sync Error Check\n- Use when: TODO\n- Input format: TODO\n- Output format: TODO\n- Failure handling: TODO\n- Evidence to log: TODO\n",
-    "qualityGates": "# Quality Gates\n\nUse this checklist before a staff member moves work to the next stage.\n\n## Official Evidence\n- Gate ID: `gate_official_evidence`\n- Rule: Serious opportunity rows require an official university/funder/institute source link.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## No Duplicate Opportunity\n- Gate ID: `gate_no_duplicate_opportunity`\n- Rule: Do not add duplicate opportunity rows; update existing row instead.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Eligibility Check\n- Gate ID: `gate_eligibility_check`\n- Rule: Reject or downgrade hard-ineligible opportunities, including graduation-date constraints.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Deadline Check\n- Gate ID: `gate_deadline_check`\n- Rule: Deadline must be active or have a clear late-application rationale.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Minimum Fit Score\n- Gate ID: `gate_minimum_fit_score`\n- Rule: Fit Analyst must score against geography, funding, field, finance/energy relevance, and probability.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Professor Evidence\n- Gate ID: `gate_professor_evidence`\n- Rule: Professor fit must cite a profile, topic, or publication source.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Source Freshness\n- Gate ID: `gate_source_freshness`\n- Rule: Current opportunity/funding/deadline facts must be verified against current sources.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Document Template Style\n- Gate ID: `gate_document_template_style`\n- Rule: Generated docs must use the agreed Harvard/academic/proposal templates, not plain placeholder formatting.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Professor Specificity\n- Gate ID: `gate_professor_specificity`\n- Rule: Proposal/SOP/email must refer to the supervisor/topic/funding evidence and Iman's relevant background.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Package Folder Registered\n- Gate ID: `gate_package_folder_registered`\n- Rule: Each serious application has one package folder and package index under the configured Drive parent.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Content Safety\n- Gate ID: `gate_content_safety`\n- Rule: Outbound email cannot mention internal failures, package archive problems, or system instructions.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Package Completeness\n- Gate ID: `gate_package_completeness`\n- Rule: Supervisor outreach requires CV + proposal/concept note + publication list unless explicitly fit-inquiry/no-attachment.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Attachment Access\n- Gate ID: `gate_attachment_access`\n- Rule: All attachment Drive URLs must be accessible to the Gmail bridge before sending.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Duplicate Recipient\n- Gate ID: `gate_duplicate_recipient`\n- Rule: Repeated professor/supervisor recipients require Manager/Human review before a second send.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Reply Match Confidence\n- Gate ID: `gate_reply_match_confidence`\n- Rule: Inbound replies must match by thread, recipient/sender domain, or application/opportunity evidence.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Follow-up Due Date\n- Gate ID: `gate_followup_due_date`\n- Rule: Waiting-for-reply items need an active follow-up unless closed/cancelled/submitted.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Sync Error Check\n- Gate ID: `gate_sync_error_check`\n- Rule: Sync/bridge errors become Technical Bug or System Audit tasks, not hidden logs.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Active Entity Follow-up\n- Gate ID: `gate_active_entity_followup`\n- Rule: Every active AI-owned entity needs an active, not-overdue follow-up or queued task.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Event Log Trace\n- Gate ID: `gate_event_log_trace`\n- Rule: Important status/responsible/stage changes need an event-log or thread record.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## KPI Progress\n- Gate ID: `gate_kpi_progress`\n- Rule: The daily/weekly cycle continues until KPI targets are met or a blocker is explicit.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## No Hidden Blocker\n- Gate ID: `gate_no_hidden_blocker`\n- Rule: When the cycle stops without work, Manager asks Human for a plan instead of silently stopping.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## No Email From Chat\n- Gate ID: `gate_no_email_from_chat`\n- Rule: Thread replies never send email by themselves.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n\n## Safe Routing\n- Gate ID: `gate_safe_routing`\n- Rule: Specialist staff talk to Manager first; only Manager talks to Human.\n- Severity: Blocking unless marked as advisory.\n- Pass evidence: TODO\n- If failed: create or update a task/thread with the blocker and next owner.\n",
-    "dataConnectors": "# Data & Connectors\n\nThis section tells staff which systems are available and how carefully they may write to them.\n\n## Connections\n- `openai_api`: OpenAI API (Connected, AI provider)\n- `codex_worker`: Codex Worker (Available, AI worker)\n- `official_web_sources`: Official Web Sources (Available, web/evidence)\n- `google_scholar_public_pages`: Google Scholar public pages (Available, publication evidence)\n- `linkedin_lead_search`: LinkedIn Lead Search (Optional, lead source)\n- `google_sheet_crm`: Swiss Planner Google Sheet CRM (Connected, database)\n- `google_drive_packages`: Google Drive Package Folder (Connected, document store)\n- `gmail_bridge`: Gmail Bridge (Connected, email)\n- `apps_script_bridge`: Apps Script Bridge (Connected, automation)\n- `local_command_center`: Windows Command Center (Connected, local runtime)\n\n## Databases\n- `db_local_sqlite`: Local SQLite task-thread store (Active, local)\n- `db_opportunity`: Opportunity (Active, Google Sheet tab)\n- `db_application`: Application (Active, Google Sheet tab)\n- `db_links`: Links (Active, Google Sheet tab)\n- `db_application_docs`: Application Docs (Active, Google Sheet tab)\n- `db_application_packages`: Application Packages (Active, Google Sheet tab)\n- `db_package_files`: Package Files (Active, Google Sheet tab)\n- `db_email_send_queue`: Email Send Queue (Active, Google Sheet tab)\n- `db_outreach_queue`: Outreach Queue (Active, Google Sheet tab)\n- `db_gmail_sent_log`: Gmail Sent Log (Active, Google Sheet tab)\n- `db_gmail_inbox_log`: Gmail Inbox Log (Active, Google Sheet tab)\n- `db_professor_research_fit`: Professor Research Fit (Active, Google Sheet tab)\n- `db_student_outreach`: Student Outreach (Active, Google Sheet tab)\n- `db_ai_staff_kpis`: AI Staff KPIs (Active, Google Sheet tab)\n- `db_ai_staff_tasks`: AI Staff Tasks (Active, Google Sheet tab/local-first)\n- `db_ai_staff_threads`: AI Staff Threads (Active, local-first/synced on close)\n- `db_ai_staff_thread_messages`: AI Staff Thread Messages (Active, local-first/synced on close)\n- `db_ai_staff_followups`: AI Staff Follow Ups (Active, Google Sheet tab)\n- `db_ai_staff_entities`: AI Staff Entities (Active, Google Sheet tab)\n- `db_ai_staff_event_log`: AI Staff Event Log (Active, Google Sheet tab)\n\n## Write Rules\n- Local task/thread updates are local-first.\n- Closed thread archives can sync to the online CRM.\n- Email and portal actions require their own safety gates.\n",
-    "aiBrain": "# AI Brain\n\nThis section defines which reasoning level is used for each kind of work.\n\n## Manager low-cost reasoning\n- AI ID: `ai_manager_low_cost`\n- Model: gpt-5-mini\n- Reasoning effort: minimal\n- Owner: `AIstaff_Manager`\n- Usage: Interpret human messages, classify intent, and route work.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Fit reasoning\n- AI ID: `ai_fit_reasoning`\n- Model: gpt-5-mini\n- Reasoning effort: low\n- Owner: `AIstaff_FitAnalyst`\n- Usage: Eligibility, fit scoring, and prioritization.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Research reasoning\n- AI ID: `ai_research_reasoning`\n- Model: gpt-5-mini or Codex\n- Reasoning effort: medium\n- Owner: `AIstaff_OpportunityHunter`\n- Usage: Opportunity search planning, source assessment, and professor-fit synthesis.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Document writing\n- AI ID: `ai_document_writing_high_quality`\n- Model: Codex / higher reasoning when needed\n- Reasoning effort: high\n- Owner: `AIstaff_ApplicationPackMaker`\n- Usage: CV/SOP/proposal quality and professor-specific framing.\n- Cost policy: Use the lowest level that can safely complete the work.\n\n## Email safety reasoning\n- AI ID: `ai_email_safety_reasoning`\n- Model: gpt-5-mini\n- Reasoning effort: minimal\n- Owner: `AIstaff_ApplicationPackSender`\n- Usage: Check outbound wording for unsafe internal/system language.\n- Cost policy: Use the lowest level that can safely complete the work.\n",
-    "outputTemplates": "# Output Templates\n\nThis section defines what each staff member must produce before a task can be marked done.\n\n## Opportunity Discovery\n- Owner: `AIstaff_OpportunityHunter`\n- Outputs: verified_opportunity_rows, evidence_links, research_leads\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Fit Assessment\n- Owner: `AIstaff_FitAnalyst`\n- Outputs: fit_score, application_candidate_rows, rejection_reason\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Professor Research Intelligence\n- Owner: `AIstaff_ProfessorResearchAnalyst`\n- Outputs: professor_fit_row, student_contact_leads, research_theme_summary\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Application Package Generation\n- Owner: `AIstaff_ApplicationPackMaker`\n- Outputs: academic_cv, research_proposal, sop, publication_list, package_index\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Outreach Email\n- Owner: `AIstaff_ApplicationPackSender`\n- Outputs: sent_email_log, blocked_send_reason, draft_or_manual_send_record\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Reply And Follow-up\n- Owner: `AIstaff_FollowUpController`\n- Outputs: reply_status_update, followup_task, thread_message\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## CRM Sync Activation\n- Owner: `AIstaff_CRMController`\n- Outputs: sync_status, audit_task, manager_report\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## Workflow Automation\n- Owner: `AIstaff_Manager`\n- Outputs: daily_report, queued_staff_task, human_plan_request\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n\n## AI Reasoning\n- Owner: `AIstaff_Manager`\n- Outputs: manager_reply, routed_task, skill_update_candidate\n- Naming rule: include application/opportunity ID when available.\n- Evidence rule: attach a link, file path, or task/thread reference.\n",
-    "learningLibrary": "# Learning Library\n\nClosed threads can become Skill Update Candidates.\n\n## Rule\n- Human-approved learnings are appended to the related staff role file.\n- Do not auto-apply a learning without `Human_Iman` approval.\n- The Manager decides whether a human answer should become a department rule or a staff-specific rule.\n\n## Where Learnings Go\n- Department-wide rule: `swiss-planner-staff/SKILL.md`\n- Staff-specific rule: `swiss-planner-staff/roles/<StaffID>.md`\n"
+    "workMap": "# Work Map\n\nThe GCC lab AI department moves tender work from `Lead` intake to tender document review, bid/no-bid, supplier or partner matching, quotation outreach, tender package preparation, and follow-up.\n\n## Ava - Tender Document Analyst\nReads Lead details, tender PDFs, specs, forms, BOQs, deadlines, and source portals.\n\n## Leo - Fit & Supplier Match Analyst\nChecks GCC lab capability fit, tender requirements, Companies, Contacts, Products_Registered, LeadMatchedSuppliers, LeadMatchedProducts, and verified vendor lists.\n\n## Nadia - Supplier Mapper\nFinds ideal new suppliers when existing GCC lab supplier/partner data is not enough.\n\n## Omar - Supplier Outreach Specialist\nRequests supplier interest, quotations, pricing, delivery terms, and technical confirmation after approval.\n\n## Maya - Tender Package Maker\nPrepares compliance matrix, forms, technical response, commercial summary, supplier quotation evidence, and submission checklist.\n\n## Lina - Follow-up Controller\nTracks supplier replies, Q&A deadlines, quotation gaps, client/tender-owner responses, and post-submission follow-up.\n\n## Noah - CRM Controller\nMaintains local/CRM integrity for Lead, Companies, Contacts, Tasks List, LeadMatchedSuppliers, LeadMatchedProducts, and related tables.\n",
+    "lanesTools": "# Lanes & Tools\n\n- `GCClab CRM`: source of truth for `Lead`, `Companies`, `Contacts`, `Tasks List`, `LeadMatchedSuppliers`, `LeadMatchedProducts`, `Products_Registered`, `Orders`, and supporting tables.\n- `Tender Document Files`: transferred PDFs/forms/specs/BOQs attached to the Lead case.\n- `Official Web Sources`: tender portals, vendor registries, supplier websites, official company pages.\n- `Supplier Outreach Channel`: email/communications for approved quotation requests.\n- `Local Task Threads`: local-first discussion and decision memory while CRM sync is disabled.\n",
+    "qualityGates": "# Quality Gates\n\nCore blocking gates: Lead Record Complete, Tender Documents Available, Tender Deadline Check, GCC Capability Fit, Compliance Requirements, Bid / No-Bid Decision, Supplier Match Evidence, Supplier Outreach Approval, Pricing Evidence, Tender Package Completeness, Follow-up Due Date, Sync Error Check, No Outreach From Chat, Safe Routing.\n",
+    "dataConnectors": "# Data & Connectors\n\n## Core GCClab CRM Tables\n- `Lead`: prepared active commercial pipeline. Key: `Lead ID`; label: `Lead Name`; status: `Lead Status`.\n- `BusinessOpportunities`: early/non-prepared tender case intake. Key: `BizOpp ID`.\n- `Companies`: company master for suppliers, active suppliers, clients, partners. Key: `ID`; label: `Name`.\n- `Contacts`: contact records. Key: `Corporate Emails`.\n- `Tasks List`: delegated CRM tasks and follow-ups. Key: `ID`; `OwningDepartment` is required for API create.\n- `LeadMatchedSuppliers`: supplier matches per lead.\n- `LeadMatchedProducts`: product matches per lead.\n- `Products_Registered`: products/services registered by company.\n- `LeadExtractedProducts_Request` / `LeadExtractedProducts_Result`: extracted product requirements from lead/tender files.\n- `EmailsLog`: communication log.\n- `Orders`: purchase order table after a won Lead.\n\nCRM sync is optional in this local command center. When disabled, the department works local-first and waits for a future action to transfer Lead information and files.\n",
+    "aiBrain": "# AI Brain\n\nManager routes each Lead case. Ava reads tender details and documents. Leo evaluates fit and existing supplier/partner matches. Nadia maps new suppliers. Omar handles approved supplier quotation outreach. Maya prepares tender response packages. Lina tracks follow-ups. Noah maintains CRM/local integrity.\n",
+    "outputTemplates": "# Output Templates\n\n- Lead Case Brief\n- Tender Requirement Matrix\n- Supplier / Partner Shortlist\n- New Supplier Contact Map\n- Quotation Request Log\n- Tender Submission Package\n- Manager Operating Report\n",
+    "learningLibrary": "# Learning Library\n\nClosed Manager/Human threads can become tender-department learning candidates. Approved learnings can update staff role files for Ava, Leo, Nadia, Omar, Maya, Lina, Noah, or Manager routing rules.\n"
   },
   "workspaces": [
     {
-      "id": "workspace_iman_swiss_planner",
-      "label": "Iman Najafi Workspace",
+      "id": "workspace_gcc_lab",
+      "label": "GCC lab Workspace",
       "owner": "Human_Iman",
       "members": [
         "Human_Iman"
@@ -1466,10 +1588,10 @@
   ],
   "departments": [
     {
-      "id": "department_swiss_planner_applications",
-      "label": "Swiss Planner Application Department",
-      "workspaceId": "workspace_iman_swiss_planner",
-      "templateId": "template_swiss_planner_application_department",
+      "id": "department_gcc_lab_tender_leads",
+      "label": "GCC lab Tender Lead AI Department",
+      "workspaceId": "workspace_gcc_lab",
+      "templateId": "template_gcc_lab_tender_lead_department",
       "humanManager": "Human_Iman",
       "aiManager": "AIstaff_Manager",
       "status": "Active",
@@ -1478,14 +1600,14 @@
   ],
   "departmentTemplates": [
     {
-      "id": "template_swiss_planner_application_department",
-      "label": "Swiss Planner Application Department",
-      "purpose": "Find, evaluate, prepare, send, and follow up funded PhD/MSc applications.",
-      "solutionModuleId": "solution_swiss_planner_apply_department",
+      "id": "template_gcc_lab_tender_lead_department",
+      "label": "GCC lab Tender Lead AI Department",
+      "purpose": "Automate tender-lead review, supplier/partner matching, quotation collection, tender package preparation, and follow-up.",
+      "solutionModuleId": "solution_gcc_lab_tender_lead_department",
       "capabilities": [
-        "opportunity_discovery",
+        "tender case_discovery",
         "fit_assessment",
-        "professor_research_intelligence",
+        "supplier_research_intelligence",
         "application_package_generation",
         "outreach_email",
         "reply_followup",
@@ -1496,48 +1618,27 @@
       "staffProfiles": [
         "Human_Iman",
         "AIstaff_Manager",
-        "AIstaff_OpportunityHunter",
+        "AIstaff_Tender CaseHunter",
         "AIstaff_FitAnalyst",
-        "AIstaff_ProfessorResearchAnalyst",
-        "AIstaff_ApplicationPackMaker",
-        "AIstaff_ApplicationPackSender",
+        "AIstaff_SupplierResearchAnalyst",
+        "AIstaff_LeadPackMaker",
+        "AIstaff_LeadPackSender",
         "AIstaff_FollowUpController",
         "AIstaff_CRMController"
       ],
       "status": "Active",
       "locked": true,
       "workspaceEditable": false
-    },
-    {
-      "id": "template_sales_research_department_sample",
-      "label": "Sample Sales Research Department",
-      "purpose": "Sample reusable department template proving the platform is not Swiss Planner-only.",
-      "solutionModuleId": "solution_sample_sales_research_department",
-      "capabilities": [
-        "opportunity_discovery",
-        "fit_assessment",
-        "workflow_automation"
-      ],
-      "staffProfiles": [
-        "Human_Iman",
-        "AIstaff_Manager",
-        "AIstaff_OpportunityHunter",
-        "AIstaff_FitAnalyst",
-        "AIstaff_CRMController"
-      ],
-      "status": "Sample",
-      "locked": false,
-      "workspaceEditable": true
     }
   ],
   "workspaceOverrides": [
     {
-      "id": "override_iman_swiss_planner",
-      "workspaceId": "workspace_iman_swiss_planner",
-      "departmentId": "department_swiss_planner_applications",
+      "id": "override_gcc_lab_tender_leads",
+      "workspaceId": "workspace_gcc_lab",
+      "departmentId": "department_gcc_lab_tender_leads",
       "humanManager": "Human_Iman",
       "aiManagerAlias": "Alex",
-      "defaultLanguage": "English/Persian mixed accepted",
+      "defaultLanguage": "English/Arabic business tender language accepted",
       "status": "Active",
       "workspaceEditable": true
     }
@@ -1559,102 +1660,102 @@
       "id": "AIstaff_Manager",
       "label": "AI Manager",
       "alias": "Alex",
-      "profileTitle": "Department Manager",
+      "profileTitle": "Tender Department Manager",
       "role": "Department Manager",
       "managerId": "Human_Iman",
       "intelligenceLevel": "Expert",
-      "contactPolicy": "Only AI Manager communicates directly with the human manager.",
+      "contactPolicy": "Only AI Manager communicates directly with the human manager and routes Lead cases to the specialist staff.",
       "avatarKind": "human-ai",
       "workspaceEditable": true,
       "locked": false
     },
     {
       "id": "AIstaff_OpportunityHunter",
-      "label": "OpportunityHunter",
+      "label": "Tender Document Analyst",
       "alias": "Ava",
-      "profileTitle": "Opportunity Research Specialist",
-      "role": "Specialist AI Staff",
+      "profileTitle": "Tender Document & Tender Case Analyst",
+      "role": "Lead intake and tender document intelligence",
       "managerId": "AIstaff_Manager",
       "intelligenceLevel": "Senior",
-      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "contactPolicy": "Reviews transferred Lead records, tender PDFs, scope, source, deadlines, eligibility clauses, and required documents.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
       "locked": false
     },
     {
       "id": "AIstaff_FitAnalyst",
-      "label": "FitAnalyst",
+      "label": "Fit & Supplier Match Analyst",
       "alias": "Leo",
-      "profileTitle": "Fit And Eligibility Analyst",
-      "role": "Specialist AI Staff",
+      "profileTitle": "Fit, Eligibility & Supplier Match Analyst",
+      "role": "Capability fit and existing supplier/partner matching",
       "managerId": "AIstaff_Manager",
       "intelligenceLevel": "Senior",
-      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "contactPolicy": "Checks GCC lab fit, compliance, Companies, Contacts, Products_Registered, LeadMatchedSuppliers, and vendor lists.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
       "locked": false
     },
     {
       "id": "AIstaff_ProfessorResearchAnalyst",
-      "label": "ProfessorResearchAnalyst",
+      "label": "Supplier Mapper",
       "alias": "Nadia",
-      "profileTitle": "Professor Research Specialist",
-      "role": "Specialist AI Staff",
+      "profileTitle": "Supplier Discovery & Mapping Specialist",
+      "role": "New supplier and partner discovery",
       "managerId": "AIstaff_Manager",
       "intelligenceLevel": "Expert",
-      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "contactPolicy": "Finds ideal suppliers only when existing supplier/partner data is insufficient.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
       "locked": false
     },
     {
       "id": "AIstaff_ApplicationPackMaker",
-      "label": "ApplicationPackMaker",
+      "label": "Tender Package Maker",
       "alias": "Maya",
-      "profileTitle": "Application Package Specialist",
-      "role": "Specialist AI Staff",
+      "profileTitle": "Tender Package Preparation Specialist",
+      "role": "Tender response documents and compliance package",
       "managerId": "AIstaff_Manager",
       "intelligenceLevel": "Specialist",
-      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "contactPolicy": "Prepares compliance matrices, forms, technical response, commercial summaries, supplier quote evidence, and package checklist.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
       "locked": false
     },
     {
       "id": "AIstaff_ApplicationPackSender",
-      "label": "ApplicationPackSender",
+      "label": "Supplier Outreach Specialist",
       "alias": "Omar",
-      "profileTitle": "Outreach Safety Specialist",
-      "role": "Specialist AI Staff",
+      "profileTitle": "Supplier Quotation Outreach Specialist",
+      "role": "Supplier interest and quotation requests",
       "managerId": "AIstaff_Manager",
       "intelligenceLevel": "Senior",
-      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "contactPolicy": "Handles approved outreach to selected suppliers; a future separate new-supplier outreach agent can be added later.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
       "locked": false
     },
     {
       "id": "AIstaff_FollowUpController",
-      "label": "FollowUpController",
+      "label": "Follow-up Controller",
       "alias": "Lina",
-      "profileTitle": "Follow-up Coordinator",
-      "role": "Specialist AI Staff",
+      "profileTitle": "Supplier & Client Follow-up Coordinator",
+      "role": "Follow-up and reply reconciliation",
       "managerId": "AIstaff_Manager",
       "intelligenceLevel": "Junior",
-      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "contactPolicy": "Tracks supplier replies, quote deadlines, Q&A deadlines, and post-submission responses.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
       "locked": false
     },
     {
       "id": "AIstaff_CRMController",
-      "label": "CRMController",
+      "label": "CRM Controller",
       "alias": "Noah",
-      "profileTitle": "CRM Operations Controller",
-      "role": "Specialist AI Staff",
+      "profileTitle": "GCClab CRM Operations Controller",
+      "role": "CRM data quality and local sync",
       "managerId": "AIstaff_Manager",
       "intelligenceLevel": "Senior",
-      "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+      "contactPolicy": "Maintains Lead, Companies, Contacts, Tasks List, LeadMatchedSuppliers, and local task-thread integrity.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
       "locked": false
@@ -1662,75 +1763,130 @@
   ],
   "outputTemplates": [
     {
-      "id": "output_verified_opportunity",
-      "label": "Verified Opportunity Record",
+      "id": "output_lead_case_brief",
+      "label": "Lead Case Brief",
       "ownerStaff": "AIstaff_OpportunityHunter",
       "requiredSections": [
-        "Official source",
-        "Funding/deadline",
-        "Eligibility",
-        "Why it fits"
+        "Lead ID",
+        "Lead source/type",
+        "Tender scope",
+        "Deadlines",
+        "Files received",
+        "Immediate blockers"
       ],
-      "storage": "Opportunity, Links, Professor Research Fit",
+      "storage": "Local thread and Lead / Tasks List when CRM sync is enabled",
       "qualityGates": [
         "gate_official_evidence",
-        "gate_no_duplicate_opportunity"
+        "gate_deadline_check"
       ],
       "workspaceEditable": true
     },
     {
-      "id": "output_application_package",
-      "label": "Application Package",
-      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "id": "output_requirement_matrix",
+      "label": "Tender Requirement Matrix",
+      "ownerStaff": "AIstaff_OpportunityHunter",
       "requiredSections": [
-        "Academic CV",
-        "Research proposal/concept note",
-        "SOP/motivation",
-        "Publication list",
-        "Checklist"
+        "Requirement",
+        "Source document/page",
+        "Owner",
+        "Evidence needed",
+        "Status"
       ],
-      "storage": "Drive package folder and Application Packages / Package Files rows",
+      "storage": "Docs / Files Manager / local task thread",
       "qualityGates": [
-        "gate_document_template_style",
-        "gate_professor_specificity",
-        "gate_package_folder_registered"
+        "gate_eligibility_check"
       ],
       "workspaceEditable": true
     },
     {
-      "id": "output_supervisor_email",
-      "label": "Supervisor Outreach Email",
+      "id": "output_supplier_shortlist",
+      "label": "Supplier / Partner Shortlist",
+      "ownerStaff": "AIstaff_FitAnalyst",
+      "requiredSections": [
+        "Company",
+        "CRM status",
+        "Product/service fit",
+        "Contact",
+        "Evidence",
+        "Outreach recommendation"
+      ],
+      "storage": "LeadMatchedSuppliers / Companies / Contacts",
+      "qualityGates": [
+        "gate_minimum_fit_score",
+        "gate_official_evidence"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "output_supplier_contact_map",
+      "label": "New Supplier Contact Map",
+      "ownerStaff": "AIstaff_ProfessorResearchAnalyst",
+      "requiredSections": [
+        "Company",
+        "Country",
+        "Capabilities",
+        "Evidence links",
+        "Contact route",
+        "Confidence"
+      ],
+      "storage": "Companies / Contacts candidate notes",
+      "qualityGates": [
+        "gate_supplier_evidence"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "output_quotation_request",
+      "label": "Quotation Request Log",
       "ownerStaff": "AIstaff_ApplicationPackSender",
       "requiredSections": [
-        "Recipient",
-        "Subject",
-        "Personalized body",
-        "Verified attachments",
-        "Safety result"
+        "Supplier",
+        "Contact",
+        "Requested items",
+        "Price deadline",
+        "Message status",
+        "Reply/quote"
       ],
-      "storage": "Email Send Queue and task/thread evidence",
+      "storage": "EmailsLog / Tasks List / LeadMatchedSuppliers",
       "qualityGates": [
         "gate_content_safety",
-        "gate_package_completeness",
-        "gate_attachment_access",
         "gate_duplicate_recipient"
       ],
       "workspaceEditable": true
     },
     {
-      "id": "output_operating_report",
+      "id": "output_tender_submission_package",
+      "label": "Tender Submission Package",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "requiredSections": [
+        "Compliance matrix",
+        "Technical response",
+        "Commercial summary",
+        "Supplier quotes",
+        "Required forms",
+        "Submission checklist"
+      ],
+      "storage": "Docs / Files Manager / Lead",
+      "qualityGates": [
+        "gate_package_completeness",
+        "gate_attachment_access"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "output_manager_operating_report",
       "label": "Manager Operating Report",
       "ownerStaff": "AIstaff_Manager",
       "requiredSections": [
         "Do first",
-        "KPI progress",
-        "Applications",
-        "AI staff",
-        "System health"
+        "Lead cases",
+        "Supplier quotes",
+        "Tender package status",
+        "Blockers",
+        "Next actions"
       ],
-      "storage": "Reports page and AI Staff Reports",
+      "storage": "Reports page and local threads",
       "qualityGates": [
-        "gate_kpi_progress",
         "gate_no_hidden_blocker"
       ],
       "workspaceEditable": true
@@ -1738,32 +1894,32 @@
   ],
   "kpis": [
     {
-      "id": "kpi_weekly_verified_opportunities",
-      "label": "Verified Opportunities",
-      "periodType": "Weekly",
-      "targetUnit": "Opportunities",
-      "targetCount": 10,
-      "minimumEvidenceLevel": "Official source required",
+      "id": "kpi_daily_leads_reviewed",
+      "label": "Tender Leads Reviewed",
+      "periodType": "Daily",
+      "targetUnit": "Leads",
+      "targetCount": 3,
+      "minimumEvidenceLevel": "Lead brief + deadline map",
       "ownerStaff": "AIstaff_OpportunityHunter",
       "workspaceEditable": true
     },
     {
-      "id": "kpi_weekly_application_packages",
-      "label": "Complete Application Packages",
+      "id": "kpi_weekly_supplier_matches",
+      "label": "Supplier / Partner Matches",
       "periodType": "Weekly",
-      "targetUnit": "Packages",
-      "targetCount": 2,
-      "minimumEvidenceLevel": "Package folder + QA gates passed",
-      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "targetUnit": "Matches",
+      "targetCount": 10,
+      "minimumEvidenceLevel": "CRM or source evidence",
+      "ownerStaff": "AIstaff_FitAnalyst",
       "workspaceEditable": true
     },
     {
-      "id": "kpi_followup_compliance",
-      "label": "Follow-up Compliance",
+      "id": "kpi_quote_followup_compliance",
+      "label": "Quote Follow-up Compliance",
       "periodType": "Weekly",
       "targetUnit": "Percent",
       "targetCount": 100,
-      "minimumEvidenceLevel": "No active AI-owned entity without due follow-up",
+      "minimumEvidenceLevel": "No waiting supplier/client action without due follow-up",
       "ownerStaff": "AIstaff_FollowUpController",
       "workspaceEditable": true
     }
@@ -1776,7 +1932,7 @@
       "sections": [
         "Do First",
         "KPI Progress",
-        "Applications",
+        "Leads",
         "AI Staff",
         "System Health"
       ],

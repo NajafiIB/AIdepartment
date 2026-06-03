@@ -1,6 +1,6 @@
-# Swiss Planner Capability Orchestration Fabric
+# GCC Lab Tender Capability Orchestration Fabric
 
-Swiss Planner follows the same operating model used in the Musahama Capability Orchestration Fabric:
+The department follows this model:
 
 `Solution module -> Capability -> Recipe -> Stage -> Lane -> Quality gate -> Output`
 
@@ -12,7 +12,7 @@ Supporting inputs feed stage/lane execution:
 
 The local source of truth is:
 
-`C:\Users\sonse\Documents\Codex\2026-05-13\i-have-the-following-google-sheet\swiss_planner_command_center\capability_fabric.json`
+`swiss_planner_command_center/capability_fabric.json`
 
 The Command Center exposes it through:
 
@@ -20,34 +20,18 @@ The Command Center exposes it through:
 - `/api/capability-fabric`
 - `/api/fabric-note?section=...` for editable Markdown operating notes
 
-## Editable Operating Notes
-
-The JSON registry keeps the machine-readable IDs and relationships. Human-friendly operating guidance is stored in `operatingNotes` inside the same registry and edited from:
-
-`Department Explorer -> Department Settings`
-
-Current note sections:
-
-- `workMap`: responsibilities, recipes, stages, handoffs, and outputs.
-- `lanesTools`: how each lane/tool is used, input/output expectations, failure handling, and evidence.
-- `qualityGates`: pass/fail rules, blocker handling, and checklist wording.
-- `dataConnectors`: connectors, databases, write permissions, and sync rules.
-- `aiBrain`: model level, reasoning effort, and cost/safety policy.
-- `outputTemplates`: expected deliverables and evidence/naming rules.
-- `learningLibrary`: how approved learnings move from threads to role files.
-
 ## Vocabulary
 
-- Solution module: the user-facing department or product area.
-- Capability: a reusable business function, such as opportunity discovery or outreach email.
+- Solution module: the user-facing GCC lab tender Lead department.
+- Capability: a reusable business function, such as Lead review, fit analysis, supplier mapping, quotation outreach, or tender package preparation.
 - Recipe: an operating plan for one capability.
 - Stage: an ordered step inside a recipe.
-- Lane: a focused execution path inside a stage. Lanes are not separate modules or capabilities.
+- Lane: a focused execution path inside a stage.
 - Connections: external providers and integrations.
-- Databases: local, Google Sheet, Drive, or derived data assets.
+- Databases: local, CRM, files, Drive, or derived data assets.
 - AI Support: model/runtime support attached to a capability or recipe.
 - Quality gate: the rule that decides whether a stage can continue.
-- Output: saved operational record, package, email log, report, or task/thread.
+- Output: saved Lead brief, supplier shortlist, quote log, tender package, report, or task/thread.
 
 ## Staff Mapping
 
@@ -55,13 +39,15 @@ AI staff are lanes/agents that execute capability work. They are not the busines
 
 Examples:
 
-- `opportunity_discovery` is a capability; `AIstaff_OpportunityHunter` is the owning execution staff.
-- `application_package_generation` is a capability; `AIstaff_ApplicationPackMaker` is the owning execution staff.
-- `outreach_email` is a capability; `AIstaff_ApplicationPackSender` is the owning execution staff.
+- `opportunity_discovery` now represents tender Lead intake; `AIstaff_OpportunityHunter` / Ava owns the first document review.
+- `fit_assessment` represents GCC lab fit, eligibility, and supplier/partner matching; Leo owns it.
+- `professor_research_intelligence` now represents supplier discovery and mapping; Nadia owns it.
+- `application_package_generation` now represents tender package preparation; Maya owns it.
+- `outreach_email` now represents supplier quotation outreach; Omar owns it.
 
 ## Manager Rule
 
-The Manager must route by capability first, then recipe/stage/lane, then staff assignment. When unsure, the Manager creates a task/thread rather than hardcoding a provider or directly sending an email.
+Alex routes by capability first, then recipe/stage/lane, then staff assignment. When unsure, Alex creates a task/thread rather than hardcoding a provider or directly contacting a supplier.
 
 ## Extension Rule
 

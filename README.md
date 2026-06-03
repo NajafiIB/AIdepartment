@@ -2,18 +2,18 @@
 
 The structure of a single AI department in which there are multiple AI staff working under an AI manager.
 
-This repository currently contains the Swiss Planner AI Staff Command Center: a local Windows command center for monitoring and running an AI department that supports Iman Najafi's PhD application process.
+This repository currently contains the GCC lab AI department command center: a local Windows command center for monitoring and running an AI department.
 
 ## Main Components
 
 - `swiss_planner_command_center/`: local Python + buildless React dashboard at `http://127.0.0.1:8765/`.
-- `gmail_bridge/`: Apps Script bridge for Google Sheets, Gmail, Drive package checks, and email queue safety.
+- `gmail_bridge/`: optional Apps Script bridge for Google Sheets, Gmail, Drive package checks, and email queue safety.
 - `skills/swiss-planner-staff/`: Codex skill and role files for the AI staff operating model.
 
 ## Local Setup
 
 1. Install Python 3.10+.
-2. Copy `.env.example` to `.env.local` and fill local bridge values, or set the same values as Windows user environment variables.
+2. Optional: copy `.env.example` to `.env.local` if you want local Manager Brain or CRM bridge settings.
 3. Start the dashboard by double-clicking `swiss_planner_command_center/start_command_center.cmd`, or run:
 
 ```powershell
@@ -30,9 +30,9 @@ The local database is created at `swiss_planner_command_center/swiss_planner_loc
 
 For a clean setup on another Windows computer, use [docs/INSTALL_ON_NEW_SYSTEM.md](docs/INSTALL_ON_NEW_SYSTEM.md).
 
-## Bridge Setup
+## Optional Bridge Setup
 
-Deploy `gmail_bridge/Code.gs` as a standalone Apps Script project from the Gmail account that owns the bridge. Store the real webhook URL and token outside Git, then expose them locally as:
+The dashboard now runs in local-only mode without Google Apps Script. To re-enable online CRM/Gmail sync later, deploy `gmail_bridge/Code.gs` as a standalone Apps Script project from the Gmail account that owns the bridge. Store the real webhook URL and token outside Git, then expose them locally as:
 
 ```text
 SWISS_PLANNER_WEBHOOK_URL
@@ -47,7 +47,7 @@ The dashboard also supports the older local `run_swiss_planner_bridge.cmd` fallb
 python -m py_compile .\swiss_planner_command_center\server.py .\swiss_planner_command_center\local_store.py
 ```
 
-Then open the local dashboard and confirm the Reports, Tasks, Applications, and Department Explorer pages load.
+Then open the local dashboard and confirm the Reports, Tasks, Leads, and Department Explorer pages load.
 
 ## Source-Control Safety
 
@@ -55,7 +55,7 @@ This repository intentionally excludes:
 
 - local environment files and tokens;
 - local SQLite data;
-- generated application packages, PDFs, DOCX, EML, ZIP files;
+- generated tender packages, PDFs, DOCX, EML, ZIP files;
 - machine-specific command shortcuts and scripts;
 - separate/reference repositories in the workspace.
 

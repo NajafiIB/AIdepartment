@@ -25,13 +25,13 @@ If you downloaded the ZIP from GitHub instead, extract it and open PowerShell in
 
 ## 3. Configure Local Secrets
 
-Copy the environment template:
+This step is optional. The command center runs in local-only mode without Google Apps Script. Copy the environment template only if you want to add Manager Brain settings or re-enable online CRM/Gmail sync later:
 
 ```powershell
 Copy-Item .env.example .env.local
 ```
 
-Open `.env.local` and fill:
+For online CRM/Gmail sync, open `.env.local` and fill:
 
 ```text
 SWISS_PLANNER_WEBHOOK_URL=

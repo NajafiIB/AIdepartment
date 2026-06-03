@@ -1,4 +1,4 @@
 interface:
-  display_name: "Swiss Planner Staff"
-  short_description: "Manage KPIs, staff cycles, CRM health, application preparation, and approval-gated outreach for Swiss Planner."
-  default_prompt: "Use swiss-planner-staff to run the Swiss Planner AI Staff cycle against active KPI targets, coordinating research, application preparation, CRM health, and safe outreach."
+  display_name: "GCC Lab Tender Staff"
+  short_description: "Manage tender Lead review, CRM health, supplier matching, quotation outreach, package readiness, and approval-gated follow-up for GCC lab."
+  default_prompt: "Use gcc-lab-tender-staff to run the GCC lab AI department cycle against active tender Leads, coordinating document review, fit/eligibility, supplier matching, quotation outreach, CRM health, and safe tender package preparation."

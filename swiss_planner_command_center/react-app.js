@@ -2,6 +2,9 @@
 const h = React.createElement;
 const { Children, Fragment, cloneElement, useEffect, useMemo, useState } = React;
 
+const APP_NAME = "GCC lab AI department";
+const APP_SHORT_NAME = "GCC lab";
+const APP_MARK = "GC";
 const HUMAN_STAFF_ID = "Human_Iman";
 
 const STAFF_ORDER = [
@@ -89,19 +92,21 @@ const DEFAULT_STAFF_ALIASES = {
 };
 
 const APPLICATION_STAGES = [
-  "Opportunity Verified",
-  "Fit Approved",
-  "Package Required",
-  "Package In Progress",
-  "Package Verified",
-  "Sent - Waiting for Reply",
+  "Lead Received",
+  "Tender Docs Reviewed",
+  "Fit / Eligibility Checked",
+  "Supplier Match Needed",
+  "Quotation Requested",
+  "Tender Package In Progress",
+  "Tender Package Ready",
+  "Submitted / Waiting",
 ];
 
 const NAV_ITEMS = [
   ["overview", "Overview"],
   ["wikis", "Wikis"],
   ["explorer", "Department Explorer"],
-  ["applications", "Applications"],
+  ["applications", "Leads"],
   ["work", "Tasks"],
   ["reports", "Reports"],
   ["settings", "Settings"],
@@ -128,8 +133,8 @@ const TASK_CATEGORIES = [
   "Manager Guidance",
   "System Audit",
   "Technical Bug",
-  "Email Safety",
-  "Application Work",
+  "Outreach Safety",
+  "Tender Work",
   "Research Work",
 ];
 
@@ -137,70 +142,70 @@ const STAFF_TOOL_CATALOG = [
   { id: "local_task_threads", label: "Local Task Threads", locked: true, description: "Local-first task and conversation memory." },
   { id: "event_log", label: "Event Log", locked: true, description: "Required audit trail for important changes." },
   { id: "manager_routing", label: "Manager Routing", locked: true, description: "Specialists route human-facing questions through AI Manager." },
-  { id: "google_sheet_crm", label: "Google Sheet CRM", description: "Swiss Planner workbook records and status tables." },
-  { id: "google_drive_packages", label: "Google Drive Packages", description: "Application package folders and Google Docs." },
-  { id: "gmail_bridge", label: "Gmail Bridge", description: "Email queue safety, attachments, sent/inbound sync." },
-  { id: "official_web_sources", label: "Official Web Sources", description: "University/funder/job pages used as evidence." },
-  { id: "google_scholar_public_pages", label: "Google Scholar", description: "Publication and professor research evidence." },
-  { id: "linkedin_lead_search", label: "LinkedIn Lead Search", description: "Lead source only; official evidence still required." },
-  { id: "codex_worker", label: "Codex Worker", description: "Deep research, proposal writing, and document production." },
+  { id: "google_sheet_crm", label: "Google Sheet CRM", description: `${APP_NAME} workbook records and status tables.` },
+  { id: "google_drive_packages", label: "Tender Files", description: "Lead files, tender PDFs, forms, specs, quotations, and package documents." },
+  { id: "gmail_bridge", label: "Supplier Outreach", description: "Quotation requests, supplier replies, and communication safety." },
+  { id: "official_web_sources", label: "Official Web Sources", description: "Tender portals, vendor registries, and supplier evidence." },
+  { id: "google_scholar_public_pages", label: "Vendor Registries", description: "Verified vendor lists and supplier qualification evidence." },
+  { id: "linkedin_lead_search", label: "LinkedIn Supplier Search", description: "Supplier discovery source only; official evidence still required." },
+  { id: "codex_worker", label: "Codex Worker", description: "Tender document review, supplier research, and package production." },
   { id: "openai_api", label: "OpenAI Brain", description: "Low-cost Manager interpretation and routing." },
 ];
 
 const SETTINGS_SOLUTIONS = [
   {
     id: "solution_swiss_planner_apply_department",
-    name: "Swiss Planner Apply Department",
+    name: APP_NAME,
     status: "Active",
     owner: "AIstaff_Manager",
-    purpose: "Find, evaluate, prepare, send, and follow up funded PhD/MSc application opportunities for Iman Najafi.",
-    source: "Local Command Center, Swiss Planner workbook, Drive package folders, Gmail bridge, and Codex skills.",
+    purpose: "Review tender leads, read tender documents, match suppliers or partners, request quotations, and prepare tender submission packages.",
+    source: "Local Command Center, GCClab CRM, Lead, Companies, Contacts, Tasks List, LeadMatchedSuppliers, LeadMatchedProducts, and transferred tender files.",
     operatingRule: "Every request, blocker, approval, audit issue, and staff question becomes a Task with a Thread.",
   },
 ];
 
 const SETTINGS_RECIPES = [
   {
-    name: "Opportunity Research",
+    name: "Tender Lead Review",
     skill: "swiss-planner-research",
     owner: "AIstaff_OpportunityHunter",
-    output: "Verified opportunity, evidence links, professor/student leads, and CRM rows.",
-    guardrail: "LinkedIn or posts can be leads only; serious rows require official-source evidence.",
+    output: "Lead case brief, tender requirement matrix, deadline map, and missing-file blockers.",
+    guardrail: "Tender facts must cite the Lead record, transferred files, portal source, or official evidence.",
   },
   {
-    name: "Fit Review",
+    name: "Fit And Supplier Match",
     skill: "swiss-planner-staff",
     owner: "AIstaff_FitAnalyst",
-    output: "Fit score, priority, eligibility risk, and go/no-go recommendation.",
-    guardrail: "Reject or downgrade opportunities with hard eligibility, funding, or location mismatch.",
+    output: "GCC lab fit score, bid/no-bid recommendation, and supplier/partner route.",
+    guardrail: "Do not promote a case without compliance, capability, supplier/partner, and deadline checks.",
   },
   {
-    name: "Professor Research Fit",
+    name: "Supplier Discovery",
     skill: "swiss-planner-research",
     owner: "AIstaff_ProfessorResearchAnalyst",
-    output: "Professor research themes, relevant papers, contact path, and evidence notes.",
-    guardrail: "Use official profiles, university pages, and defensible publication evidence.",
+    output: "New supplier candidates, contact map, evidence links, and confidence notes.",
+    guardrail: "Use official company/vendor evidence before recommending a new supplier.",
   },
   {
-    name: "Application Package",
+    name: "Tender Package",
     skill: "swiss-planner-apply",
     owner: "AIstaff_ApplicationPackMaker",
-    output: "CV, professional resume where useful, SOP, proposal/concept note, publication list, and checklist.",
-    guardrail: "Use Iman's verified profile, Krakow contact details, and one Drive folder per application.",
+    output: "Compliance matrix, tender forms, technical response, commercial summary, quotation evidence, and checklist.",
+    guardrail: "Use tender-owner forms and GCC lab templates; keep missing quote/document blockers explicit.",
   },
   {
-    name: "Outreach Send",
+    name: "Supplier Quotation Outreach",
     skill: "swiss-planner-apply + Gmail Bridge",
     owner: "AIstaff_ApplicationPackSender",
-    output: "Verified email row, sent message, draft, or clear blocked reason.",
-    guardrail: "No external send without approval state, content safety, package completeness, and attachment verification.",
+    output: "Supplier interest status, quotation request log, price list, or clear blocked reason.",
+    guardrail: "No supplier outreach without approval, content safety, and clear tender scope.",
   },
   {
-    name: "Follow-up And Reply Reconciliation",
+    name: "Supplier And Tender Follow-up",
     skill: "swiss-planner-staff + Gmail Bridge",
     owner: "AIstaff_FollowUpController",
-    output: "Reply status, follow-up thread, next task, or closure.",
-    guardrail: "Replies become task threads; portal submissions and LinkedIn sends remain manual.",
+    output: "Supplier reply status, quote follow-up task, Q&A reminder, or submission-status update.",
+    guardrail: "Every waiting supplier/client/tender-owner action needs a due follow-up.",
   },
   {
     name: "CRM Health",
@@ -219,77 +224,77 @@ const SETTINGS_STAGES = [
   },
   {
     staff: "AIstaff_OpportunityHunter",
-    stages: ["Search", "Official Verification", "Evidence Capture", "Opportunity Row", "Manager Handoff"],
-    purpose: "Builds the verified opportunity pipeline.",
+    stages: ["Lead Intake", "Tender File Check", "Requirement Extraction", "Deadline Map", "Manager Handoff"],
+    purpose: "Reads Lead details, tender documents, scope, eligibility clauses, deadlines, and first blockers.",
   },
   {
     staff: "AIstaff_FitAnalyst",
-    stages: ["Profile Match", "Eligibility Check", "Funding Check", "Priority Score", "Application Trigger"],
-    purpose: "Decides whether an opportunity deserves application work.",
+    stages: ["Capability Fit", "Compliance Check", "Supplier Search", "Partner Route", "Bid / No-Bid"],
+    purpose: "Decides whether GCC lab can bid directly, needs a partner, needs suppliers, or should close the lead.",
   },
   {
     staff: "AIstaff_ProfessorResearchAnalyst",
-    stages: ["Profile Scan", "Publication Themes", "Student Leads", "Research Fit", "Evidence Brief"],
-    purpose: "Makes supervisor fit concrete before writing or sending.",
+    stages: ["Supplier Gap", "Market Search", "Vendor Evidence", "Contact Map", "Supplier Brief"],
+    purpose: "Finds ideal suppliers when the existing GCC lab supplier database is not enough.",
   },
   {
     staff: "AIstaff_ApplicationPackMaker",
-    stages: ["Inputs Check", "Draft Package", "Deep Proposal", "Drive Package", "Ready For Verification"],
-    purpose: "Creates application material with professor-specific framing.",
+    stages: ["Inputs Check", "Compliance Matrix", "Technical Response", "Commercial Summary", "Ready For Submission"],
+    purpose: "Creates tender response material, required forms, supplier quote evidence, and submission checklist.",
   },
   {
     staff: "AIstaff_ApplicationPackSender",
-    stages: ["Queue Check", "Content Safety", "Package Completeness", "Attachment Verification", "Send Or Block"],
-    purpose: "Handles the safe send workflow after a package is complete.",
+    stages: ["Supplier Selection", "Approval Check", "Content Safety", "Quotation Request", "Quote Collection"],
+    purpose: "Handles approved supplier quotation requests and captures pricing, delivery terms, and interest.",
   },
   {
     staff: "AIstaff_FollowUpController",
-    stages: ["Sync Replies", "Match Thread", "Review Waiting", "Create Follow-up", "Close Or Reopen"],
-    purpose: "Keeps reply and follow-up status moving.",
+    stages: ["Check Replies", "Match Lead", "Review Waiting Quotes", "Create Follow-up", "Close Or Escalate"],
+    purpose: "Keeps supplier replies, Q&A deadlines, quotation gaps, and tender-owner responses moving.",
   },
   {
     staff: "AIstaff_CRMController",
-    stages: ["Sync", "Audit", "Detect Gaps", "Create System Tasks", "Report"],
-    purpose: "Keeps the workbook, local database, threads, and event trail healthy.",
+    stages: ["Local Sync", "Lead Audit", "Supplier Match Audit", "Create System Tasks", "Report"],
+    purpose: "Keeps Lead, Companies, Contacts, Tasks List, supplier matches, local threads, and event trail healthy.",
   },
 ];
 
 const SETTINGS_LANES = [
   {
-    name: "Workbook CRM Lane",
+    name: "GCClab CRM Lane",
     agent: "CRM Data Agent",
     owner: "AIstaff_CRMController",
-    connectors: "Google Sheets, AppSheet structure, local SQLite sync queue.",
-    data: "Opportunities, Applications, AI Staff Tasks, Entities, Follow Ups, Event Log, Reports.",
+    connectors: "AppSheet structure, GCClab CRM tables, local SQLite queue.",
+    data: "Lead, Companies, Contacts, Tasks List, LeadMatchedSuppliers, LeadMatchedProducts, Products_Registered, Orders.",
     model: "Low or medium reasoning for audits; high reasoning for process diagnosis.",
     guardrail: "Every important status change should leave an event-log trail.",
   },
   {
-    name: "Drive Package Lane",
-    agent: "Package File Agent",
+    name: "Tender Files Lane",
+    agent: "Tender File Agent",
     owner: "AIstaff_ApplicationPackMaker",
-    connectors: "Google Drive, Docs, PDFs, local package folders.",
-    data: "Application Packages, Package Files, document indexes, proposal/CV/SOP files.",
-    model: "High reasoning for proposals; low reasoning for file checks and upload registration.",
-    guardrail: "One package folder per application under the configured Drive parent.",
+    connectors: "Transferred Lead files, Docs, PDFs, local package folders.",
+    data: "Tender PDFs, BOQs, forms, specs, addenda, supplier quotations, compliance matrix, submission package.",
+    model: "High reasoning for tender document analysis and package writing; low reasoning for file checks.",
+    guardrail: "Tender package cannot be ready while required forms, quote evidence, or compliance items are missing.",
   },
   {
-    name: "Gmail Bridge Lane",
-    agent: "Email Safety Agent",
+    name: "Supplier Outreach Lane",
+    agent: "Quotation Outreach Agent",
     owner: "AIstaff_ApplicationPackSender",
-    connectors: "Apps Script Gmail Bridge and Iman's Gmail account.",
-    data: "Email Send Queue, sent log, inbox log, queue attachments, content-safety results.",
-    model: "Low reasoning for verification; high reasoning when reviewing content risk.",
-    guardrail: "Never send unless the queue row is allowed and all safety gates pass.",
+    connectors: "Approved email/outreach channel, Contacts, EmailsLog, supplier evidence.",
+    data: "Supplier quotation requests, supplier replies, price lists, delivery terms, exclusions, validity.",
+    model: "Low reasoning for verification; high reasoning when reviewing supplier/content risk.",
+    guardrail: "Never contact suppliers unless tender scope, approval, and content safety are clear.",
   },
   {
-    name: "Research Evidence Lane",
-    agent: "Official Evidence Agent",
+    name: "Supplier Evidence Lane",
+    agent: "Supplier Evidence Agent",
     owner: "AIstaff_OpportunityHunter",
-    connectors: "Official university sites, job boards, professor pages, Google Scholar, LinkedIn as lead source.",
-    data: "Links, Professor Research Fit, Student Outreach, rejected-opportunity notes.",
-    model: "High reasoning for fit; official evidence required before promotion.",
-    guardrail: "No serious opportunity without a source link that Iman can inspect.",
+    connectors: "Tender portals, supplier websites, vendor registries, LinkedIn as discovery source.",
+    data: "Companies, Contacts, vendor evidence, qualification notes, supplier candidate notes.",
+    model: "High reasoning for supplier fit; official evidence required before recommendation.",
+    guardrail: "No new supplier recommendation without source evidence that Iman can inspect.",
   },
   {
     name: "Local Command Lane",
@@ -303,137 +308,60 @@ const SETTINGS_LANES = [
 ];
 
 const UNIVERSITY_REFERENCES = {
-  agh: {
-    key: "agh",
-    name: "AGH University of Krakow",
-    city: "Krakow",
-    country: "Poland",
-    type: "Technical university / doctoral school",
-    website: "https://www.agh.edu.pl/en",
-    doctoral: "https://sd.agh.edu.pl/en/candidates",
-    focus: "Energy engineering, geothermal systems, drilling, petroleum engineering, geoscience, mining, and applied technical research.",
-    fit: "Strong Krakow fit for engineering-heavy PhD routes framed toward geothermal bankability, subsurface risk, CCS, storage, and project-finance diligence.",
+  crm: {
+    key: "crm",
+    name: "GCClab CRM Lead",
+    city: "",
+    country: "",
+    type: "Lead table",
+    website: "",
+    doctoral: "",
+    focus: "Lead records transferred from Blue Mark Business Sphere with tender scope, dates, responsible staff, contacts, and files.",
+    fit: "Primary source for tender intake. Ava starts here before reading transferred files.",
   },
-  uek: {
-    key: "uek",
-    name: "Krakow University of Economics / UEK",
-    city: "Krakow",
-    country: "Poland",
-    type: "Economics/business university",
-    website: "https://uek.krakow.pl/en",
-    doctoral: "https://sd.uek.krakow.pl/",
-    focus: "Economics, finance, management, data science, sustainability, and business research.",
-    fit: "Very strong location fit for finance, private markets, sustainable finance, and applied business research in Krakow.",
+  portal: {
+    key: "portal",
+    name: "Tender Portal",
+    city: "",
+    country: "",
+    type: "Official tender source",
+    website: "",
+    doctoral: "",
+    focus: "Public or private tender pages, RFQ/RFP/PQ/SOI sources, addenda, Q&A pages, and closing-date evidence.",
+    fit: "Used to verify deadlines, requirements, submission rules, and official document versions.",
   },
-  kisd: {
-    key: "kisd",
-    name: "Krakow Interdisciplinary Doctoral School / PAN Institutes",
-    city: "Krakow",
-    country: "Poland",
-    type: "Doctoral school across Polish Academy of Sciences institutes",
-    website: "https://kisd.ifj.edu.pl/",
-    doctoral: "https://kisd.ifj.edu.pl/recruitment/",
-    focus: "Interdisciplinary science, energy transition, thermal storage, geoscience, physics, and systems research through PAN institutes.",
-    fit: "Useful for Krakow-based energy-transition topics where Iman's engineering background can connect to finance and implementation.",
+  supplier: {
+    key: "supplier",
+    name: "Supplier / Partner Source",
+    city: "",
+    country: "",
+    type: "Companies and Contacts",
+    website: "",
+    doctoral: "",
+    focus: "Supplier, active supplier, client, partner, verified vendor, and contact records from Companies and Contacts.",
+    fit: "Used by Leo, Nadia, Omar, and Lina for supplier matching, quotation requests, and follow-up.",
   },
-  hsg: {
-    key: "hsg",
-    name: "University of St. Gallen / HSG",
-    city: "St. Gallen",
-    country: "Switzerland",
-    type: "Business school / university",
-    website: "https://www.unisg.ch/en/",
-    doctoral: "https://www.unisg.ch/en/studying/programmes/doctoral-programmes/",
-    focus: "Finance, management, entrepreneurship, private markets, innovation, and business research.",
-    fit: "High strategic fit for private markets, M&A, family office, project finance, and finance-industry positioning in Switzerland.",
-  },
-  unibas: {
-    key: "unibas",
-    name: "University of Basel",
-    city: "Basel",
-    country: "Switzerland",
-    type: "Research university",
-    website: "https://www.unibas.ch/en.html",
-    doctoral: "https://www.unibas.ch/en/Studies/Application-Admission/Doctorate.html",
-    focus: "Finance, sustainability, climate policy, economics, and interdisciplinary research depending on faculty/program.",
-    fit: "Relevant for sustainable finance, decarbonization, and climate-risk topics with a Swiss institutional signal.",
-  },
-  uzh: {
-    key: "uzh",
-    name: "University of Zurich / Swiss Finance Institute",
-    city: "Zurich",
-    country: "Switzerland",
-    type: "Research university / finance institute",
-    website: "https://www.uzh.ch/en.html",
-    doctoral: "https://www.sfi.ch/en/education/phd-program",
-    focus: "Finance, banking, sustainable finance, asset pricing, risk, and quantitative research.",
-    fit: "Excellent finance-hub fit for Zurich/SFI-style finance research, especially sustainable finance or private capital.",
-  },
-  kozminski: {
-    key: "kozminski",
-    name: "Kozminski University",
-    city: "Warsaw",
-    country: "Poland",
-    type: "Business school",
-    website: "https://www.kozminski.edu.pl/en",
-    doctoral: "https://www.kozminski.edu.pl/en/doctoral-school",
-    focus: "Management, finance, entrepreneurship, and business research.",
-    fit: "Poland-based finance/business option, less location-ideal than Krakow but useful for private-market positioning.",
-  },
-  sgh: {
-    key: "sgh",
-    name: "SGH Warsaw School of Economics",
-    city: "Warsaw",
-    country: "Poland",
-    type: "Economics university",
-    website: "https://www.sgh.waw.pl/en",
-    doctoral: "https://www.sgh.waw.pl/en/doctoral-school",
-    focus: "Economics, finance, management, and public policy.",
-    fit: "Good Polish finance signal for economics and finance when funded doctoral route and supervisor fit are clear.",
-  },
-  uw: {
-    key: "uw",
-    name: "University of Warsaw",
-    city: "Warsaw",
-    country: "Poland",
-    type: "Research university",
-    website: "https://en.uw.edu.pl/",
-    doctoral: "https://szkolydoktorskie.uw.edu.pl/en/",
-    focus: "Economics, finance, data science, policy, and broad research areas.",
-    fit: "Good for Polish finance/economics paths if a funded route and supervisor fit are clear.",
-  },
-  pk: {
-    key: "pk",
-    name: "Cracow University of Technology / PK",
-    city: "Krakow",
-    country: "Poland",
-    type: "Technical university",
-    website: "https://www.pk.edu.pl/index.php?lang=en",
-    doctoral: "https://szkoladoktorska.pk.edu.pl/",
-    focus: "Engineering, environmental systems, energy, transport, and built environment.",
-    fit: "Krakow-based technical fallback for energy, environment, and applied engineering topics with a finance-facing extension.",
-  },
-  uken: {
-    key: "uken",
-    name: "University of the National Education Commission, Krakow / UKEN",
-    city: "Krakow",
-    country: "Poland",
-    type: "Public university",
-    website: "https://uken.krakow.pl/en/",
-    doctoral: "https://sd.uken.krakow.pl/",
-    focus: "Economics, social sciences, education, and selected applied research fields.",
-    fit: "Krakow location fit when the topic connects to economics, policy, finance, or regional development.",
+  aramco: {
+    key: "aramco",
+    name: "Saudi Aramco Vendor Evidence",
+    city: "",
+    country: "Saudi Arabia",
+    type: "Verified vendor list",
+    website: "",
+    doctoral: "",
+    focus: "Verified Vendor List evidence and qualification signals relevant to GCC lab tender participation.",
+    fit: "Useful when a tender requires vendor qualification, local partner evidence, or supplier credibility.",
   },
   unknown: {
     key: "unknown",
-    name: "University not identified",
+    name: "Tender source not identified",
     city: "",
     country: "",
     type: "Reference",
     website: "",
     doctoral: "",
-    focus: "The current row does not include enough university metadata.",
-    fit: "Add a University field or enrich the dashboard response to make this reference exact.",
+    focus: "The current row does not include enough Lead Source, portal, company, or contact metadata.",
+    fit: "Add Lead Source, Lead Contact, company/contact, or file metadata to make this reference exact.",
   },
 };
 
@@ -744,11 +672,11 @@ function staffProfile(value) {
   const registry = registryStaffProfile(id);
   const profiles = [
     ["Manager", "Manager", "MG", "user", "manager"],
-    ["OpportunityHunter", "Opportunity Hunter", "OH", "search", "hunter"],
-    ["FitAnalyst", "Fit Analyst", "FA", "chart", "fit"],
-    ["ProfessorResearchAnalyst", "Professor Research Analyst", "PR", "file", "research"],
-    ["ApplicationPackMaker", "Application Pack Maker", "PM", "file", "maker"],
-    ["ApplicationPackSender", "Application Pack Sender", "PS", "send", "sender"],
+    ["OpportunityHunter", "Tender Document Analyst", "TD", "search", "hunter"],
+    ["FitAnalyst", "Fit And Supplier Match Analyst", "FA", "chart", "fit"],
+    ["ProfessorResearchAnalyst", "Supplier Mapper", "SM", "file", "research"],
+    ["ApplicationPackMaker", "Tender Package Maker", "TP", "file", "maker"],
+    ["ApplicationPackSender", "Supplier Outreach Specialist", "SO", "send", "sender"],
     ["FollowUpController", "Follow-up Controller", "FU", "clock", "follow"],
     ["CRMController", "CRM Controller", "CRM", "database", "crm"],
   ];
@@ -852,6 +780,12 @@ function inferUniversity(row = {}) {
   const text = [
     row.university,
     row.University,
+    row["Lead Source"],
+    row.leadSource,
+    row.source,
+    row.company,
+    row.Company,
+    row["Lead Contact"],
     row.opportunityId,
     row.applicationId,
     row.entityId,
@@ -861,17 +795,10 @@ function inferUniversity(row = {}) {
     row.subject,
   ].join(" ").toLowerCase();
   const tests = [
-    ["agh", /\bagh\b|agh\.edu|godawska|knez|sowizdzal|ansow|necki/],
-    ["uek", /\buek\b|uek\.krakow|kozuch|sduek/],
-    ["kisd", /\bkisd\b|ifj\.edu|imgpan|igsmie|min-pan|skotniczny|kaminski/],
-    ["hsg", /\bhsg\b|unisg|st\.?\s*gallen|tykvova|palmie/],
-    ["unibas", /unibas|basel|kachi|gantenbein/],
-    ["uzh", /\buzh\b|sfi\.ch|leippold|swiss finance institute/],
-    ["kozminski", /kozminski|mielcarz/],
-    ["sgh", /\bsgh\b|sgh\.waw/],
-    ["uw", /\buw\b|wne\.uw|university of warsaw/],
-    ["pk", /\bpk\b|pk\.edu|cracow university of technology|szkoladoktorska@pk/],
-    ["uken", /uken|national education commission|kozaczka/],
+    ["aramco", /aramco|verified vendor|vendor list|vvl/],
+    ["supplier", /supplier|partner|company|quotation|quote|contact|vendor/],
+    ["portal", /portal|tender|rfq|rfp|pq|soi|procurement|etimad|source/],
+    ["crm", /lead|blue mark|gcclab|gcc lab|crm/],
   ];
   for (const [key, pattern] of tests) {
     if (pattern.test(text)) return UNIVERSITY_REFERENCES[key];
@@ -881,12 +808,14 @@ function inferUniversity(row = {}) {
 
 function applicationStage(row = {}) {
   const text = `${row.currentStage || ""} ${row.currentStatus || ""}`.toLowerCase();
-  if (text.includes("sent") || text.includes("waiting")) return "Sent - Waiting for Reply";
-  if (text.includes("verified")) return "Package Verified";
-  if (text.includes("progress")) return "Package In Progress";
-  if (text.includes("required")) return "Package Required";
-  if (text.includes("fit")) return "Fit Approved";
-  if (text.includes("opportunity")) return "Opportunity Verified";
+  if (text.includes("submitted") || text.includes("waiting")) return "Submitted / Waiting";
+  if (text.includes("ready") || text.includes("verified")) return "Tender Package Ready";
+  if (text.includes("package") && text.includes("progress")) return "Tender Package In Progress";
+  if (text.includes("quotation") || text.includes("quote")) return "Quotation Requested";
+  if (text.includes("supplier") || text.includes("partner")) return "Supplier Match Needed";
+  if (text.includes("fit") || text.includes("eligibility")) return "Fit / Eligibility Checked";
+  if (text.includes("document") || text.includes("docs")) return "Tender Docs Reviewed";
+  if (text.includes("lead") || text.includes("opportunity")) return "Lead Received";
   return "Other";
 }
 
@@ -903,9 +832,11 @@ function isManualReviewText(text) {
     text.includes("duplicate recipient") ||
     text.includes("repeated professor") ||
     text.includes("repeated supervisor") ||
+    text.includes("repeated supplier") ||
     text.includes("needs human review") ||
     text.includes("human review") ||
     text.includes("supervisor reply") ||
+    text.includes("supplier reply") ||
     text.includes("portal submission") ||
     text.includes("linkedin") ||
     text.includes("manual send")
@@ -931,6 +862,9 @@ function isCodexWorkerHandoff(row) {
     text.includes("package writing") ||
     text.includes("proposal writing") ||
     text.includes("professor analysis") ||
+    text.includes("supplier analysis") ||
+    text.includes("tender document") ||
+    text.includes("quotation") ||
     text.includes("document drafting")
   );
 }
@@ -944,7 +878,7 @@ function taskNeedsCodex(data) {
   if (isHumanResponsible(data.assignedTo)) return false;
   const text = normalizedText([data.taskType, data.taskTemplateId, data.nextAction, data.completionCriteria].join(" "));
   if (!text || isManualReviewText(text)) return false;
-  return ["research", "find ", "opportunit", "professor", "proposal", "write", "draft", "document", "cv", "resume", "sop", "package", "analy", "fit"].some(term => text.includes(term));
+  return ["research", "find ", "opportunit", "lead", "tender", "supplier", "vendor", "quotation", "quote", "proposal", "write", "draft", "document", "package", "analy", "fit"].some(term => text.includes(term));
 }
 
 function isTerminal(row) {
@@ -972,7 +906,8 @@ function hasHumanApprovalSignal(row) {
     text.includes("content review") ||
     text.includes("not approved") ||
     text.includes("approval required") ||
-    text.includes("supervisor reply")
+    text.includes("supervisor reply") ||
+    text.includes("supplier reply")
   );
 }
 
@@ -1018,18 +953,18 @@ function buildLabels(data) {
 function pageHeaderForView(view, labels = {}, context = {}) {
   const navMap = Object.fromEntries(NAV_ITEMS);
   if (view === "application-detail") {
-    const title = (labels.applications && labels.applications[context.applicationId] && labels.applications[context.applicationId].label) || friendlyId(context.applicationId) || "Application";
-    return { crumbs: ["Swiss Planner", "Applications"], title };
+    const title = (labels.applications && labels.applications[context.applicationId] && labels.applications[context.applicationId].label) || friendlyId(context.applicationId) || "Lead";
+    return { crumbs: [APP_NAME, "Leads"], title };
   }
   if (view === "opportunity-detail") {
-    const title = (labels.opportunities && labels.opportunities[context.opportunityId] && labels.opportunities[context.opportunityId].label) || friendlyId(context.opportunityId) || "Opportunity";
-    return { crumbs: ["Swiss Planner", "Applications"], title };
+    const title = (labels.opportunities && labels.opportunities[context.opportunityId] && labels.opportunities[context.opportunityId].label) || friendlyId(context.opportunityId) || "Tender Case";
+    return { crumbs: [APP_NAME, "Leads"], title };
   }
   if (view === "university-detail") {
-    return { crumbs: ["Swiss Planner", "Applications"], title: context.universityName || "University" };
+    return { crumbs: [APP_NAME, "Leads"], title: context.universityName || "Tender Source" };
   }
   return {
-    crumbs: ["Swiss Planner"],
+    crumbs: [APP_NAME],
     title: navMap[view] || "Overview",
   };
 }
@@ -1200,33 +1135,33 @@ function taskCategory(row = {}) {
   if (explicit) return explicit;
   const text = normalizedText([row.taskType, row.status, row.lastError, row.resultNotes, row.nextAction, row.sourceKind, row.subject].join(" "));
   if (text.includes("duplicate recipient") || text.includes("human review") || text.includes("needs approval")) return "Human Decision";
-  if (text.includes("email") || text.includes("queue") || text.includes("attachment") || text.includes("send")) return "Email Safety";
+  if (text.includes("email") || text.includes("queue") || text.includes("attachment") || text.includes("send") || text.includes("quote") || text.includes("quotation")) return "Outreach Safety";
   if (text.includes("technical") || text.includes("bug") || text.includes("webhook") || text.includes("lock")) return "Technical Bug";
   if (text.includes("audit") || text.includes("follow-up") || text.includes("stale")) return "System Audit";
-  if (text.includes("research") || text.includes("opportunit") || text.includes("professor")) return "Research Work";
-  if (text.includes("package") || text.includes("application") || text.includes("proposal") || text.includes("cv")) return "Application Work";
+  if (text.includes("research") || text.includes("opportunit") || text.includes("supplier") || text.includes("vendor") || text.includes("partner")) return "Research Work";
+  if (text.includes("package") || text.includes("application") || text.includes("proposal") || text.includes("cv") || text.includes("lead") || text.includes("tender")) return "Tender Work";
   return "Manager Guidance";
 }
 
 function managerRouteForMessage(message = "", taskType = "") {
   const text = normalizedText(`${taskType} ${message}`);
-  if (text.includes("full process") || text.includes("whole process") || text.includes("end point") || text.includes("until submission") || text.includes("till submission") || text.includes("to submission") || text.includes("application process") || text.includes("apply for these") || text.includes("take these through")) {
+  if (text.includes("full process") || text.includes("whole process") || text.includes("end point") || text.includes("until submission") || text.includes("till submission") || text.includes("to submission") || text.includes("application process") || text.includes("tender process") || text.includes("take part") || text.includes("take these through")) {
     return { staff: "AIstaff_FitAnalyst", taskType: "Fit Review", taskCategory: "Research Work" };
   }
-  if (text.includes("find") || text.includes("opportunit") || text.includes("search") || text.includes("research new") || text.includes("phd") || text.includes("msc")) {
-    return { staff: "AIstaff_OpportunityHunter", taskType: "Research", taskCategory: "Research Work" };
+  if (text.includes("lead") || text.includes("tender") || text.includes("rfq") || text.includes("rfp") || text.includes("pq") || text.includes("soi") || text.includes("opportunit")) {
+    return { staff: "AIstaff_OpportunityHunter", taskType: "Lead Review", taskCategory: "Tender Work" };
   }
-  if (text.includes("fit") || text.includes("score") || text.includes("priorit")) {
+  if (text.includes("fit") || text.includes("score") || text.includes("priorit") || text.includes("eligibility") || text.includes("bid")) {
     return { staff: "AIstaff_FitAnalyst", taskType: "Fit Review", taskCategory: "Research Work" };
   }
-  if (text.includes("professor") || text.includes("scholar") || text.includes("publication") || text.includes("research fit")) {
-    return { staff: "AIstaff_ProfessorResearchAnalyst", taskType: "Research", taskCategory: "Research Work" };
+  if (text.includes("supplier") || text.includes("vendor") || text.includes("partner") || text.includes("company") || text.includes("contact")) {
+    return { staff: "AIstaff_ProfessorResearchAnalyst", taskType: "Supplier Discovery", taskCategory: "Research Work" };
   }
-  if (text.includes("cv") || text.includes("resume") || text.includes("sop") || text.includes("proposal") || text.includes("package") || text.includes("document")) {
-    return { staff: "AIstaff_ApplicationPackMaker", taskType: "Package", taskCategory: "Application Work" };
+  if (text.includes("proposal") || text.includes("package") || text.includes("document") || text.includes("compliance") || text.includes("boq") || text.includes("form")) {
+    return { staff: "AIstaff_ApplicationPackMaker", taskType: "Tender Package", taskCategory: "Tender Work" };
   }
-  if (text.includes("send") || text.includes("email") || text.includes("outreach")) {
-    return { staff: "AIstaff_ApplicationPackSender", taskType: "Outreach", taskCategory: "Email Safety" };
+  if (text.includes("send") || text.includes("email") || text.includes("outreach") || text.includes("quote") || text.includes("quotation")) {
+    return { staff: "AIstaff_ApplicationPackSender", taskType: "Quotation Outreach", taskCategory: "Outreach Safety" };
   }
   if (text.includes("follow up") || text.includes("reply") || text.includes("waiting")) {
     return { staff: "AIstaff_FollowUpController", taskType: "Follow-up", taskCategory: "System Audit" };
@@ -1239,35 +1174,35 @@ function managerRouteForMessage(message = "", taskType = "") {
 
 function humanReadableTaskProblem(row = {}) {
   const text = normalizedText([row.taskType, row.taskCategory, row.status, row.lastError, row.resultNotes, row.nextAction, row.completionCriteria].join(" "));
-  if (text.includes("duplicate recipient") || text.includes("repeated professor") || text.includes("repeated supervisor")) return "The system detected a repeated professor/supervisor recipient, so it stopped before a second outreach.";
+  if (text.includes("duplicate recipient") || text.includes("repeated professor") || text.includes("repeated supervisor") || text.includes("repeated supplier")) return "The system detected a repeated or risky supplier/contact recipient, so it stopped before another outreach.";
   if (text.includes("document style qa") || text.includes("not approved for external send") || text.includes("minimal renderer")) return "The package exists, but at least one document is not approved for external sending because it does not match the agreed template/style quality.";
-  if (text.includes("attachment") && (text.includes("failed") || text.includes("blocked") || text.includes("incomplete"))) return "The email/package cannot be sent yet because package completeness or attachment access has not passed.";
-  if (text.includes("codex") || text.includes("outside apps script") || text.includes("waiting for codex worker")) return "The workflow reached a step that Apps Script can track, but not judge or write safely by itself.";
+  if (text.includes("attachment") && (text.includes("failed") || text.includes("blocked") || text.includes("incomplete"))) return "The supplier message or tender package cannot move yet because file access, package completeness, or quote evidence has not passed.";
+  if (text.includes("codex") || text.includes("outside apps script") || text.includes("waiting for codex worker")) return "The workflow reached a judgement-heavy step that the local AI department should review before writing or changing the CRM.";
   if (text.includes("follow") || text.includes("reply") || text.includes("waiting")) return "A follow-up or reply-check is due, and the system needs a clear next action instead of guessing.";
   return "The workflow is paused because a decision is needed before it can continue.";
 }
 
 function humanReadableTaskNeed(row = {}) {
   const text = normalizedText([row.taskType, row.taskCategory, row.status, row.lastError, row.resultNotes, row.nextAction, row.completionCriteria].join(" "));
-  if (text.includes("duplicate recipient") || text.includes("repeated professor")) return "Tell Alex whether to prepare a reviewed follow-up, wait longer, close this outreach, or use another contact.";
+  if (text.includes("duplicate recipient") || text.includes("repeated professor") || text.includes("repeated supplier")) return "Tell Alex whether to prepare a reviewed follow-up, wait longer, close this outreach, or use another supplier/contact.";
   if (text.includes("document style qa") || text.includes("not approved for external send") || text.includes("minimal renderer")) return "Tell Alex whether to regenerate the package from the approved template path or close it as not ready.";
-  if (text.includes("attachment") && (text.includes("failed") || text.includes("blocked") || text.includes("incomplete"))) return "Tell Alex whether to fix the package/attachments, prepare missing documents, or leave the email blocked.";
-  if (text.includes("codex") || text.includes("outside apps script") || text.includes("waiting for codex worker")) return "Tell Alex whether Codex should do the judgement/writing/research work, another staff member should take it, or the task should be closed.";
-  if (text.includes("follow") || text.includes("reply") || text.includes("waiting")) return "Tell Alex whether to follow up now, wait until a later date, close the application path, or review the reply trail first.";
+  if (text.includes("attachment") && (text.includes("failed") || text.includes("blocked") || text.includes("incomplete"))) return "Tell Alex whether to fix the files/attachments, prepare missing tender documents, or leave the outreach blocked.";
+  if (text.includes("codex") || text.includes("outside apps script") || text.includes("waiting for codex worker")) return "Tell Alex whether Codex should do the tender judgement/writing/research work, another staff member should take it, or the task should be closed.";
+  if (text.includes("follow") || text.includes("reply") || text.includes("waiting")) return "Tell Alex whether to follow up now, wait until a later date, close the lead path, or review the reply trail first.";
   return "Reply in normal language: approve and continue, reassign, ask for more detail, or close.";
 }
 
 function humanReadableTaskOptions(row = {}) {
   const text = normalizedText([row.taskType, row.status, row.resultNotes, row.nextAction].join(" "));
-  if (text.includes("duplicate recipient") || text.includes("repeated professor")) return ["Prepare a reviewed follow-up", "Wait longer", "Close this outreach", "Use another contact"];
+  if (text.includes("duplicate recipient") || text.includes("repeated professor") || text.includes("repeated supplier")) return ["Prepare a reviewed follow-up", "Wait longer", "Close this outreach", "Use another supplier/contact"];
   if (text.includes("style") || text.includes("template") || text.includes("minimal renderer")) return ["Regenerate with approved template", "Use Google Doc links only", "Close as not ready"];
   if (text.includes("codex") || text.includes("outside apps script")) return ["Let Codex handle it", "Reassign to another AI staff", "Ask for more detail", "Close the task"];
-  if (text.includes("follow")) return ["Follow up now", "Wait and remind later", "Review reply trail", "Close this application path"];
+  if (text.includes("follow")) return ["Follow up now", "Wait and remind later", "Review reply trail", "Close this lead path"];
   return ["Approve and continue", "Reassign", "Ask for more detail", "Close"];
 }
 
 function humanDecisionBrief(row = {}) {
-  const related = [row.applicationId ? `application ${row.applicationId}` : "", row.opportunityId ? `opportunity ${row.opportunityId}` : "", row.sourceQueueId ? `email queue ${row.sourceQueueId}` : ""].filter(Boolean).join("; ") || "this task";
+  const related = [row.applicationId ? `lead ${row.applicationId}` : "", row.opportunityId ? `tender case ${row.opportunityId}` : "", row.sourceQueueId ? `outreach queue ${row.sourceQueueId}` : ""].filter(Boolean).join("; ") || "this task";
   return [
     `**Task**\n${row.nextAction || row.taskType || "Review this task"}`,
     `**What happened**\n${humanReadableTaskProblem(row)}`,
@@ -1633,13 +1568,15 @@ function App() {
 
   async function loadDashboard(runAudit = false, force = false) {
     if (busy && !force && !runAudit) return;
-    setStatus(runAudit ? "Running sheet audit and syncing the local dashboard..." : "Syncing the local dashboard view...");
+    setStatus(runAudit ? "Refreshing local dashboard..." : "Loading the local dashboard view...");
     try {
       const result = await api(`/api/dashboard?limit=60&runAudit=${runAudit ? "true" : "false"}`);
       setDashboard(result);
       const sync = result.localSync || {};
-      const lastSync = sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "pending";
-      setStatus(`Last refreshed ${fmtDate(result.refreshedAt)}. Local-first mode. Sheet sync: ${lastSync}. Pending local changes: ${sync.pendingActions || 0}.`);
+      const crmStatus = sync.crmSyncEnabled
+        ? `CRM sync: ${sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "pending"}`
+        : "CRM sync disabled";
+      setStatus(`Last refreshed ${fmtDate(result.refreshedAt)}. ${sync.mode || "local-only"} mode. ${crmStatus}. Pending local changes: ${sync.pendingActions || 0}.`);
     } catch (error) {
       setStatus(`Dashboard error: ${error.message}`);
       showToast(error.message);
@@ -1711,12 +1648,12 @@ function App() {
   }
 
   async function syncNow(runAudit = false) {
-    await runBusy(runAudit ? "Syncing and auditing..." : "Syncing local changes...", async () => {
+    await runBusy(runAudit ? "Refreshing CRM sync state..." : "Refreshing local state...", async () => {
       const result = await api("/api/sync-now", { method: "POST", body: JSON.stringify({ runAudit }) });
       setDashboard(result.dashboard);
-      showToast("Sheet sync completed");
-      setStatus("Sheet sync completed.");
-    }, runAudit ? "sync:audit" : "sync:now", runAudit ? "Auditing..." : "Syncing...");
+      showToast(result.bridgeDisabled ? "CRM sync is disabled" : "CRM sync completed");
+      setStatus(result.bridgeDisabled ? "CRM sync is disabled; local-only mode is active." : "CRM sync completed.");
+    }, runAudit ? "sync:audit" : "sync:now", runAudit ? "Refreshing..." : "Refreshing...");
   }
 
   async function runOne(staff = "") {
@@ -1936,14 +1873,14 @@ function App() {
     opportunityId: selectedOpportunityId,
     universityName: (UNIVERSITY_REFERENCES[selectedUniversityKey] && UNIVERSITY_REFERENCES[selectedUniversityKey].name) || friendlyId(selectedUniversityKey),
   });
-  document.title = `${pageHeader.title} - Swiss Planner`;
+  document.title = `${pageHeader.title} - ${APP_NAME}`;
   window.__SWISS_PLANNER_ACTION_STATE__ = { busy, actionKey: busyAction, label: busyLabel || "Running..." };
 
   return h("div", { className: cn("app-shell react-shell", materialReady && "material-web-enhanced", sidebarCollapsed && "sidebar-collapsed") },
     h("aside", { className: "sidebar" },
       h("div", { className: "brand-block" },
-        h("div", { className: "brand-mark" }, "SP"),
-        h("div", { className: "brand-copy" }, h("p", { className: "eyebrow" }, "Swiss Planner"), h("h1", null, "AI Staff")),
+        h("div", { className: "brand-mark" }, APP_MARK),
+        h("div", { className: "brand-copy" }, h("p", { className: "eyebrow" }, APP_SHORT_NAME), h("h1", null, "AI Department")),
         h(Button, { className: "sidebar-toggle", variant: "ghost", size: "icon", onClick: () => setSidebarCollapsed(!sidebarCollapsed), title: sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar", "aria-label": sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar" }, sidebarCollapsed ? icon("list") : icon("x"))
       ),
       h("nav", { className: "side-nav", "aria-label": "Dashboard navigation" }, NAV_ITEMS.map(([key, label]) =>
@@ -1999,7 +1936,7 @@ function OverviewView({ dashboard, summary, runOne, openTaskDialog, runAutopilot
   const [activeTab, setActiveTab] = useState("sponsor");
   const sync = dashboard.localSync || {};
   const alexOpenThreads = (((dashboard.threadsSummary || {}).byStaff || {}).AIstaff_Manager || {}).open || 0;
-  const activeApplications = summary.activeEntities || (dashboard.applications || []).length || 0;
+  const activeLeads = summary.activeEntities || (dashboard.applications || []).length || 0;
   const blockedCount = (summary.blockedEmails || 0) + (summary.overdueTasks || 0) + (summary.overdueFollowUps || 0);
   const tabs = [
     ["sponsor", "Sponsor organization details"],
@@ -2010,8 +1947,8 @@ function OverviewView({ dashboard, summary, runOne, openTaskDialog, runAutopilot
     h("div", { className: "overview-hero" },
       h("div", { className: "overview-hero-copy" },
         h("p", { className: "eyebrow" }, "Overview"),
-        h("h1", null, "Swiss Planner AI Department"),
-        h("p", null, "A local AI staff department for PhD opportunity research, application preparation, package safety, and follow-up control.")
+        h("h1", null, APP_NAME),
+        h("p", null, "A local AI staff department for tender lead review, supplier and partner matching, quotation outreach, tender package preparation, and follow-up control.")
       ),
       h("div", { className: "overview-hero-actions" },
         h(Button, { variant: "secondary", onClick: () => setView("explorer") }, icon("user"), "Department Explorer"),
@@ -2028,19 +1965,19 @@ function OverviewView({ dashboard, summary, runOne, openTaskDialog, runAutopilot
         onClick: () => setActiveTab(key),
       }, label))
     ),
-    activeTab === "sponsor" ? h(OverviewSponsorTab, { dashboard, summary, activeApplications, alexOpenThreads, blockedCount, sync }) : null,
+    activeTab === "sponsor" ? h(OverviewSponsorTab, { dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync }) : null,
     activeTab === "howTo" ? h(OverviewHowToTab, { setView, openTaskDialog }) : null,
     activeTab === "department" ? h(OverviewDepartmentTab, { dashboard, setView }) : null
   );
 }
 
-function OverviewSponsorTab({ dashboard, summary, activeApplications, alexOpenThreads, blockedCount, sync }) {
-  const mission = ((dashboard.kpis || []).find(row => normalizedText(row.Status) === "active") || {})["Owner Notes"] || "Find and execute funded PhD paths in Europe, prioritizing Switzerland, finance, energy, and Krakow/Poland feasibility.";
+function OverviewSponsorTab({ dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync }) {
+  const mission = ((dashboard.kpis || []).find(row => normalizedText(row.Status) === "active") || {})["Owner Notes"] || "Review tender leads, read tender documents, check GCC lab fit, match suppliers or partners, request quotations, and prepare submission packages.";
   const cards = [
     ["Sponsor", "Iman Najafi", "Human owner and final decision maker."],
-    ["Department", "Swiss Planner AI Staff", "Research, package preparation, safety checks, and follow-up control."],
+    ["Department", APP_NAME, "Tender lead review, supplier matching, quotation outreach, tender package preparation, and follow-up control."],
     ["Manager", "Alex Fergusen", `${alexOpenThreads || 0} open thread(s) with the AI manager.`],
-    ["Current workload", `${activeApplications || 0} active items`, `${summary.dueTasks || 0} due task(s), ${blockedCount || 0} risk item(s).`],
+    ["Current workload", `${activeLeads || 0} active lead case(s)`, `${summary.dueTasks || 0} due task(s), ${blockedCount || 0} risk item(s).`],
   ];
   return h("div", { className: "overview-panel" },
     h("div", { className: "overview-section-head" },
@@ -2058,7 +1995,7 @@ function OverviewSponsorTab({ dashboard, summary, activeApplications, alexOpenTh
       h("h3", null, "Mission"),
       h("p", null, mission),
       h("div", { className: "overview-meta-row" },
-        h("span", null, `Last sheet sync: ${fmtDate(sync.lastSheetSync) || "not synced yet"}`),
+        h("span", null, sync.crmSyncEnabled ? `Last CRM sync: ${fmtDate(sync.lastSheetSync) || "not synced yet"}` : "CRM sync disabled"),
         h("span", null, `Pending local changes: ${sync.pendingActions || 0}`),
         h("span", null, `Failed actions: ${sync.failedActions || 0}`)
       )
@@ -2068,10 +2005,10 @@ function OverviewSponsorTab({ dashboard, summary, activeApplications, alexOpenTh
 
 function OverviewHowToTab({ setView, openTaskDialog }) {
   const steps = [
-    ["1", "Message Alex", "Give the department a natural-language instruction. Alex routes it to the correct AI staff."],
-    ["2", "Review human threads", "When Alex needs a decision, the question appears in Tasks as a conversation thread."],
-    ["3", "Monitor the department", "Use Reports as the operating cockpit for KPIs, blockers, pipeline, staff status, and system health."],
-    ["4", "Explore structure", "Use Department Explorer to inspect the team, roles, tools, work steps, QA rules, and learned skills."],
+    ["1", "Transfer or name a Lead", "Give Alex the Lead ID, tender files, source, and what decision you need."],
+    ["2", "Ava reads the tender", "Ava reviews tender PDFs, specs, forms, deadlines, and missing-document blockers."],
+    ["3", "Leo routes the bid", "Leo checks GCC lab fit and finds existing suppliers or partners before asking Nadia to search outside."],
+    ["4", "Monitor the case", "Use Reports and Leads to track supplier quotes, tender package readiness, follow-ups, blockers, and submission status."],
   ];
   return h("div", { className: "overview-panel" },
     h("div", { className: "overview-section-head" },
@@ -2117,33 +2054,33 @@ function OverviewDepartmentTab({ dashboard, setView }) {
 
 function WikisView({ setView, openTaskDialog }) {
   const processSteps = [
-    ["Give direction", "Use Message Alex when you want the department to do work. Write normally, for example: find five funded Switzerland energy-finance PhD opportunities."],
-    ["Alex routes the work", "Alex decides whether the request goes to Opportunity Hunter, Fit Analyst, Package Maker, Sender, Follow-up Controller, or CRM Controller."],
+    ["Give direction", "Use Message Alex when you want the department to do work. Write normally, for example: review this Lead and tender file, find supplier matches, and prepare quotation requests."],
+    ["Alex routes the work", "Alex decides whether the request goes to Ava, Leo, Nadia, Maya, Omar, Lina, or Noah."],
     ["Specialists work internally", "AI staff work through tasks and follow-ups. They should ask Alex first, not message the human directly."],
-    ["Human answers only when needed", "If there is a decision, risk, duplicate professor, missing permission, or unclear strategy, Alex opens a task thread for Iman."],
-    ["Reports show the operating result", "Use Reports to see KPIs, blockers, application pipeline, staff workload, system health, and what changed in the selected period."],
+    ["Human answers only when needed", "If there is a bid/no-bid decision, supplier risk, missing permission, unclear quote, or tender strategy issue, Alex opens a task thread for Iman."],
+    ["Reports show the operating result", "Use Reports to see KPIs, blockers, Lead pipeline, staff workload, system health, and what changed in the selected period."],
   ];
   const menuGuide = [
     ["Overview", "Entry page for the department.", "Use it to understand the sponsor, mission, and main entry actions."],
     ["Wikis", "This user guide.", "Use it when you need to remember the process, menus, or safety rules."],
     ["Department Explorer", "Org-chart and profile view of the AI department.", "Use it to inspect Alex, specialist staff, roles, tools, work steps, QA rules, and learned skills."],
-    ["Applications", "List or pipeline view of application entities.", "Use it to search applications, check stage/status, open application detail, and see related work."],
+    ["Leads", "List or pipeline view of tender Lead entities.", "Use it to search Leads, check stage/status, open Lead detail, and see related supplier/tender work."],
     ["Tasks", "Conversation inbox for human/AI task threads.", "Use it to answer Alex, review human decisions, and follow task conversations like a chat."],
     ["Reports", "Manager cockpit for operating performance.", "Use it as the main dashboard after login: KPI progress, blockers, pipeline, staff, follow-ups, email safety, and system health."],
     ["Settings", "Configuration and local status.", "Use it to inspect bridge/sync settings, operating notes, and technical configuration where allowed."],
   ];
   const safetyRules = [
     "Replying in a task thread never sends an email by itself.",
-    "Only approved email queue rows may send, and the bridge still checks content, package completeness, attachments, and duplicate recipients.",
-    "Repeated professor or supervisor recipients require a human decision unless the duplicate risk is already resolved.",
-    "Portal submissions and LinkedIn messages remain manual unless the policy is explicitly changed.",
-    "Private tokens, local databases, and generated application files stay local unless intentionally exported.",
+    "Only approved outreach queue rows may send, and the system still checks content, tender scope, attachments, and duplicate recipients.",
+    "Repeated supplier/contact recipients require a human decision unless the duplicate risk is already resolved.",
+    "Tender portal submissions and LinkedIn messages remain manual unless the policy is explicitly changed.",
+    "Private tokens, local databases, and generated tender files stay local unless intentionally exported.",
   ];
   return h("section", { className: "wiki-page" },
     h(Card, { className: "wiki-hero" },
       h(CardHeader, {
         eyebrow: "User Guide",
-        title: "How to Run the Swiss Planner AI Department",
+        title: `How to Run the ${APP_NAME}`,
         description: "A practical guide for normal users: what to click, how work moves, and what each menu means.",
         action: h("div", { className: "wiki-hero-actions" },
           h(Button, { onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), "Message Alex"),
@@ -2168,9 +2105,9 @@ function WikisView({ setView, openTaskDialog }) {
         h(CardContent, null,
           h("div", { className: "wiki-example" },
             h("p", null, "Example request"),
-            h("blockquote", null, "Find 5 funded PhD opportunities in Switzerland related to energy finance, rank them, and start the package process for the best one.")
+            h("blockquote", null, "Review Lead L-2026-001, read its tender PDFs, find supplier matches, request approved quotations, and prepare the tender package checklist.")
           ),
-          h("div", { className: "wiki-note" }, "Good requests include geography, field, target count, deadline urgency, and whether sending is allowed or should wait.")
+          h("div", { className: "wiki-note" }, "Good requests include Lead ID, tender type, country, deadline urgency, files to review, and whether supplier outreach is allowed or should wait.")
         )
       ),
       h(Card, { className: "wiki-panel wiki-menu-panel" },
@@ -2206,7 +2143,7 @@ function WikisView({ setView, openTaskDialog }) {
         h(CardHeader, { title: "Recommended Daily Routine", description: "The simplest way to operate the department." }),
         h(CardContent, null,
           h("div", { className: "wiki-routine" },
-            ["Open Reports and check Do First.", "Answer any Human Inbox threads from Alex.", "Check Applications for movement and deadlines.", "Use Department Explorer only when you need to inspect or improve the team structure.", "End by asking Alex what is blocked and what should happen next."].map(item => h("p", { key: item }, item))
+            ["Open Reports and check Do First.", "Answer any Human Inbox threads from Alex.", "Check Leads for movement and deadlines.", "Use Department Explorer only when you need to inspect or improve the team structure.", "End by asking Alex what is blocked and what should happen next."].map(item => h("p", { key: item }, item))
           )
         )
       )
@@ -2217,13 +2154,14 @@ function WikisView({ setView, openTaskDialog }) {
 function DailyKpiCard({ dashboard, summary }) {
   const sync = dashboard.localSync || {};
   const documentQuality = sync.documentQuality || {};
+  const crmEnabled = sync.crmSyncEnabled !== false;
   const todayRuns = (dashboard.recentRuns || []).filter(row => {
     const date = new Date(row["Run Timestamp"] || row.runAt || row.Date || "");
     return !Number.isNaN(date.getTime()) && date.toDateString() === new Date().toDateString();
   }).length;
   const healthy = !sync.lastSyncError && Number(sync.pendingActions || 0) === 0 && Number(sync.failedActions || 0) === 0;
   const items = [
-    ["Sheet sync health", healthy ? 100 : 35, healthy ? "Healthy" : "Needs attention", `Last sync ${sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "pending"}`],
+    ["CRM sync", crmEnabled ? (healthy ? 100 : 35) : 100, crmEnabled ? (healthy ? "Healthy" : "Disabled") : "Disabled", crmEnabled ? `Last sync ${sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "pending"}` : "Local-only mode"],
     ["Task queue", inversePercent(summary.dueTasks, 5), `${summary.dueTasks || 0} due`, `${summary.overdueTasks || 0} overdue`],
     ["Follow-up compliance", inversePercent(summary.overdueFollowUps, 3), `${summary.overdueFollowUps || 0} late`, `${summary.dueFollowUps || 0} due now`],
     ["Email safety", inversePercent(summary.blockedEmails, 4), `${summary.blockedEmails || 0} blocked`, "Safety gate remains active"],
@@ -2282,6 +2220,7 @@ function AutopilotCard({ autopilot, documentQuality, runAutopilotCycle, setAutop
   const recent = autopilot.recentRuns || [];
   const stateText = progress.state || (enabled ? "Active" : "Paused");
   const quality = documentQuality || {};
+  const crmEnabled = autopilot.crmSyncEnabled === true;
   return h(Card, { className: "autopilot-panel" },
     h(CardHeader, {
       title: "Daily Autopilot",
@@ -2296,7 +2235,7 @@ function AutopilotCard({ autopilot, documentQuality, runAutopilotCycle, setAutop
         h("div", { className: "card-topline" }, h("div", null, h("h3", null, enabled ? "Autopilot On" : "Autopilot Paused"), h(Badge, null, stateText))),
         h(DetailList, { rows: [
           { label: "Reason", value: progress.reason || "Watching today's KPIs.", length: 220 },
-          { label: "Sheet sync", value: `${progress.sheetSyncs || 0} / ${targets.sheetSyncs || 1}` },
+          { label: crmEnabled ? "CRM sync" : "Local mode", value: crmEnabled ? `${progress.sheetSyncs || 0} / ${targets.sheetSyncs || 1}` : "On" },
           { label: "CRM health", value: `${progress.crmHealthChecks || 0} / ${targets.crmHealthChecks || 1}` },
           { label: "Document QA", value: quality.issueCount ? `${quality.issueCount} issue(s)` : "clear" },
           { label: "Runner attempts", value: `${progress.runnerAttempts || 0}` },
@@ -2319,18 +2258,18 @@ function AutopilotCard({ autopilot, documentQuality, runAutopilotCycle, setAutop
 
 function StaffFlowCard({ dashboard, setView }) {
   const steps = [
-    ["Discover", "AIstaff_OpportunityHunter", "Find verified leads"],
-    ["Score", "AIstaff_FitAnalyst", "Rank fit and risk"],
-    ["Research", "AIstaff_ProfessorResearchAnalyst", "Build professor evidence"],
-    ["Package", "AIstaff_ApplicationPackMaker", "Create documents"],
-    ["Send", "AIstaff_ApplicationPackSender", "Verify and send"],
-    ["Follow up", "AIstaff_FollowUpController", "Track replies"],
-    ["Control", "AIstaff_CRMController", "Sync CRM health"],
+    ["Review", "AIstaff_OpportunityHunter", "Read lead and tender docs"],
+    ["Fit", "AIstaff_FitAnalyst", "Check fit and suppliers"],
+    ["Map", "AIstaff_ProfessorResearchAnalyst", "Find new suppliers"],
+    ["Package", "AIstaff_ApplicationPackMaker", "Prepare tender docs"],
+    ["Quote", "AIstaff_ApplicationPackSender", "Request supplier pricing"],
+    ["Follow up", "AIstaff_FollowUpController", "Track replies and Q&A"],
+    ["Control", "AIstaff_CRMController", "Keep CRM case health"],
   ];
   const staff = dashboard.staff || [];
   const countFor = staffId => staff.find(row => row.staffId === staffId) || {};
   return h(Card, { className: "staff-flow-panel" },
-    h(CardHeader, { title: "AI Team Workflow", description: "How work moves from opportunity discovery to follow-up.", action: h(Button, { variant: "secondary", onClick: () => setView("work") }, "Open Tasks") }),
+    h(CardHeader, { title: "AI Team Workflow", description: "How work moves from Lead intake to tender package and supplier follow-up.", action: h(Button, { variant: "secondary", onClick: () => setView("work") }, "Open Tasks") }),
     h(CardContent, { className: "staff-flow" }, steps.map((step, index) => {
       const stats = countFor(step[1]);
       return h(Fragment, { key: step[0] },
@@ -2395,20 +2334,20 @@ function ApplicationsView({ rows, labels, filters, setFilters, viewMode, setView
   });
   const update = (key, value) => setFilters({ ...filters, [key]: value });
   return h(Card, null,
-    h(CardHeader, { title: "Applications", description: "Application entities, stages, owners, and clickable references.", action: h(Button, { variant: "secondary", onClick: () => openTaskDialog({ taskType: "Package" }) }, icon("plus"), "Add Application Task") }),
+    h(CardHeader, { title: "Leads", description: "Tender lead cases, stages, owners, supplier route, and clickable references.", action: h(Button, { variant: "secondary", onClick: () => openTaskDialog({ taskType: "Tender Package" }) }, icon("plus"), "Add Lead Task") }),
     h("div", { className: "application-toolbar" },
-      h(Field, { label: "Search applications", className: "search-field" }, h(Input, { type: "search", value: filters.search, onChange: event => update("search", event.target.value), placeholder: "Search by university, supervisor, stage, application..." })),
+      h(Field, { label: "Search leads", className: "search-field" }, h(Input, { type: "search", value: filters.search, onChange: event => update("search", event.target.value), placeholder: "Search by Lead ID, tender source, supplier, stage..." })),
       h(Field, { label: "Stage" }, h(Select, { value: filters.stage, onChange: event => update("stage", event.target.value) }, h("option", { value: "" }, "All stages"), stageOptions.map(([value, label]) => h("option", { key: value, value }, label)))),
-      h(Field, { label: "University" }, h(Select, { value: filters.university, onChange: event => update("university", event.target.value) }, h("option", { value: "" }, "All universities"), universityOptions.map(([value, label]) => h("option", { key: value, value }, label)))),
-      h("div", { className: "view-toggle", role: "group", "aria-label": "Application view" },
+      h(Field, { label: "Tender source" }, h(Select, { value: filters.university, onChange: event => update("university", event.target.value) }, h("option", { value: "" }, "All sources"), universityOptions.map(([value, label]) => h("option", { key: value, value }, label)))),
+      h("div", { className: "view-toggle", role: "group", "aria-label": "Lead view" },
         h(Button, { className: cn("icon-toggle", viewMode === "list" && "active"), variant: "ghost", size: "icon", onClick: () => setViewMode("list"), title: "List view", "aria-pressed": viewMode === "list" }, icon("list")),
         h(Button, { className: cn("icon-toggle", viewMode === "kanban" && "active"), variant: "ghost", size: "icon", onClick: () => setViewMode("kanban"), title: "Kanban view", "aria-pressed": viewMode === "kanban" }, icon("kanban"))
       ),
       h("span", { className: "toolbar-count" }, `${filtered.length} / ${rows.length}`)
     ),
     h(CardContent, { className: "applications-content" },
-      !rows.length ? h(EmptyState, { title: "No active applications", body: "The dashboard did not return any application entities." }) :
-      !filtered.length ? h(EmptyState, { title: "No matching applications", body: "Adjust the search, stage, or university filters to broaden this view." }) :
+      !rows.length ? h(EmptyState, { title: "No active leads", body: "The dashboard did not return any Lead cases yet. A future action can transfer Lead records and files into this department." }) :
+      !filtered.length ? h(EmptyState, { title: "No matching leads", body: "Adjust the search, stage, or tender-source filters to broaden this view." }) :
       viewMode === "kanban" ? h(ApplicationKanban, { rows: filtered, labels, runOne, openTaskDialog, openRef, openUniversity }) :
       h("div", { className: "entity-list no-pad" }, filtered.map(row => h(ApplicationCard, { key: row.entityId || row.applicationId, row, labels, runOne, openTaskDialog, openRef, openUniversity })))
     )
@@ -2425,17 +2364,17 @@ function ApplicationCard({ row, labels, runOne, openTaskDialog, openRef, openUni
       h(Badge, null, row.currentStatus)
     ),
     h(DetailList, { rows: [
-      { label: "University", value: h(UniversityButton, { row, openUniversity }), raw: true },
+      { label: "Tender source", value: h(UniversityButton, { row, openUniversity }), raw: true },
       { label: "Stage", value: `${applicationStage(row)}${row.currentStage ? ` - ${row.currentStage}` : ""}`, length: 130 },
       { label: "Owner", value: h(StaffChip, { staffId: row.responsibleStaff }), raw: true },
-      { label: "Opportunity", value: h(RefChip, { kind: "opportunities", id: row.opportunityId, labels, openRef, length: 180 }), raw: true },
+      { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: row.opportunityId, labels, openRef, length: 180 }), raw: true },
       { label: "Latest task", value: h(RefChip, { kind: "tasks", id: row.lastTaskId, labels, openRef, length: 220 }), raw: true },
       { label: "Latest follow-up", value: h(RefChip, { kind: "followUps", id: row.lastFollowUpId, labels, openRef, length: 220 }), raw: true },
       { label: "Updated", value: fmtDate(row.lastUpdated) || "No update time" },
     ] }),
     h("div", { className: "action-strip" },
       h(Button, { actionKey: `run-one:${row.responsibleStaff || "next"}`, onClick: () => runOne(row.responsibleStaff) }, "Run Owner"),
-      h(Button, { variant: "outline", onClick: () => openTaskDialog({ assignedTo: row.responsibleStaff, entityId: row.entityId, applicationId: row.applicationId, taskType: "Package" }) }, "Add Task")
+      h(Button, { variant: "outline", onClick: () => openTaskDialog({ assignedTo: row.responsibleStaff, entityId: row.entityId, applicationId: row.applicationId, taskType: "Tender Package" }) }, "Add Task")
     )
   );
 }
@@ -2474,25 +2413,25 @@ function ReviewCard({ item, labels, runOne, snoozeTask, reassignTask, snoozeFoll
   return h("article", { className: cn("notice approval-card", noticeTone(item.status)) },
     h("div", { className: "card-topline" }, h("div", null, h("h3", null, `${item.kind}: ${shortText(item.title, 96)}`), h("div", { className: "card-meta" }, h(Badge, null, item.status)))),
     h(DetailList, { rows: [
-      { label: "University", value: h(UniversityButton, { row, openUniversity }), raw: true },
+      { label: "Tender source", value: h(UniversityButton, { row, openUniversity }), raw: true },
       { label: "Owner", value: item.staff ? h(StaffChip, { staffId: item.staff }) : "", raw: true },
-      { label: "Application", value: h(RefChip, { kind: "applications", id: row.applicationId || row.entityId, labels, openRef, length: 180 }), raw: true },
-      { label: "Opportunity", value: h(RefChip, { kind: "opportunities", id: row.opportunityId, labels, openRef, length: 180 }), raw: true },
+      { label: "Lead", value: h(RefChip, { kind: "applications", id: row.applicationId || row.entityId, labels, openRef, length: 180 }), raw: true },
+      { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: row.opportunityId, labels, openRef, length: 180 }), raw: true },
       { label: "Due", value: fmtDate(row.dueAt) },
       { label: "Next action", value: row.nextAction || item.body, length: 240 },
       { label: "Reason", value: row.lastError || row.resultNotes || item.body, length: 240 },
       { label: "Reference", value: item.taskId || item.followUpId || item.queueId },
     ] }),
     h("div", { className: "notice-actions" },
-      item.queueId ? h(Button, { actionKey: `approve-email:${item.queueId}`, onClick: () => approveEmail(item.queueId) }, "Approve Email") : null,
+      item.queueId ? h(Button, { actionKey: `approve-email:${item.queueId}`, onClick: () => approveEmail(item.queueId) }, "Approve Outreach") : null,
       item.queueId ? h(Button, { actionKey: `email-safety:${item.queueId}`, variant: "outline", onClick: () => runEmailSafetyCheck(item.queueId) }, "Safety Check") : null,
-      item.queueId ? h(Button, { actionKey: `process-queue:${item.queueId}`, variant: "secondary", onClick: () => processQueueRow(item.queueId) }, "Check / Send") : null,
+      item.queueId ? h(Button, { actionKey: `process-queue:${item.queueId}`, variant: "secondary", onClick: () => processQueueRow(item.queueId) }, "Check / Continue") : null,
       item.taskId ? h(Button, { actionKey: `run-one:${item.staff || "next"}`, onClick: () => runOne(item.staff) }, "Run Staff") : null,
       item.taskId ? h(Button, { actionKey: `snooze-task:${item.taskId}`, variant: "outline", onClick: () => snoozeTask(item.taskId, 24) }, "Snooze 24h") : null,
       item.taskId && reassignTask ? h(Button, { actionKey: `reassign-task:${item.taskId}:AIstaff_Manager`, variant: "outline", onClick: () => reassignTask(item.taskId, "AIstaff_Manager") }, "Ask Manager") : null,
       item.followUpId ? h(Button, { actionKey: `run-one:${item.staff || "next"}`, onClick: () => runOne(item.staff) }, "Run Staff") : null,
       item.followUpId ? h(Button, { actionKey: `snooze-followup:${item.followUpId}`, variant: "outline", onClick: () => snoozeFollowUp(item.followUpId, 24) }, "Snooze 24h") : null,
-      item.entityId && closeEntity ? h(Button, { actionKey: `close-entity:${item.entityId}`, variant: "outline", onClick: () => closeEntity(item.entityId) }, "Close Entity") : null,
+      item.entityId && closeEntity ? h(Button, { actionKey: `close-entity:${item.entityId}`, variant: "outline", onClick: () => closeEntity(item.entityId) }, "Close Lead") : null,
       h(Button, { variant: "ghost", onClick: () => setDecisionDialog({ decisionType: item.kind, recommendation: `Review ${item.title}`, reason: "", evidence: "", approvalStatus: "Approved" }) }, "Comment")
     )
   );
@@ -2808,7 +2747,7 @@ function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, snooz
                   h("option", { value: "Human" }, "Human"),
                   STAFF_ORDER.filter(id => id !== HUMAN_STAFF_ID).map(id => h("option", { key: id, value: id }, staffProfile(id).label))
                 )),
-                h(Field, { label: "Related" }, h(Input, { type: "search", value: filters.application || "", onChange: event => updateFilter("application", event.target.value), placeholder: "Application / opportunity" }))
+                h(Field, { label: "Related" }, h(Input, { type: "search", value: filters.application || "", onChange: event => updateFilter("application", event.target.value), placeholder: "Lead / tender case" }))
               )
             )
           ),
@@ -2838,9 +2777,9 @@ function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, snooz
               h(DetailList, { rows: [
                 { label: "Task", value: selectedThread.taskId },
                 { label: "Thread", value: selectedThread.threadId },
-                { label: "Application", value: h(RefChip, { kind: "applications", id: selectedThread.applicationId || selectedSource.applicationId, labels, openRef, length: 160, showStatus: false }), raw: true },
-                { label: "Opportunity", value: h(RefChip, { kind: "opportunities", id: selectedThread.opportunityId || selectedSource.opportunityId, labels, openRef, length: 160, showStatus: false }), raw: true },
-                { label: "University", value: h(UniversityButton, { row: selectedSource, openUniversity }), raw: true },
+                { label: "Lead", value: h(RefChip, { kind: "applications", id: selectedThread.applicationId || selectedSource.applicationId, labels, openRef, length: 160, showStatus: false }), raw: true },
+                { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: selectedThread.opportunityId || selectedSource.opportunityId, labels, openRef, length: 160, showStatus: false }), raw: true },
+                { label: "Tender source", value: h(UniversityButton, { row: selectedSource, openUniversity }), raw: true },
               ] }),
               h("div", { className: "thread-secondary-actions" },
                 h(Button, { variant: "outline", onClick: closeSelectedThreadWithLearning }, "Close and save learning"),
@@ -2957,7 +2896,7 @@ function TaskTable({ rows, labels, runOne, snoozeTask, reassignTask, processQueu
   return h("div", { className: "task-table-wrap" },
     h("table", { className: "task-table" },
       h("thead", null, h("tr", null,
-        ["Task", "Responsible", "Status", "Due", "Application", "Action"].map(label => h("th", { key: label }, label))
+        ["Task", "Responsible", "Status", "Due", "Lead", "Action"].map(label => h("th", { key: label }, label))
       )),
       h("tbody", null, rows.map(row => h(TaskTableRow, { key: row.taskId, row, labels, runOne, snoozeTask, reassignTask, processQueueRow, approveEmail, runEmailSafetyCheck, setDecisionDialog, openRef, openUniversity })))
     )
@@ -3009,17 +2948,17 @@ function EmailView({ dashboard, processQueueRow, approveEmail, runEmailSafetyChe
   const labels = buildLabels(dashboard);
   return h(Card, null,
     h(CardHeader, {
-      title: "Email Queue",
-      description: "Only safe, complete, approved rows can be sent.",
-      action: h(Fragment, null, h(Button, { actionKey: "email-safety:configured", variant: "secondary", onClick: () => runEmailSafetyCheck("") }, icon("shield"), "Safety Check"), h(Button, { onClick: () => processQueueRow("") }, icon("send"), "Run Sender")),
+      title: "Supplier Outreach Queue",
+      description: "Only safe, complete, approved quotation/outreach rows can continue.",
+      action: h(Fragment, null, h(Button, { actionKey: "email-safety:configured", variant: "secondary", onClick: () => runEmailSafetyCheck("") }, icon("shield"), "Safety Check"), h(Button, { onClick: () => processQueueRow("") }, icon("send"), "Run Outreach")),
     }),
     h(CardContent, { className: "stack" }, rows.length ? rows.slice(0, 30).map(row =>
       h("article", { className: cn("notice", noticeTone(`${row.sendStatus} ${row.approvalStatus}`)), key: row.queueId },
         h("div", { className: "card-topline" }, h("div", null, h("h3", null, row.recipientName || row.to || "Email row"), h("div", { className: "card-meta" }, row.queueId)), h(Badge, null, row.sendStatus || row.approvalStatus)),
         h(DetailList, { rows: [
-          { label: "University", value: h(UniversityButton, { row, openUniversity }), raw: true },
-          { label: "Application", value: h(RefChip, { kind: "applications", id: row.applicationId, labels, openRef }), raw: true },
-          { label: "Opportunity", value: h(RefChip, { kind: "opportunities", id: row.opportunityId, labels, openRef }), raw: true },
+          { label: "Tender source", value: h(UniversityButton, { row, openUniversity }), raw: true },
+          { label: "Lead", value: h(RefChip, { kind: "applications", id: row.applicationId, labels, openRef }), raw: true },
+          { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: row.opportunityId, labels, openRef }), raw: true },
           { label: "Recipient", value: row.recipientName || row.to },
           { label: "Email", value: row.to },
           { label: "Subject", value: row.subject, length: 220 },
@@ -3028,7 +2967,7 @@ function EmailView({ dashboard, processQueueRow, approveEmail, runEmailSafetyChe
         ] }),
         h("div", { className: "notice-actions" }, h(Button, { actionKey: `process-queue:${row.queueId}`, onClick: () => processQueueRow(row.queueId) }, "Process Row"), h(Button, { actionKey: `approve-email:${row.queueId}`, variant: "outline", onClick: () => approveEmail(row.queueId) }, "Approve"), h(Button, { actionKey: `email-safety:${row.queueId}`, variant: "ghost", onClick: () => runEmailSafetyCheck(row.queueId) }, "Safety"))
       )
-    ) : h(EmptyState, { title: "No email rows", body: "The current dashboard snapshot did not return queue rows." }))
+    ) : h(EmptyState, { title: "No outreach rows", body: "The current dashboard snapshot did not return supplier outreach queue rows." }))
   );
 }
 
@@ -3204,7 +3143,7 @@ function staffRolePurpose(staffId, fabric) {
   const capability = (fabric.capabilities || []).find(row => row.ownerStaff === staffId || row.owner === staffId);
   if (capability && capability.summary) return capability.summary;
   const config = staffStageConfig(staffId);
-  return config.purpose || (isHumanResponsible(staffId) ? "Sets priorities, approves learning, and gives the AI Manager direction." : "Owns delegated work inside the Swiss Planner department.");
+  return config.purpose || (isHumanResponsible(staffId) ? "Sets priorities, approves learning, and gives the AI Manager direction." : `Owns delegated work inside the ${APP_NAME}.`);
 }
 
 function staffJobTitle(staffId) {
@@ -3216,11 +3155,11 @@ function staffJobTitle(staffId) {
   if (isHumanResponsible(staffId)) return "Department Owner";
   if (staffId === "AIstaff_Manager") return "Department Manager";
   const titles = {
-    AIstaff_OpportunityHunter: "Senior Research Specialist",
+    AIstaff_OpportunityHunter: "Tender Document Analyst",
     AIstaff_FitAnalyst: "Fit And Eligibility Analyst",
-    AIstaff_ProfessorResearchAnalyst: "Professor Research Specialist",
-    AIstaff_ApplicationPackMaker: "Application Package Specialist",
-    AIstaff_ApplicationPackSender: "Outreach Safety Specialist",
+    AIstaff_ProfessorResearchAnalyst: "Supplier Mapper",
+    AIstaff_ApplicationPackMaker: "Tender Package Maker",
+    AIstaff_ApplicationPackSender: "Supplier Outreach Specialist",
     AIstaff_FollowUpController: "Follow-up Coordinator",
     AIstaff_CRMController: "CRM Operations Controller",
   };
@@ -3234,17 +3173,17 @@ function staffContactInfo(staffId) {
       email: "iman.najafi86@gmail.com",
       chat: "Command Center thread with AI Manager",
       mobile: "+48 881-400-001",
-      company: "Swiss Planner",
+      company: APP_NAME,
       jobTitle: "Department Owner / Human Manager",
       address: "Krakow, Poland",
     };
   }
   const alias = profile.label.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/(^\.|\.$)/g, "");
   return {
-    email: `${alias || "staff"}@local.swiss-planner.ai`,
+    email: `${alias || "staff"}@local.gcc-lab-ai-department.ai`,
     chat: staffId === "AIstaff_Manager" ? "Direct task thread from Iman" : "Internal task thread through AI Manager",
     mobile: "Not applicable",
-    company: "Swiss Planner AI Staff",
+    company: APP_NAME,
     jobTitle: staffJobTitle(staffId),
     address: "Local Command Center",
   };
@@ -3410,7 +3349,7 @@ function DepartmentSettingsView({ dashboard, fabric }) {
         settingsTab === "departmentSkill"
           ? h(SkillFileEditor, {
             scope: "department",
-            title: "Swiss Planner Staff Skill",
+            title: `${APP_NAME} Staff Skill`,
             description: "Department-level rules: operating model, routing, safety, learning, and completion standards."
           })
           : h(FabricNoteEditor, { section: settingsTab })
@@ -3499,7 +3438,7 @@ function DepartmentOrgSection({ dashboard, fabric, staffIds, selectedStaffId, se
 
 function DepartmentHierarchyTree({ dashboard, fabric, staffIds, onSelect, selectedStaffId = "" }) {
   const aiStaff = staffIds.filter(id => id !== HUMAN_STAFF_ID && id !== "AIstaff_Manager" && staffReportsTo(id) === "AIstaff_Manager");
-  return h("div", { className: "department-org-tree", "aria-label": "Swiss Planner AI Staff hierarchy" },
+  return h("div", { className: "department-org-tree", "aria-label": `${APP_NAME} hierarchy` },
     h("div", { className: "org-level org-level-root" },
       h("span", { className: "org-level-label" }, "Department owner"),
       h(OrgPersonButton, { dashboard, fabric, staffId: HUMAN_STAFF_ID, selected: selectedStaffId === HUMAN_STAFF_ID, onClick: () => onSelect(HUMAN_STAFF_ID) })
@@ -4206,7 +4145,7 @@ function SettingsView({ dashboard }) {
       h(CardHeader, {
         eyebrow: "Settings -> Department Designer",
         title: "Configurable AI Department Platform",
-        description: "Swiss Planner is now the first department template. Edit workspace-level profiles, playbooks, tools, QA gates, KPIs, outputs, reports, and safe overrides from one place.",
+        description: `${APP_NAME} is now the first department template. Edit workspace-level profiles, playbooks, tools, QA gates, KPIs, outputs, reports, and safe overrides from one place.`,
         action: h("div", { className: "panel-actions" },
           h(Badge, { tone: fabric.errors && fabric.errors.length ? "danger" : "success" }, fabric.errors && fabric.errors.length ? `${fabric.errors.length} registry issue(s)` : "Registry active"),
           h(Button, { actionKey: "department-config:refresh", variant: "outline", onClick: loadConfig }, icon("refresh"), "Refresh")
@@ -4242,7 +4181,7 @@ const DESIGNER_META = {
   departmentTemplates: {
     eyebrow: "Template",
     title: "Department Templates",
-    description: "Reusable blueprints. Swiss Planner is active; sample templates prove the platform can host another department without source-code edits.",
+    description: `Reusable blueprints. ${APP_NAME} is active; sample templates prove the platform can host another department without source-code edits.`,
     empty: { id: "template_new_department", label: "New Department Template", purpose: "Describe what this department does.", status: "Draft", capabilities: [], staffProfiles: [], workspaceEditable: true },
   },
   staffProfiles: {
@@ -4809,7 +4748,7 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
   const humanTasks = reportRows(collectHumanTaskRows(dashboard), showTechnicalData).filter(row => !isTerminal(row));
   const blockedEmails = emailRows.filter(row => noticeTone(`${row.sendStatus || ""} ${row.approvalStatus || ""} ${row.lastError || ""}`) === "danger");
   const waitingReplies = applications.filter(row => normalizedText(`${row.currentStage} ${row.currentStatus}`).includes("waiting"));
-  const packageReady = applications.filter(row => /package prepared|package verified|sent|submitted/i.test(`${row.currentStage || ""} ${row.currentStatus || ""}`));
+  const packageReady = applications.filter(row => /package prepared|package verified|tender package ready|submitted/i.test(`${row.currentStage || ""} ${row.currentStatus || ""}`));
   const applicationsInPeriod = applications.filter(row => rowTimeInPeriod(row, ["lastUpdated", "createdAt", "Created At"], period));
   const packageReadyInPeriod = packageReady.filter(row => rowTimeInPeriod(row, ["lastUpdated", "createdAt", "Created At"], period));
   const emailsSentInPeriod = emailRows.filter(row => normalizedText(row.sendStatus).includes("sent") && rowTimeInPeriod(row, ["sentAt", "Sent At"], period));
@@ -4877,35 +4816,35 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
   });
   const mainBottleneck =
     humanTasks.length ? `${humanTasks.length} human decision${humanTasks.length === 1 ? "" : "s"} need Iman's answer before the cycle can continue.` :
-    blockedEmails.length ? `${blockedEmails.length} outbound email row${blockedEmails.length === 1 ? "" : "s"} are blocked by safety gates.` :
+    blockedEmails.length ? `${blockedEmails.length} supplier outreach row${blockedEmails.length === 1 ? "" : "s"} are blocked by safety gates.` :
     Number(sync.failedActions || 0) ? `${sync.failedActions} local sync action${Number(sync.failedActions || 0) === 1 ? "" : "s"} failed and should be repaired.` :
     dueOpenTasks.length ? `${dueOpenTasks.length} due task${dueOpenTasks.length === 1 ? "" : "s"} need staff execution.` :
-    riskCount ? `${riskCount} application path${riskCount === 1 ? "" : "s"} need movement or deadline review.` :
+    riskCount ? `${riskCount} Lead path${riskCount === 1 ? "" : "s"} need movement or deadline review.` :
     "No critical blocker is visible in the current dashboard snapshot.";
   const recommendedAction =
     humanTasks.length ? "Open Tasks and answer Alex's human-facing threads first." :
-    blockedEmails.length ? "Open the blocked Email Safety item and keep it stopped until package/content checks pass." :
+    blockedEmails.length ? "Open the blocked outreach safety item and keep it stopped until scope/content/package checks pass." :
     Number(sync.failedActions || 0) ? "Review System Health and rerun sync after fixing failed local actions." :
     dueOpenTasks.length ? "Run the next due task or the KPI cycle to keep the queue moving." :
-    riskCount ? "Review the Applications section and assign the next owner for stale/deadline-risk paths." :
+    riskCount ? "Review the Leads section and assign the next owner for stale/deadline-risk tender cases." :
     "Let the KPI cycle continue or ask Alex for the next plan.";
   const executiveSummary = {
     currentStatus: `Alex sees the department as ${healthStatus.toLowerCase()} for ${period.label.toLowerCase()}.`,
-    changed: `${applicationsInPeriod.length} application update${applicationsInPeriod.length === 1 ? "" : "s"}, ${emailsSentInPeriod.length} sent email${emailsSentInPeriod.length === 1 ? "" : "s"}, ${tasksDoneInPeriod.length} closed task${tasksDoneInPeriod.length === 1 ? "" : "s"}, and ${periodEventCount + periodRunCount} activity item${periodEventCount + periodRunCount === 1 ? "" : "s"} in this period.`,
+    changed: `${applicationsInPeriod.length} Lead update${applicationsInPeriod.length === 1 ? "" : "s"}, ${emailsSentInPeriod.length} supplier message${emailsSentInPeriod.length === 1 ? "" : "s"} sent, ${tasksDoneInPeriod.length} closed task${tasksDoneInPeriod.length === 1 ? "" : "s"}, and ${periodEventCount + periodRunCount} activity item${periodEventCount + periodRunCount === 1 ? "" : "s"} in this period.`,
     bottleneck: mainBottleneck,
     nextAction: recommendedAction,
   };
   const kpiCards = [
-    { label: "Active Applications", value: applications.length || (summary.activeEntities || 0), scope: "Current state", detail: `${applicationsInPeriod.length} updated in ${period.label.toLowerCase()}`, tone: "ok", trendSeries: buildReportTrendSeries(applications, ["lastUpdated", "createdAt", "Created At"], period) },
-    { label: "Applications Updated", value: applicationsInPeriod.length, scope: "Selected period", detail: `${riskCount} current risk item(s)`, tone: riskCount ? "warn" : "ok", trendSeries: buildReportTrendSeries(applicationsInPeriod, ["lastUpdated", "createdAt", "Created At"], period) },
-    { label: "Packages Prepared", value: packageReadyInPeriod.length, scope: "Selected period", detail: `${packageReady.length} prepared/current total`, tone: packageReadyInPeriod.length ? "ok" : "warn", trendSeries: buildReportTrendSeries(packageReady, ["lastUpdated", "createdAt", "Created At"], period) },
-    { label: "Emails Sent", value: emailsSentInPeriod.length, scope: "Selected period", detail: `${blockedEmails.length} blocked/current total`, tone: blockedEmails.length ? "warn" : "ok", trendSeries: buildReportTrendSeries(emailsSentInPeriod, ["sentAt", "Sent At"], period) },
-    { label: "Waiting Replies", value: waitingReplies.length, scope: "Current state", detail: `${waitingRepliesInPeriod.length} changed in period`, tone: waitingReplies.length ? "warn" : "ok", trendSeries: buildReportTrendSeries(waitingReplies, ["lastUpdated", "sentAt", "Sent At"], period) },
+    { label: "Active Leads", value: applications.length || (summary.activeEntities || 0), scope: "Current state", detail: `${applicationsInPeriod.length} updated in ${period.label.toLowerCase()}`, tone: "ok", trendSeries: buildReportTrendSeries(applications, ["lastUpdated", "createdAt", "Created At"], period) },
+    { label: "Leads Updated", value: applicationsInPeriod.length, scope: "Selected period", detail: `${riskCount} current risk item(s)`, tone: riskCount ? "warn" : "ok", trendSeries: buildReportTrendSeries(applicationsInPeriod, ["lastUpdated", "createdAt", "Created At"], period) },
+    { label: "Tender Packages Ready", value: packageReadyInPeriod.length, scope: "Selected period", detail: `${packageReady.length} ready/current total`, tone: packageReadyInPeriod.length ? "ok" : "warn", trendSeries: buildReportTrendSeries(packageReady, ["lastUpdated", "createdAt", "Created At"], period) },
+    { label: "Supplier Messages Sent", value: emailsSentInPeriod.length, scope: "Selected period", detail: `${blockedEmails.length} blocked/current total`, tone: blockedEmails.length ? "warn" : "ok", trendSeries: buildReportTrendSeries(emailsSentInPeriod, ["sentAt", "Sent At"], period) },
+    { label: "Waiting Quotes / Replies", value: waitingReplies.length, scope: "Current state", detail: `${waitingRepliesInPeriod.length} changed in period`, tone: waitingReplies.length ? "warn" : "ok", trendSeries: buildReportTrendSeries(waitingReplies, ["lastUpdated", "sentAt", "Sent At"], period) },
     { label: "Human Inbox", value: humanTasks.length, scope: "Current state", detail: `${humanTasksInPeriod.length} created/changed in period`, tone: humanTasks.length ? "warn" : "ok", trendSeries: buildReportTrendSeries(humanTasks, ["createdAt", "Created At", "runAfter", "dueAt", "lastMessageAt"], period) },
     { label: "Blocked Emails", value: blockedEmails.length, scope: "Current state", detail: `${blockedEmailsInPeriod.length} blocked in period`, tone: blockedEmails.length ? "danger" : "ok", trendSeries: buildReportTrendSeries(blockedEmails, ["sentAt", "createdAt", "Created At", "approvedAt", "notBefore"], period) },
     { label: "Late Follow-ups", value: followUps.filter(row => row.overdue).length, scope: "Current state", detail: `${lateFollowUpsInPeriod.length} due in period`, tone: followUps.some(row => row.overdue) ? "danger" : "ok", trendSeries: buildReportTrendSeries(followUps.filter(row => row.overdue), ["dueAt", "runAfter"], period) },
   ];
-  const stages = ["Opportunity Verified", "Fit Approved", "Package Required", "Package In Progress", "Package Prepared", "Package Verified", "Sent - Waiting for Reply", "Reply Received - Needs Review", "Other"].map(stage => ({
+  const stages = ["Lead Received", "Tender Docs Reviewed", "Fit / Eligibility Checked", "Supplier Match Needed", "Quotation Requested", "Tender Package In Progress", "Tender Package Ready", "Submitted / Waiting", "Reply Received - Needs Review", "Other"].map(stage => ({
     stage,
     rows: applicationRisks.filter(item => pipelineStageForReport(item.row) === stage),
   })).filter(item => item.rows.length || item.stage !== "Other");
@@ -4953,12 +4892,12 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
       time: row.createdAt || row["Created At"] || row.dueAt || row.runAfter || row.sentAt || row.lastUpdated,
     })),
     ...blockedEmails.map(row => ({
-      kind: "Email Safety",
+      kind: "Outreach Safety",
       title: row.recipientName || row.to || row.queueId,
       owner: "AIstaff_ApplicationPackSender",
       status: row.sendStatus || row.approvalStatus || "Blocked",
       body: row.lastError || row.subject,
-      next: "Keep blocked until content, duplicate-recipient, package, and attachment checks pass.",
+      next: "Keep blocked until content, duplicate-recipient, tender scope, package, and attachment checks pass.",
       applicationId: row.applicationId,
       opportunityId: row.opportunityId,
       time: row.sentAt || row.createdAt || row["Created At"] || row.approvedAt,
@@ -4991,8 +4930,9 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
     late: Number(row.overdueTasks || 0) + Number(row.overdueFollowUps || 0),
     total: Number(row.openTasks || 0) + Number(row.openFollowUps || 0),
   }));
+  const crmEnabled = sync.crmSyncEnabled !== false;
   const systemHealth = [
-    { label: "Sheet sync", value: sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "Not synced", status: sync.lastSyncError ? "Error" : "Healthy", tone: sync.lastSyncError ? "danger" : "ok" },
+    { label: "CRM sync", value: crmEnabled ? (sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "Not synced") : "Disabled", status: crmEnabled ? (sync.lastSyncError ? "Error" : "Healthy") : "Local-only mode", tone: crmEnabled && sync.lastSyncError ? "danger" : "ok" },
     { label: "Pending local changes", value: String(sync.pendingActions || 0), status: "Local-first queue", tone: Number(sync.pendingActions || 0) ? "warn" : "ok" },
     { label: "Failed local changes", value: String(sync.failedActions || 0), status: sync.failedActions ? "Needs repair" : "Clear", tone: Number(sync.failedActions || 0) ? "danger" : "ok" },
     { label: "Autopilot", value: ((sync.autopilot || {}).enabled ? "On" : "Paused"), status: (((sync.autopilot || {}).progress || {}).state || "Watching KPIs"), tone: (sync.autopilot || {}).enabled ? "ok" : "warn" },
@@ -5042,14 +4982,15 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
 
 function pipelineStageForReport(row = {}) {
   const text = normalizedText(`${row.currentStage || ""} ${row.currentStatus || ""}`);
-  if (text.includes("reply received") || text.includes("supervisor reply")) return "Reply Received - Needs Review";
-  if (text.includes("sent") || text.includes("waiting")) return "Sent - Waiting for Reply";
-  if (text.includes("package verified")) return "Package Verified";
-  if (text.includes("package prepared") || text.includes("docs uploaded")) return "Package Prepared";
-  if (text.includes("package in progress")) return "Package In Progress";
-  if (text.includes("package required")) return "Package Required";
-  if (text.includes("fit approved")) return "Fit Approved";
-  if (text.includes("opportunity verified")) return "Opportunity Verified";
+  if (text.includes("reply received") || text.includes("quote received")) return "Reply Received - Needs Review";
+  if (text.includes("submitted") || text.includes("waiting")) return "Submitted / Waiting";
+  if (text.includes("package verified") || text.includes("tender package ready") || text.includes("package ready")) return "Tender Package Ready";
+  if (text.includes("package in progress")) return "Tender Package In Progress";
+  if (text.includes("quotation") || text.includes("quote requested")) return "Quotation Requested";
+  if (text.includes("supplier match") || text.includes("partner match")) return "Supplier Match Needed";
+  if (text.includes("fit approved") || text.includes("eligibility")) return "Fit / Eligibility Checked";
+  if (text.includes("docs reviewed") || text.includes("document")) return "Tender Docs Reviewed";
+  if (text.includes("lead") || text.includes("opportunity verified")) return "Lead Received";
   return applicationStage(row);
 }
 
@@ -5164,7 +5105,7 @@ function ReportCommandGrid({ model, selected, setSelected }) {
   const modules = [
     { id: "blockers", label: "Do First", value: model.blockers.length, tone: model.blockers.length ? "danger" : "ok", detail: model.blockers.length ? "Human decisions, blockers, or overdue checks" : "No visible blocker", icon: "shield" },
     { id: "targets", label: "KPI Progress", value: model.targetCards.filter(item => item.gap > 0).length, tone: model.targetCards.some(item => item.gap > 0) ? "warn" : "ok", detail: "Target vs actual, gap, and cycle state", icon: "chart" },
-    { id: "pipeline", label: "Applications", value: model.applicationRisks.length, tone: model.applicationRisks.some(item => item.risk !== "On Track") ? "warn" : "ok", detail: "Pipeline, latest movement, and deadline risk", icon: "file" },
+    { id: "pipeline", label: "Leads", value: model.applicationRisks.length, tone: model.applicationRisks.some(item => item.risk !== "On Track") ? "warn" : "ok", detail: "Pipeline, latest movement, and deadline risk", icon: "file" },
     { id: "staff", label: "AI Staff", value: model.staffStatus.length, tone: model.staffStatus.some(row => Number(row.openTasks || 0) || Number(row.openFollowUps || 0)) ? "warn" : "ok", detail: "Workload, active ownership, and wake-ups", icon: "user" },
     { id: "health", label: "System Health", value: model.healthIssues, tone: Number(model.sync.failedActions || 0) ? "danger" : model.healthIssues ? "warn" : "ok", detail: "Sync, email safety, activity, and learning", icon: "database" },
   ];
@@ -5194,7 +5135,7 @@ function ReportSelectedPanel({ selected, setSelected, model, setView, openRef, r
   const title = ({
     blockers: "Do First",
     targets: "KPI Progress",
-    pipeline: "Applications",
+    pipeline: "Leads",
     staff: "AI Staff",
     health: "System Health",
   })[selected] || "Details";
@@ -5255,8 +5196,8 @@ function OperatingReportHero({ model, dashboard, openTaskDialog }) {
   return h("section", { className: cn("report-hero", tone) },
     h("div", null,
       h("p", { className: "eyebrow" }, "AI Department Command Report"),
-      h("h1", null, "AI Operating System for PhD Applications"),
-      h("p", { className: "report-hero-subtitle" }, "Alex coordinates opportunity research, application packages, outreach safety, follow-ups, CRM sync, and daily KPI execution."),
+      h("h1", null, "AI Operating System for Tender Leads"),
+      h("p", { className: "report-hero-subtitle" }, "Alex coordinates Lead review, tender document analysis, supplier matching, quotation outreach, follow-ups, CRM sync, and package readiness."),
       h("div", { className: "report-executive-summary" },
         [
           ["Current status", model.executiveSummary.currentStatus],
@@ -5271,7 +5212,7 @@ function OperatingReportHero({ model, dashboard, openTaskDialog }) {
         h("span", null, `Last refreshed ${fmtDate(dashboard.refreshedAt) || "not yet"}`),
         h("span", null, `Period ${model.period.label}`),
         h("span", null, `${model.sync.mode || "local-first"} mode`),
-        h("span", null, `Sheet sync ${model.sync.lastSheetSync ? fmtDate(model.sync.lastSheetSync) : "pending"}`),
+        h("span", null, model.sync.crmSyncEnabled ? `CRM sync ${model.sync.lastSheetSync ? fmtDate(model.sync.lastSheetSync) : "pending"}` : "CRM sync disabled"),
         h("span", null, `${model.sync.pendingActions || 0} pending local changes`),
         model.showTechnicalData ? h("span", null, "Technical/test data shown") : null
       )
@@ -5316,7 +5257,7 @@ function DailyTargetsPanel({ model }) {
 function PipelineOverviewPanel({ model, setView, openRef }) {
   const total = model.pipelineStages.reduce((sum, item) => sum + item.rows.length, 0) || 1;
   return h(Card, { className: "report-panel pipeline-overview" },
-    h(CardHeader, { title: "Application Pipeline Overview", description: "Where applications sit from verified lead to reply/submission.", action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Open Applications") }),
+    h(CardHeader, { title: "Lead Pipeline Overview", description: "Where tender Leads sit from intake to quotes, package readiness, and submission status.", action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Open Leads") }),
     h(CardContent, null,
       h(ReportStackedBar, { segments: model.pipelineSegments }),
       h(DeadlineRiskChart, { items: model.deadlineRisk, labels: model.labels, openRef }),
@@ -5385,14 +5326,14 @@ function BlockersPanel({ model, setView, openRef }) {
           h("div", { className: "card-topline" }, h("div", null, h("h3", null, shortText(item.title, 90)), h("div", { className: "card-meta" }, [item.kind, fmtDate(item.time)].filter(Boolean).join(" | "))), h(Badge, null, item.status)),
           h(DetailList, { rows: [
             { label: "Owner", value: h(StaffChip, { staffId: item.owner }), raw: true },
-            item.applicationId ? { label: "Application", value: h(RefChip, { kind: "applications", id: item.applicationId, labels: model.labels, openRef, length: 140 }), raw: true } : null,
-            item.opportunityId ? { label: "Opportunity", value: h(RefChip, { kind: "opportunities", id: item.opportunityId, labels: model.labels, openRef, length: 140 }), raw: true } : null,
+            item.applicationId ? { label: "Lead", value: h(RefChip, { kind: "applications", id: item.applicationId, labels: model.labels, openRef, length: 140 }), raw: true } : null,
+            item.opportunityId ? { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: item.opportunityId, labels: model.labels, openRef, length: 140 }), raw: true } : null,
             { label: "What happened", value: item.body, length: 220 },
             { label: "What is needed", value: item.next, length: 220 },
             item.time ? { label: "Latest time", value: fmtDate(item.time) } : null,
           ] })
         )
-      ) : h(EmptyState, { title: "No active blockers", body: "No human decisions or blocked email/package rows are visible in the current snapshot." })),
+      ) : h(EmptyState, { title: "No active blockers", body: "No human decisions or blocked outreach/package rows are visible in the current snapshot." })),
       h("section", { className: "report-nested-section" },
         h("div", { className: "mini-panel-head" }, h("strong", null, "Urgent follow-ups"), h("span", null, "Due and upcoming checks")),
         h("div", { className: "followup-timeline compact" }, model.followupTimeline.slice(0, 5).map(row =>
@@ -5431,7 +5372,7 @@ function FollowupTimelinePanel({ model, runOne, snoozeFollowUp, openRef }) {
 function EmailSafetyPanel({ model }) {
   const stats = model.emailSafety;
   return h(Card, { className: "report-panel email-safety-panel" },
-    h(CardHeader, { title: "Email & Safety Monitor", description: "Outbound messages remain gated by content, package, duplicate, and attachment checks." }),
+    h(CardHeader, { title: "Supplier Outreach & Safety Monitor", description: "Outbound supplier messages remain gated by content, tender scope, package, duplicate, and attachment checks." }),
     h(CardContent, null,
       h("div", { className: "system-health-grid" },
         [["Total", stats.total, ""], ["Sent", stats.sent, "ok"], ["Queued", stats.queued, "warn"], ["Blocked", stats.blocked, stats.blocked ? "danger" : "ok"], ["Errors", stats.errors, stats.errors ? "danger" : "ok"]].map(([label, value, tone]) =>
@@ -5518,10 +5459,10 @@ function UniversityDetail({ dashboard, universityKey, setView, openRef }) {
   const emails = flattenEmailQueue(dashboard.emailQueue || {}).filter(row => inferUniversity(row).key === university.key);
   const labels = buildLabels(dashboard);
   return h(Card, { className: "detail-page" },
-    h(CardHeader, { eyebrow: "Reference View", title: university.name, description: [university.city, university.country, university.type].filter(Boolean).join(" | "), action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Back") }),
+    h(CardHeader, { eyebrow: "Tender Source", title: university.name, description: [university.city, university.country, university.type].filter(Boolean).join(" | "), action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Back") }),
     h(CardContent, { className: "detail-grid" },
-      h("section", { className: "detail-section" }, h("h3", null, "University Details"), h(DetailList, { rows: [{ label: "Website", value: university.website }, { label: "Doctoral", value: university.doctoral }, { label: "Focus", value: university.focus, length: 260 }, { label: "Fit", value: university.fit, length: 260 }] })),
-      h("section", { className: "detail-section" }, h("h3", null, "Related Records"), h(DetailList, { rows: [{ label: "Applications", value: String(applications.length) }, { label: "Tasks", value: String(tasks.length) }, { label: "Emails", value: String(emails.length) }] }), h("div", { className: "entity-list no-pad" }, applications.map(row => h("article", { className: "app-card", key: row.entityId || row.applicationId }, h(RefChip, { kind: "applications", id: row.applicationId || row.entityId, labels, openRef }), h("p", null, row.currentStatus || row.currentStage)))))
+      h("section", { className: "detail-section" }, h("h3", null, "Source Details"), h(DetailList, { rows: [{ label: "Website", value: university.website }, { label: "Portal / docs", value: university.doctoral }, { label: "Focus", value: university.focus, length: 260 }, { label: "Fit", value: university.fit, length: 260 }] })),
+      h("section", { className: "detail-section" }, h("h3", null, "Related Records"), h(DetailList, { rows: [{ label: "Leads", value: String(applications.length) }, { label: "Tasks", value: String(tasks.length) }, { label: "Messages", value: String(emails.length) }] }), h("div", { className: "entity-list no-pad" }, applications.map(row => h("article", { className: "app-card", key: row.entityId || row.applicationId }, h(RefChip, { kind: "applications", id: row.applicationId || row.entityId, labels, openRef }), h("p", null, row.currentStatus || row.currentStage)))))
     )
   );
 }
@@ -5543,14 +5484,14 @@ function ApplicationDetail({ dashboard, labels, appId, setView, runOne, openTask
     }),
   ].sort((a, b) => (b.latestMs || 0) - (a.latestMs || 0));
   return h(Card, { className: "detail-page" },
-    h(CardHeader, { eyebrow: "Application", title: (labels.applications[appId] && labels.applications[appId].label) || friendlyId(appId), description: app.currentStatus || app.currentStage || "Application record", action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Back") }),
+    h(CardHeader, { eyebrow: "Lead", title: (labels.applications[appId] && labels.applications[appId].label) || friendlyId(appId), description: app.currentStatus || app.currentStage || "Lead record", action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Back") }),
     h(CardContent, { className: "detail-grid" },
       h("section", { className: "detail-section" }, h("h3", null, "Record"), h(DetailList, { rows: [
-        { label: "University", value: h(UniversityButton, { row: app, openUniversity }), raw: true },
+        { label: "Tender source", value: h(UniversityButton, { row: app, openUniversity }), raw: true },
         { label: "Stage", value: app.currentStage },
         { label: "Status", value: app.currentStatus },
         { label: "Owner", value: h(StaffChip, { staffId: app.responsibleStaff }), raw: true },
-        { label: "Opportunity", value: h(RefChip, { kind: "opportunities", id: app.opportunityId, labels, openRef }), raw: true },
+        { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: app.opportunityId, labels, openRef }), raw: true },
         { label: "Updated", value: fmtDate(app.lastUpdated) },
       ] }), h("div", { className: "action-strip" }, h(Button, { actionKey: `run-one:${app.responsibleStaff || "next"}`, onClick: () => runOne(app.responsibleStaff) }, "Run Owner"), h(Button, { variant: "outline", onClick: () => openTaskDialog({ assignedTo: app.responsibleStaff, entityId: app.entityId, applicationId: app.applicationId }) }, "Add Task"))),
       h("section", { className: "detail-section" }, h("h3", null, "Linked Work"), h("div", { className: "stack compact" },
@@ -5566,7 +5507,7 @@ function ApplicationDetail({ dashboard, labels, appId, setView, runOne, openTask
             )) : null,
             h("p", { className: "card-body" }, shortText(row.body, 220))
           )
-        ) : h(EmptyState, { title: "No linked work", body: "No tasks or email queue records are linked to this application in the current snapshot." })
+        ) : h(EmptyState, { title: "No linked work", body: "No tasks or supplier outreach records are linked to this lead in the current snapshot." })
       ))
     )
   );
@@ -5576,10 +5517,10 @@ function OpportunityDetail({ dashboard, labels, opportunityId, setView, openRef,
   const applications = (dashboard.applications || []).filter(row => row.opportunityId === opportunityId);
   const seed = applications[0] || { opportunityId };
   return h(Card, { className: "detail-page" },
-    h(CardHeader, { eyebrow: "Opportunity", title: (labels.opportunities[opportunityId] && labels.opportunities[opportunityId].label) || friendlyId(opportunityId), description: "Linked application and workflow records.", action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Back") }),
+    h(CardHeader, { eyebrow: "Tender Case", title: (labels.opportunities[opportunityId] && labels.opportunities[opportunityId].label) || friendlyId(opportunityId), description: "Linked lead and workflow records.", action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Back") }),
     h(CardContent, { className: "detail-grid" },
-      h("section", { className: "detail-section" }, h("h3", null, "Opportunity"), h(DetailList, { rows: [{ label: "University", value: h(UniversityButton, { row: seed, openUniversity }), raw: true }, { label: "Opportunity ID", value: opportunityId }] })),
-      h("section", { className: "detail-section" }, h("h3", null, "Linked Applications"), h("div", { className: "entity-list no-pad" }, applications.length ? applications.map(row => h("article", { className: "app-card", key: row.entityId || row.applicationId }, h(RefChip, { kind: "applications", id: row.applicationId || row.entityId, labels, openRef }), h("p", null, row.currentStatus || row.currentStage))) : h(EmptyState, { title: "No linked applications", body: "No active application entity is linked to this opportunity in the current snapshot." })))
+      h("section", { className: "detail-section" }, h("h3", null, "Tender Case"), h(DetailList, { rows: [{ label: "Tender source", value: h(UniversityButton, { row: seed, openUniversity }), raw: true }, { label: "Case ID", value: opportunityId }] })),
+      h("section", { className: "detail-section" }, h("h3", null, "Linked Leads"), h("div", { className: "entity-list no-pad" }, applications.length ? applications.map(row => h("article", { className: "app-card", key: row.entityId || row.applicationId }, h(RefChip, { kind: "applications", id: row.applicationId || row.entityId, labels, openRef }), h("p", null, row.currentStatus || row.currentStage))) : h(EmptyState, { title: "No linked leads", body: "No active lead is linked to this tender case in the current snapshot." })))
     )
   );
 }
@@ -5593,14 +5534,14 @@ function TaskDialog({ value, setValue, onClose, onSubmit, staff }) {
       h("div", { className: "dialog-head" }, h("div", null, h("p", { className: "eyebrow" }, isManagerMessage ? "Manager" : "Task"), h("h2", null, isManagerMessage ? "Message Manager" : "Create Staff Task")), h(Button, { type: "button", variant: "ghost", size: "icon", onClick: onClose }, icon("x"))),
       h("div", { className: "form-grid" },
         h(Field, { label: "Assigned Staff" }, h(Select, { value: value.assignedTo, onChange: event => update("assignedTo", event.target.value) }, staffIds.map(id => h("option", { key: id, value: id }, staffProfile(id).label)))),
-        h(Field, { label: "Task Type" }, h(Select, { value: value.taskType, onChange: event => update("taskType", event.target.value) }, ["Manager Guidance", "Research", "Fit Review", "Package", "Outreach", "Follow-up", "CRM Health", "Report"].map(type => h("option", { key: type, value: type }, type)))),
+        h(Field, { label: "Task Type" }, h(Select, { value: value.taskType, onChange: event => update("taskType", event.target.value) }, ["Manager Guidance", "Lead Review", "Tender Document Review", "Fit / Eligibility", "Supplier Match", "Supplier Discovery", "Quotation Outreach", "Tender Package", "Follow-up", "CRM Health", "Report"].map(type => h("option", { key: type, value: type }, type)))),
         h(Field, { label: "Task Category" }, h(Select, { value: value.taskCategory || "", onChange: event => update("taskCategory", event.target.value) }, TASK_CATEGORIES.map(category => h("option", { key: category, value: category }, category)))),
         h(Field, { label: "Related Entity" }, h(Input, { value: value.entityId, onChange: event => update("entityId", event.target.value), placeholder: "Search/select entity in next version" })),
-        h(Field, { label: "Application" }, h(Input, { value: value.relatedApplicationId, onChange: event => update("relatedApplicationId", event.target.value), placeholder: "Application ID" })),
+        h(Field, { label: "Lead" }, h(Input, { value: value.relatedApplicationId, onChange: event => update("relatedApplicationId", event.target.value), placeholder: "Lead ID" })),
         h(Field, { label: "Run After" }, h(Input, { type: "datetime-local", value: value.runAfter, onChange: event => update("runAfter", event.target.value) })),
         h(Field, { label: "Due At" }, h(Input, { type: "datetime-local", value: value.dueAt, onChange: event => update("dueAt", event.target.value) })),
         h(Field, { label: "Priority" }, h(Select, { value: value.priority, onChange: event => update("priority", event.target.value) }, ["High", "Medium", "Low", "Critical", "Test"].map(priority => h("option", { key: priority, value: priority }, priority)))),
-        h(Field, { label: isManagerMessage ? "Message" : "Next Action", className: "wide" }, h(Textarea, { value: value.nextAction, onChange: event => update("nextAction", event.target.value), placeholder: isManagerMessage ? "Tell the Manager what you want the AI team to do..." : "What exactly should the staff do?", rows: 5, required: true }))
+        h(Field, { label: isManagerMessage ? "Message" : "Next Action", className: "wide" }, h(Textarea, { value: value.nextAction, onChange: event => update("nextAction", event.target.value), placeholder: isManagerMessage ? "Tell Alex the Lead ID, tender files, supplier question, or tender decision you want handled..." : "What exactly should the staff do for this lead/tender case?", rows: 5, required: true }))
       ),
       isManagerMessage ? h("p", { className: "dialog-help" }, "Alex will interpret this with the Manager Brain, reply in the thread, and allocate specialist work when needed. No email is sent from this message.") : null,
       h("div", { className: "dialog-actions" }, h(Button, { type: "button", variant: "ghost", onClick: onClose }, "Cancel"), h(Button, { actionKey: "task:save", type: "submit" }, isManagerMessage ? "Send to Manager" : "Create Task"))

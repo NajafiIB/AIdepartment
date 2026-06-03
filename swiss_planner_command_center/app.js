@@ -6,7 +6,7 @@ const state = {
   actionBusy: false,
   currentView: "overview",
   selectedUniversityKey: "",
-  selectedApplicationId: "",
+  selectedLeadId: "",
   selectedOpportunityId: "",
   applicationsView: "list",
   applicationFilters: {
@@ -27,8 +27,8 @@ const STAFF_ORDER = [
   "AIstaff_OpportunityHunter",
   "AIstaff_FitAnalyst",
   "AIstaff_ProfessorResearchAnalyst",
-  "AIstaff_ApplicationPackMaker",
-  "AIstaff_ApplicationPackSender",
+  "AIstaff_LeadPackMaker",
+  "AIstaff_LeadPackSender",
   "AIstaff_FollowUpController",
   "AIstaff_CRMController",
 ];
@@ -89,11 +89,11 @@ function staffProfile(value) {
   const id = String(value || "");
   const profiles = [
     ["Manager", "Manager", "MG", "person-check", "manager"],
-    ["OpportunityHunter", "Opportunity Hunter", "OH", "search-person", "hunter"],
+    ["OpportunityHunter", "Tender Document Analyst", "OH", "search-person", "hunter"],
     ["FitAnalyst", "Fit Analyst", "FA", "chart-person", "fit"],
-    ["ProfessorResearchAnalyst", "Professor Research Analyst", "PR", "reader-person", "research"],
-    ["ApplicationPackMaker", "Application Pack Maker", "PM", "document-person", "maker"],
-    ["ApplicationPackSender", "Application Pack Sender", "PS", "send-person", "sender"],
+    ["ProfessorResearchAnalyst", "Supplier Mapper", "PR", "reader-person", "research"],
+    ["LeadPackMaker", "Tender Package Maker", "PM", "document-person", "maker"],
+    ["LeadPackSender", "Supplier Outreach Specialist", "PS", "send-person", "sender"],
     ["FollowUpController", "Follow-up Controller", "FU", "clock-person", "follow"],
     ["CRMController", "CRM Controller", "CRM", "database-person", "crm"],
   ];
@@ -182,7 +182,7 @@ const UNIVERSITY_REFERENCES = {
     website: "https://www.agh.edu.pl/en",
     doctoral: "https://sd.agh.edu.pl/en/candidates",
     focus: "Energy engineering, geothermal systems, drilling, petroleum engineering, geoscience, mining, and applied technical research.",
-    fit: "Strong Krakow fit for engineering-heavy PhD routes that can be framed toward geothermal bankability, subsurface risk, CCS, storage, and project-finance due diligence.",
+    fit: "Strong Krakow fit for engineering-heavy tender routes that can be framed toward geothermal bankability, subsurface risk, CCS, storage, and project-finance due diligence.",
   },
   uek: {
     key: "uek",
@@ -210,21 +210,21 @@ const UNIVERSITY_REFERENCES = {
     key: "hsg",
     name: "University of St. Gallen / HSG",
     city: "St. Gallen",
-    country: "Switzerland",
+    country: "GCC region",
     type: "Business school / university",
     website: "https://www.unisg.ch/en/",
     doctoral: "https://www.unisg.ch/en/studying/programmes/doctoral-programmes/",
     focus: "Finance, management, entrepreneurship, private markets, innovation, and business research.",
-    fit: "High strategic fit for private markets, M&A, family office, project finance, and finance-industry positioning in Switzerland.",
+    fit: "High strategic fit for private markets, M&A, family office, project finance, and finance-industry positioning in GCC region.",
   },
   unibas: {
     key: "unibas",
     name: "University of Basel",
     city: "Basel",
-    country: "Switzerland",
+    country: "GCC region",
     type: "Research university",
     website: "https://www.unibas.ch/en.html",
-    doctoral: "https://www.unibas.ch/en/Studies/Application-Admission/Doctorate.html",
+    doctoral: "https://www.unibas.ch/en/Studies/Lead-Admission/Doctorate.html",
     focus: "Finance, sustainability, climate policy, economics, and interdisciplinary research depending on faculty/program.",
     fit: "Relevant for sustainable finance, decarbonization, and climate-risk topics with a Swiss institutional signal.",
   },
@@ -232,7 +232,7 @@ const UNIVERSITY_REFERENCES = {
     key: "uzh",
     name: "University of Zurich / Swiss Finance Institute",
     city: "Zurich",
-    country: "Switzerland",
+    country: "GCC region",
     type: "Research university / finance institute",
     website: "https://www.uzh.ch/en.html",
     doctoral: "https://www.sfi.ch/en/education/phd-program",
@@ -478,7 +478,7 @@ function recordIdLine(label, id) {
 
 function referenceAction(kind, id) {
   if (!id) return "";
-  if (kind === "applications") return `openApplicationDetail(${htmlJsArg(id)})`;
+  if (kind === "applications") return `openLeadDetail(${htmlJsArg(id)})`;
   if (kind === "opportunities") return `openOpportunityDetail(${htmlJsArg(id)})`;
   return "";
 }
@@ -612,16 +612,18 @@ async function bridgeAction(action, payload = {}) {
 
 function localSyncLabel(result) {
   const sync = result?.localSync || {};
-  const lastSync = sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "pending";
+  const crmStatus = sync.crmSyncEnabled
+    ? `CRM sync: ${sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "pending"}`
+    : "CRM sync disabled";
   const pending = Number(sync.pendingActions || 0);
   const failed = Number(sync.failedActions || 0);
   const error = sync.lastSyncError ? ` Last sync issue: ${sync.lastSyncError}` : "";
-  return `Local-first mode. Sheet sync: ${lastSync}. Pending local changes: ${pending}${failed ? `, failed: ${failed}` : ""}.${error}`;
+  return `${sync.mode || "local-only"} mode. ${crmStatus}. Pending local changes: ${pending}${failed ? `, failed: ${failed}` : ""}.${error}`;
 }
 
 async function loadDashboard(runAudit = false, force = false) {
   if (state.actionBusy && !runAudit && !force) return;
-  setStatus(runAudit ? "Running sheet audit and refreshing local dashboard..." : "Refreshing local dashboard...", "working");
+  setStatus(runAudit ? "Refreshing local dashboard..." : "Refreshing local dashboard...", "working");
   try {
     const result = await api(`/api/dashboard?limit=60&runAudit=${runAudit ? "true" : "false"}`);
     state.dashboard = result;
@@ -745,14 +747,14 @@ function renderDashboard(data) {
   renderApprovals(data);
   renderStaffBoard(data.staff || []);
   renderStaffOptions(data.staff || []);
-  renderApplications(data.applications || []);
+  renderLeads(data.applications || []);
   renderEmailQueue(data.emailQueue || {});
   renderTasks(data.tasks || []);
   renderFollowUps(data.followUps || []);
   renderRecentActivity(data.recentEvents || [], data.recentRuns || []);
   renderReports(data.recentReports || []);
   if (state.selectedUniversityKey) renderUniversityDetail(state.selectedUniversityKey);
-  if (state.selectedApplicationId) renderApplicationDetail(state.selectedApplicationId);
+  if (state.selectedLeadId) renderLeadDetail(state.selectedLeadId);
   if (state.selectedOpportunityId) renderOpportunityDetail(state.selectedOpportunityId);
   maybeNotify(summary);
 }
@@ -932,8 +934,8 @@ function renderStaffFlow(data) {
     ["AIstaff_OpportunityHunter", "Find", "Verified opportunities and evidence"],
     ["AIstaff_FitAnalyst", "Score", "Fit, priority, eligibility risk"],
     ["AIstaff_ProfessorResearchAnalyst", "Research", "Supervisor and topic fit"],
-    ["AIstaff_ApplicationPackMaker", "Prepare", "CV, SOP, proposal, package files"],
-    ["AIstaff_ApplicationPackSender", "Send", "Approved emails and attachment checks"],
+    ["AIstaff_LeadPackMaker", "Prepare", "CV, SOP, proposal, package files"],
+    ["AIstaff_LeadPackSender", "Send", "Approved emails and attachment checks"],
     ["AIstaff_FollowUpController", "Follow up", "Replies, stale waits, next actions"],
     ["AIstaff_CRMController", "Control", "CRM health, logs, sync quality"],
   ];
@@ -1084,7 +1086,7 @@ function collectManagerReviewItems(review) {
       details: [
         universityRefLine(item),
         ownerLine("Owner", item.assignedTo),
-        recordReferenceLine("Application", "applications", item.applicationId, 180),
+        recordReferenceLine("Lead", "applications", item.applicationId, 180),
         recordReferenceLine("Opportunity", "opportunities", item.opportunityId, 180),
         ["Due", fmtDate(item.dueAt), 80],
         ["Next action", item.nextAction || item.completionCriteria, 240],
@@ -1105,7 +1107,7 @@ function collectManagerReviewItems(review) {
     details: [
       universityRefLine(item),
       ownerLine("Owner", item.staff),
-      recordReferenceLine("Application", "applications", item.entityId, 180),
+      recordReferenceLine("Lead", "applications", item.entityId, 180),
       ["Due", fmtDate(item.dueAt), 80],
       ["Reason", item.reason, 220],
       ["Next action", item.nextAction || item.result, 240],
@@ -1118,7 +1120,7 @@ function collectManagerReviewItems(review) {
     title: item.recipientName || item.to || item.queueId,
     status: item.sendStatus || item.approvalStatus,
     body: `${item.recipientName || item.to}: ${item.subject || item.lastError || ""}`,
-    staff: "AIstaff_ApplicationPackSender",
+    staff: "AIstaff_LeadPackSender",
     queueId: item.queueId,
     details: [
       universityRefLine(item),
@@ -1294,7 +1296,7 @@ function collectApprovalItems(data) {
       details: [
         universityRefLine(row),
         ownerLine("Staff waiting", row.assignedTo),
-        recordReferenceLine("Application", "applications", row.applicationId || row.entityId, 190),
+        recordReferenceLine("Lead", "applications", row.applicationId || row.entityId, 190),
         recordReferenceLine("Opportunity", "opportunities", row.opportunityId, 190),
         ["What needs approval", row.nextAction || row.completionCriteria, 260],
         ["Reason", row.lastError || row.resultNotes || row.failureStatus, 240],
@@ -1316,7 +1318,7 @@ function collectApprovalItems(data) {
       details: [
         universityRefLine(row),
         ownerLine("Staff waiting", row.staff),
-        recordReferenceLine("Application", "applications", row.entityId, 190),
+        recordReferenceLine("Lead", "applications", row.entityId, 190),
         ["What needs approval", row.nextAction || row.reason, 260],
         ["Reason", row.result || row.reason, 240],
         ["Due", fmtDate(row.dueAt), 90],
@@ -1331,13 +1333,13 @@ function collectApprovalItems(data) {
       kind: "Email approval",
       title: row.subject || row.recipientName || row.to || row.queueId,
       status: row.approvalStatus || row.sendStatus || "Needs Approval",
-      staff: "AIstaff_ApplicationPackSender",
+      staff: "AIstaff_LeadPackSender",
       queueId: row.queueId,
       applicationId: row.applicationId,
       opportunityId: row.opportunityId,
       details: [
         universityRefLine(row),
-        recordReferenceLine("Application", "applications", row.applicationId, 190),
+        recordReferenceLine("Lead", "applications", row.applicationId, 190),
         recordReferenceLine("Opportunity", "opportunities", row.opportunityId, 190),
         ["Recipient", row.recipientName || row.to, 130],
         ["Email", row.to, 160],
@@ -1436,7 +1438,7 @@ function applicationSearchText(row = {}) {
   ].join(" "));
 }
 
-function filteredApplications(rows) {
+function filteredLeads(rows) {
   const filters = state.applicationFilters || {};
   const search = normalizedText(filters.search);
   return rows.filter(row => {
@@ -1462,7 +1464,7 @@ function updateSelectOptions(select, options, placeholder) {
   select.value = options.some(option => option.value === current) ? current : "";
 }
 
-function syncApplicationControls(rows) {
+function syncLeadControls(rows) {
   const filters = state.applicationFilters || {};
   const search = el("applicationSearch");
   if (search && document.activeElement !== search) search.value = filters.search || "";
@@ -1487,7 +1489,7 @@ function syncApplicationControls(rows) {
   const universityOptions = [...universityCounts.values()]
     .sort((a, b) => a.label.localeCompare(b.label))
     .map(item => ({ value: item.value, label: `${item.label} (${item.count})` }));
-  updateSelectOptions(el("applicationUniversityFilter"), universityOptions, "All universities");
+  updateSelectOptions(el("applicationUniversityFilter"), universityOptions, "All sources");
 
   const listButton = el("applicationListViewBtn");
   const kanbanButton = el("applicationKanbanViewBtn");
@@ -1502,7 +1504,7 @@ function syncApplicationControls(rows) {
   }
 }
 
-function renderApplicationKanban(rows) {
+function renderLeadKanban(rows) {
   const stages = [
     ...APPLICATION_PIPELINE_STAGES,
   ];
@@ -1588,13 +1590,13 @@ function renderStaffOptions(staff) {
   select.value = ids.includes(current) ? current : "AIstaff_Manager";
 }
 
-function renderApplications(rows) {
-  syncApplicationControls(rows);
+function renderLeads(rows) {
+  syncLeadControls(rows);
   if (!rows.length) {
     el("applications").innerHTML = emptyState("No active applications", "The dashboard did not return any application entities.");
     return;
   }
-  const filtered = filteredApplications(rows);
+  const filtered = filteredLeads(rows);
   const count = el("applicationCount");
   if (count) count.textContent = `${filtered.length} / ${rows.length}`;
   if (!filtered.length) {
@@ -1602,7 +1604,7 @@ function renderApplications(rows) {
     return;
   }
   if (state.applicationsView === "kanban") {
-    el("applications").innerHTML = renderApplicationKanban(filtered);
+    el("applications").innerHTML = renderLeadKanban(filtered);
     return;
   }
   el("applications").innerHTML = `
@@ -1623,13 +1625,13 @@ function renderApplications(rows) {
             recordReferenceLine("Opportunity", "opportunities", row.opportunityId, 180),
             recordReferenceLine("Latest task", "tasks", row.lastTaskId, 240),
             recordReferenceLine("Latest follow-up", "followUps", row.lastFollowUpId, 240),
-            recordIdLine("Application ID", row.applicationId),
+            recordIdLine("Lead ID", row.applicationId),
             ["Updated", fmtDate(row.lastUpdated) || "No update time", 90],
           ])}
           <div class="action-strip">
             <button class="primary" onclick="runOne('${escapeHtml(row.responsibleStaff)}')">Run Owner</button>
             <button onclick="prefillTask('${escapeHtml(row.responsibleStaff)}','${escapeHtml(row.entityId)}','${escapeHtml(row.applicationId)}')">Add Task</button>
-            <button onclick="prefillDecision('Application Review','${escapeHtml(row.applicationId || row.entityId)}')">Comment</button>
+            <button onclick="prefillDecision('Lead Review','${escapeHtml(row.applicationId || row.entityId)}')">Comment</button>
           </div>
         </article>
       `).join("")}
@@ -1656,7 +1658,7 @@ function renderTasks(rows) {
           ${detailList([
             universityRefLine(row),
             ownerLine("Owner", row.assignedTo),
-            recordReferenceLine("Application", "applications", row.applicationId, 180),
+            recordReferenceLine("Lead", "applications", row.applicationId, 180),
             recordReferenceLine("Opportunity", "opportunities", row.opportunityId, 180),
             ["Run after", fmtDate(row.runAfter) || "now", 90],
             ["Due", `${fmtDate(row.dueAt) || "not set"}${row.overdue ? " - late" : ""}`, 100],
@@ -1698,7 +1700,7 @@ function renderFollowUps(rows) {
           ${detailList([
             universityRefLine(row),
             ownerLine("Owner", row.staff),
-            recordReferenceLine("Application", "applications", row.entityId, 180),
+            recordReferenceLine("Lead", "applications", row.entityId, 180),
             ["Reason", row.reason, 220],
             ["Run after", fmtDate(row.runAfter) || "now", 90],
             ["Due", `${fmtDate(row.dueAt) || "not set"}${row.overdue ? " - late" : ""}`, 100],
@@ -1734,7 +1736,7 @@ function renderEmailQueue(queue) {
       </div>
       ${detailList([
         universityRefLine(item),
-        recordReferenceLine("Application", "applications", item.applicationId, 180),
+        recordReferenceLine("Lead", "applications", item.applicationId, 180),
         recordReferenceLine("Opportunity", "opportunities", item.opportunityId, 180),
         ["Recipient", item.recipientName || item.to, 110],
         ["Email", item.to, 120],
@@ -1768,7 +1770,7 @@ function externalLink(url, label) {
 
 function openUniversityDetail(key) {
   state.selectedUniversityKey = key || "unknown";
-  state.selectedApplicationId = "";
+  state.selectedLeadId = "";
   state.selectedOpportunityId = "";
   renderUniversityDetail(state.selectedUniversityKey);
   showView("university-detail");
@@ -1781,11 +1783,11 @@ function refsMatch(left, right) {
   return a === b || a.endsWith(b) || b.endsWith(a);
 }
 
-function rowMatchesApplication(row, appOrId) {
+function rowMatchesLead(row, appOrId) {
   const appId = typeof appOrId === "string" ? appOrId : (appOrId?.applicationId || appOrId?.entityId || "");
   const entityId = typeof appOrId === "string" ? appOrId : (appOrId?.entityId || appOrId?.applicationId || "");
   return refsMatch(row.applicationId, appId) ||
-    refsMatch(row.relatedApplicationId, appId) ||
+    refsMatch(row.relatedLeadId, appId) ||
     refsMatch(row.entityId, entityId) ||
     refsMatch(row.entityId, appId) ||
     refsMatch(row.applicationId, entityId);
@@ -1795,7 +1797,7 @@ function rowMatchesOpportunity(row, opportunityId) {
   return refsMatch(row.opportunityId, opportunityId) || refsMatch(row.relatedOpportunityId, opportunityId);
 }
 
-function findApplicationRecord(id) {
+function findLeadRecord(id) {
   const rows = state.dashboard?.applications || [];
   return rows.find(row => refsMatch(row.applicationId, id) || refsMatch(row.entityId, id)) || null;
 }
@@ -1821,7 +1823,7 @@ function renderWorkCards(rows, emptyTitle, emptyBody) {
       </div>
       ${detailList([
         ownerLine("Owner", row.assignedTo || row.staff),
-        recordReferenceLine("Application", "applications", row.applicationId || row.entityId, 190),
+        recordReferenceLine("Lead", "applications", row.applicationId || row.entityId, 190),
         recordReferenceLine("Opportunity", "opportunities", row.opportunityId, 190),
         ["Due", fmtDate(row.dueAt) || "not set", 90],
         ["Next action", row.nextAction || row.completionCriteria || row.result, 240],
@@ -1842,7 +1844,7 @@ function renderEmailCards(rows, emptyTitle, emptyBody) {
         ${badge(row.sendStatus || row.approvalStatus)}
       </div>
       ${detailList([
-        recordReferenceLine("Application", "applications", row.applicationId, 190),
+        recordReferenceLine("Lead", "applications", row.applicationId, 190),
         recordReferenceLine("Opportunity", "opportunities", row.opportunityId, 190),
         ["Subject", row.subject, 240],
         ["Approval", row.approvalStatus, 100],
@@ -1857,35 +1859,35 @@ function renderEmailCards(rows, emptyTitle, emptyBody) {
   `).join("");
 }
 
-function openApplicationDetail(id) {
-  state.selectedApplicationId = id || "";
+function openLeadDetail(id) {
+  state.selectedLeadId = id || "";
   state.selectedUniversityKey = "";
   state.selectedOpportunityId = "";
-  renderApplicationDetail(state.selectedApplicationId);
+  renderLeadDetail(state.selectedLeadId);
   showView("application-detail");
 }
 
-function renderApplicationDetail(id) {
-  const app = findApplicationRecord(id);
+function renderLeadDetail(id) {
+  const app = findLeadRecord(id);
   const appId = app?.applicationId || id;
   const title = el("applicationDetailTitle");
-  if (title) title.textContent = recordLabel("applications", appId || app?.entityId || id) || "Application";
+  if (title) title.textContent = recordLabel("applications", appId || app?.entityId || id) || "Lead";
 
   if (!app) {
-    el("applicationDetail").innerHTML = emptyState("Application not in snapshot", "Refresh the dashboard or open the workbook if this reference exists only in the full sheet.");
+    el("applicationDetail").innerHTML = emptyState("Lead not in snapshot", "Refresh the dashboard or open the workbook if this reference exists only in the full sheet.");
     return;
   }
 
-  const tasks = (state.dashboard?.tasks || []).filter(row => rowMatchesApplication(row, app));
-  const followUps = (state.dashboard?.followUps || []).filter(row => rowMatchesApplication(row, app));
-  const emails = flattenEmailQueue(state.dashboard?.emailQueue || {}).filter(row => rowMatchesApplication(row, app) || rowMatchesOpportunity(row, app.opportunityId));
+  const tasks = (state.dashboard?.tasks || []).filter(row => rowMatchesLead(row, app));
+  const followUps = (state.dashboard?.followUps || []).filter(row => rowMatchesLead(row, app));
+  const emails = flattenEmailQueue(state.dashboard?.emailQueue || {}).filter(row => rowMatchesLead(row, app) || rowMatchesOpportunity(row, app.opportunityId));
   const relatedWorkHtml = renderWorkCards([...tasks, ...followUps], "No related tasks", "No current task or follow-up is linked to this application.");
   const emailHtml = renderEmailCards(emails, "No related email rows", "No visible email queue row is linked to this application.");
 
   el("applicationDetail").innerHTML = `
     <div class="detail-grid">
       <section class="detail-section">
-        <h3>Application Details</h3>
+        <h3>Lead Details</h3>
         ${detailList([
           universityRefLine(app),
           ["Status", app.currentStatus, 120],
@@ -1894,7 +1896,7 @@ function renderApplicationDetail(id) {
           recordReferenceLine("Opportunity", "opportunities", app.opportunityId, 220),
           recordReferenceLine("Latest task", "tasks", app.lastTaskId, 240),
           recordReferenceLine("Latest follow-up", "followUps", app.lastFollowUpId, 240),
-          recordIdLine("Application ID", app.applicationId),
+          recordIdLine("Lead ID", app.applicationId),
           recordIdLine("Entity ID", app.entityId),
           ["Deadline", app.deadline || "not set", 90],
           ["Notes", app.notes, 260],
@@ -1914,7 +1916,7 @@ function renderApplicationDetail(id) {
 
 function openOpportunityDetail(id) {
   state.selectedOpportunityId = id || "";
-  state.selectedApplicationId = "";
+  state.selectedLeadId = "";
   state.selectedUniversityKey = "";
   renderOpportunityDetail(state.selectedOpportunityId);
   showView("opportunity-detail");
@@ -1938,7 +1940,7 @@ function renderOpportunityDetail(id) {
       ${detailList([
         ["Stage", row.currentStage, 100],
         ownerLine("Owner", row.responsibleStaff),
-        recordReferenceLine("Application", "applications", row.applicationId || row.entityId, 220),
+        recordReferenceLine("Lead", "applications", row.applicationId || row.entityId, 220),
         recordReferenceLine("Latest task", "tasks", row.lastTaskId, 220),
         recordReferenceLine("Latest follow-up", "followUps", row.lastFollowUpId, 220),
         ["Deadline", row.deadline || "not set", 90],
@@ -1960,7 +1962,7 @@ function renderOpportunityDetail(id) {
         ])}
       </section>
       <section class="detail-section">
-        <h3>Linked Applications</h3>
+        <h3>Linked Leads</h3>
         <div class="entity-list nested">${appsHtml}</div>
       </section>
       <section class="detail-section">
@@ -2021,7 +2023,7 @@ function renderUniversityDetail(key) {
       </div>
       ${detailList([
         ownerLine("Owner", row.assignedTo || row.staff),
-        recordReferenceLine("Application", "applications", row.applicationId || row.entityId, 180),
+        recordReferenceLine("Lead", "applications", row.applicationId || row.entityId, 180),
         recordReferenceLine("Opportunity", "opportunities", row.opportunityId, 180),
         ["Due", fmtDate(row.dueAt) || "not set", 90],
         ["Next action", row.nextAction || row.completionCriteria || row.result, 220],
@@ -2039,7 +2041,7 @@ function renderUniversityDetail(key) {
         ${badge(row.sendStatus || row.approvalStatus)}
       </div>
       ${detailList([
-        recordReferenceLine("Application", "applications", row.applicationId, 180),
+        recordReferenceLine("Lead", "applications", row.applicationId, 180),
         recordReferenceLine("Opportunity", "opportunities", row.opportunityId, 180),
         ["Subject", row.subject, 220],
         ["Approval", row.approvalStatus, 90],
@@ -2051,7 +2053,7 @@ function renderUniversityDetail(key) {
   el("universityDetail").innerHTML = `
     <div class="detail-grid">
       <section class="detail-section">
-        <h3>University Details</h3>
+        <h3>Tender Source Details</h3>
         ${detailList([
           ["Name", university.name, 140],
           ["City", university.city, 80],
@@ -2064,7 +2066,7 @@ function renderUniversityDetail(key) {
         ])}
       </section>
       <section class="detail-section">
-        <h3>Related Applications</h3>
+        <h3>Related Leads</h3>
         <div class="entity-list nested">${relatedApps}</div>
       </section>
       <section class="detail-section">
@@ -2313,7 +2315,7 @@ function prefillTask(staff, entityId, applicationId) {
   if (!form) return;
   form.assignedTo.value = staff || "AIstaff_Manager";
   form.entityId.value = entityId || "";
-  form.relatedApplicationId.value = applicationId || "";
+  form.relatedLeadId.value = applicationId || "";
   openTaskDialog();
   form.nextAction.focus();
 }
@@ -2332,7 +2334,7 @@ async function submitTask(event) {
       assignedTo: data.assignedTo,
       createdBy: "Command Center",
       entityId: data.entityId,
-      relatedApplicationId: data.relatedApplicationId,
+      relatedLeadId: data.relatedLeadId,
       priority: data.priority,
       runAfter: data.runAfter || new Date().toISOString(),
       dueAt: data.dueAt || "",
@@ -2397,7 +2399,7 @@ function maybeNotify(summary) {
   }
   state.lastReviewCount = count;
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  new Notification("Swiss Planner needs manager review", {
+  new Notification("GCC lab AI department needs manager review", {
     body: `${count} item(s) need attention in the AI Staff Command Center.`,
   });
 }
@@ -2417,21 +2419,21 @@ function openWorkbook() {
   if (url) window.open(url, "_blank", "noopener");
 }
 
-function rerenderApplications() {
-  renderApplications(state.dashboard?.applications || []);
+function rerenderLeads() {
+  renderLeads(state.dashboard?.applications || []);
 }
 
-function setApplicationsView(view) {
+function setLeadsView(view) {
   state.applicationsView = view === "kanban" ? "kanban" : "list";
-  rerenderApplications();
+  rerenderLeads();
 }
 
-function updateApplicationFilter(key, value) {
+function updateLeadFilter(key, value) {
   state.applicationFilters = {
     ...(state.applicationFilters || {}),
     [key]: value || "",
   };
-  rerenderApplications();
+  rerenderLeads();
 }
 
 el("refreshBtn").addEventListener("click", () => loadDashboard(false));
@@ -2447,11 +2449,11 @@ el("openTaskDialogBtn").addEventListener("click", openTaskDialog);
 el("openDecisionDialogBtn").addEventListener("click", openDecisionDialog);
 el("decisionForm").addEventListener("submit", submitDecision);
 el("taskForm").addEventListener("submit", submitTask);
-el("applicationSearch").addEventListener("input", event => updateApplicationFilter("search", event.target.value));
-el("applicationStageFilter").addEventListener("change", event => updateApplicationFilter("stage", event.target.value));
-el("applicationUniversityFilter").addEventListener("change", event => updateApplicationFilter("university", event.target.value));
-el("applicationListViewBtn").addEventListener("click", () => setApplicationsView("list"));
-el("applicationKanbanViewBtn").addEventListener("click", () => setApplicationsView("kanban"));
+el("applicationSearch").addEventListener("input", event => updateLeadFilter("search", event.target.value));
+el("applicationStageFilter").addEventListener("change", event => updateLeadFilter("stage", event.target.value));
+el("applicationUniversityFilter").addEventListener("change", event => updateLeadFilter("university", event.target.value));
+el("applicationListViewBtn").addEventListener("click", () => setLeadsView("list"));
+el("applicationKanbanViewBtn").addEventListener("click", () => setLeadsView("kanban"));
 document.addEventListener("click", event => {
   const commandButton = event.target.closest("[data-command]");
   if (!commandButton) return;
@@ -2473,7 +2475,7 @@ Object.assign(window, {
   closeDialog,
   closeEntity,
   loadDashboard,
-  openApplicationDetail,
+  openLeadDetail,
   openDecisionDialog,
   openDialog,
   openOpportunityDetail,
@@ -2490,7 +2492,7 @@ Object.assign(window, {
   runLegacyCycleFallback,
   runOne,
   setAutopilot,
-  setApplicationsView,
+  setLeadsView,
   showView,
   snoozeFollowUp,
   snoozeTask,
