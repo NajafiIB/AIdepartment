@@ -991,8 +991,8 @@ function deriveSummary(data) {
     ? data.threadsSummary.humanFacingOpen
     : humanTasks.length;
   const reviewCount = collectManagerReviewItems(data.managerReview || {}).length;
-  summary.managerReview = reviewCount;
   summary.openEscalations = summary.openEscalations == null ? reviewCount : summary.openEscalations;
+  summary.managerReview = 0;
   if (waitingCodex && summary.dueTasks !== undefined) summary.dueTasks = Math.max(0, Number(summary.dueTasks || 0) - waitingCodex);
   return summary;
 }

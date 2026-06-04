@@ -289,6 +289,12 @@ def local_task_runner(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         if staff_id == "AIstaff_Manager":
             reply = local_store.process_manager_auto_replies(limit=1, thread_id=thread_id)
             result = {"mode": "manager", "threadId": thread_id, "reply": reply}
+            if task_id and int((reply or {}).get("processed") or 0) == 0:
+                local_store.update_snapshot_task_status(
+                    task_id,
+                    "Done",
+                    "Manager wake-up checked locally; no human reply or new action was needed.",
+                )
         else:
             result = local_store.create_codex_work_item_from_thread(thread_id)
             if result.get("ok"):

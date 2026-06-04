@@ -1969,6 +1969,43 @@ def task_is_terminal(row: dict[str, Any]) -> bool:
     return text in {"done", "closed", "cancelled", "sent", "submitted", "no further action"}
 
 
+def task_waits_for_external_worker(row: dict[str, Any]) -> bool:
+    text = normalize_text(
+        " ".join(
+            str(row.get(key) or "")
+            for key in ["status", "resultNotes", "nextAction", "completionCriteria", "lastError"]
+        )
+    )
+    return any(
+        phrase in text
+        for phrase in [
+            "codex work queued",
+            "waiting for codex worker",
+        ]
+    )
+
+
+def task_is_locally_runnable(row: dict[str, Any]) -> bool:
+    if task_is_terminal(row):
+        return False
+    status = normalize_text(row.get("status"))
+    if (
+        status.startswith("blocked")
+        or status in {
+            "needs approval",
+            "needs human review",
+            "needs human review - duplicate recipient",
+            "needs human review - supervisor reply",
+            "waiting for human review",
+            "waiting for iman",
+            "codex work queued",
+            "waiting for codex worker",
+        }
+    ):
+        return False
+    return not task_waits_for_external_worker(row)
+
+
 def has_human_signal(row: dict[str, Any]) -> bool:
     if task_is_terminal(row):
         return False
@@ -2500,6 +2537,66 @@ def cleanup_stale_staff_wakeups(conn: sqlite3.Connection) -> None:
         """,
         (now,),
     )
+    conn.execute(
+        """
+        UPDATE staff_wakeups
+        SET status = 'Completed',
+            completed_at = COALESCE(completed_at, ?),
+            result = CASE
+              WHEN result = '' THEN 'Auto-completed: linked Codex work item already exists.'
+              ELSE result
+            END
+        WHERE status IN ('Queued', 'Presented')
+          AND staff_id != 'AIstaff_Manager'
+          AND (
+            EXISTS (
+              SELECT 1
+              FROM codex_work_items c
+              WHERE c.status IN ('Queued', 'Ready', 'Copied', 'In Progress')
+                AND c.source_task_id != ''
+                AND c.source_task_id = staff_wakeups.task_id
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM codex_work_items c
+              WHERE c.status IN ('Queued', 'Ready', 'Copied', 'In Progress')
+                AND c.thread_id != ''
+                AND c.thread_id = staff_wakeups.thread_id
+            )
+          )
+        """,
+        (now,),
+    )
+    snapshot_row = conn.execute("SELECT payload FROM dashboard_snapshot WHERE id = 1").fetchone()
+    if not snapshot_row:
+        return
+    try:
+        snapshot = json.loads(snapshot_row["payload"] or "{}")
+    except Exception:
+        return
+    tasks_by_id = {
+        str(row.get("taskId") or row.get("Task ID") or ""): row
+        for row in snapshot.get("tasks", []) or []
+        if isinstance(row, dict) and (row.get("taskId") or row.get("Task ID"))
+    }
+    for wakeup in conn.execute(
+        "SELECT wakeup_id, task_id FROM staff_wakeups WHERE status IN ('Queued', 'Presented')"
+    ).fetchall():
+        task = tasks_by_id.get(str(wakeup["task_id"] or ""))
+        if task and not task_is_locally_runnable(task):
+            conn.execute(
+                """
+                UPDATE staff_wakeups
+                SET status = 'Completed',
+                    completed_at = COALESCE(completed_at, ?),
+                    result = CASE
+                      WHEN result = '' THEN 'Auto-completed: linked task is no longer locally runnable.'
+                      ELSE result
+                    END
+                WHERE wakeup_id = ?
+                """,
+                (now, wakeup["wakeup_id"]),
+            )
 
 
 def queue_staff_wakeup(staff_id: str, thread_id: str, task_id: str, reason: str, run_after: float | None = None) -> dict[str, Any] | None:
@@ -2672,6 +2769,8 @@ def next_due_local_task(staff: str = "") -> dict[str, Any] | None:
         if staff_filter and assigned != staff_filter:
             continue
         if is_human_responsible(assigned):
+            continue
+        if not task_is_locally_runnable(row):
             continue
         run_after = parse_isoish_to_ts(row.get("runAfter") or row.get("Run After") or row.get("createdAt") or row.get("Created At"))
         if run_after and run_after > now:
@@ -5219,7 +5318,7 @@ def normalize_task_table(payload: Dashboard) -> Dashboard:
             in {TASK_CATEGORIES["human"], TASK_CATEGORIES["manager"], TASK_CATEGORIES["audit"], TASK_CATEGORIES["technical"], TASK_CATEGORIES["email"]}
         ]
     )
-    summary["managerReview"] = summary["openEscalations"]
+    summary["managerReview"] = 0
     summary["waitingCodexWorker"] = len(
         [row for row in open_task_rows if normalize_text(row.get("status")) == "waiting for codex worker"]
     )
@@ -6097,28 +6196,78 @@ def has_waiting_codex_task(snapshot: Dashboard | None) -> bool:
     return False
 
 
+def open_codex_work_count() -> int:
+    init_db()
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM codex_work_items
+            WHERE status IN ('Queued', 'Ready', 'Copied', 'In Progress')
+            """
+        ).fetchone()
+    return int((row or {})["count"] or 0) if row else 0
+
+
+def due_internal_task_count(snapshot: Dashboard | None) -> int:
+    now = utc_ts()
+    count = 0
+    for row in (snapshot or {}).get("tasks", []) or []:
+        if not isinstance(row, dict) or task_is_terminal(row):
+            continue
+        assigned = normalized_staff_id(row.get("assignedTo") or row.get("Assigned To"), "")
+        if not assigned or is_human_responsible(assigned):
+            continue
+        if not task_is_locally_runnable(row):
+            continue
+        run_after = parse_isoish_to_ts(row.get("runAfter") or row.get("Run After") or row.get("createdAt") or row.get("Created At"))
+        if run_after and run_after > now:
+            continue
+        count += 1
+    return count
+
+
+def runnable_staff_wakeup_count() -> int:
+    try:
+        return int((staff_wakeup_summary() or {}).get("queued") or 0)
+    except Exception:
+        return 0
+
+
 def evaluate_daily_kpi_state(snapshot: Dashboard | None, progress: dict[str, Any]) -> dict[str, Any]:
     targets = autopilot_config()["dailyTargets"]
-    due_work = summary_number(snapshot, "dueTasks") + summary_number(snapshot, "dueFollowUps")
-    manager_review = summary_number(snapshot, "openEscalations") or summary_number(snapshot, "managerReview")
-    waiting_codex = summary_number(snapshot, "waitingCodexWorker")
+    internal_due_tasks = due_internal_task_count(snapshot)
+    wakeups = runnable_staff_wakeup_count()
+    local_runnable = internal_due_tasks + wakeups
+    human_review = summary_number(snapshot, "humanTasks")
+    open_escalations = summary_number(snapshot, "openEscalations") or summary_number(snapshot, "managerReview")
+    waiting_codex = max(summary_number(snapshot, "waitingCodexWorker"), open_codex_work_count())
     pending = local_status().get("pendingActions", 0)
     document_quality = document_quality_status()
     checks = {
         "sheetSync": progress.get("sheetSyncs", 0) >= targets["sheetSyncs"],
         "crmHealth": progress.get("crmHealthChecks", 0) >= targets["crmHealthChecks"],
-        "localDueWorkClear": due_work == 0,
+        "localRunnableWorkClear": local_runnable == 0,
+        "humanReviewClear": human_review == 0,
         "pendingLocalActionsClear": pending == 0,
         "documentStyleQaClear": int(document_quality.get("issueCount") or 0) == 0,
     }
-    if all(checks.values()) and manager_review == 0 and waiting_codex == 0:
+    if all(checks.values()) and waiting_codex == 0:
         return {"state": "Completed", "reason": "Daily operational KPIs are complete and no local work is waiting.", "checks": checks}
-    if manager_review > 0:
-        return {"state": "Waiting for Human Review", "reason": f"{manager_review} item(s) need a human decision.", "checks": checks}
-    if waiting_codex > 0:
-        return {"state": "Waiting for Codex Worker", "reason": f"{waiting_codex} task(s) are queued for Codex research/writing.", "checks": checks}
+    if local_runnable > 0:
+        human_note = f" {human_review} human-facing item(s) are waiting separately." if human_review else ""
+        return {
+            "state": "Active",
+            "reason": f"{local_runnable} internal staff item(s) can still run locally.{human_note}",
+            "checks": checks | {"openEscalations": open_escalations, "internalDueTasks": internal_due_tasks, "staffWakeups": wakeups},
+        }
     if int(document_quality.get("issueCount") or 0) > 0:
         return {"state": "Active", "reason": f"{document_quality.get('issueCount')} package document-style issue(s) need QA tasks.", "checks": checks}
+    if waiting_codex > 0:
+        human_note = f" {human_review} human-facing item(s) also need review." if human_review else ""
+        return {"state": "Waiting for Codex Worker", "reason": f"{waiting_codex} Codex work item(s) are queued for research/writing.{human_note}", "checks": checks}
+    if human_review > 0:
+        return {"state": "Waiting for Human Review", "reason": f"{human_review} item(s) need Iman's decision.", "checks": checks}
     return {"state": "Active", "reason": "Daily KPIs are not complete yet.", "checks": checks}
 
 
@@ -6165,7 +6314,7 @@ def run_autopilot_cycle(bridge_call: BridgeCall, force: bool = False) -> dict[st
             action = "queue_document_quality_fix"
             result = queue_document_quality_fix_tasks(limit=3)
             snapshot = load_dashboard_snapshot()
-        elif summary_number(snapshot, "dueTasks") + summary_number(snapshot, "dueFollowUps") > 0:
+        elif due_internal_task_count(snapshot) + runnable_staff_wakeup_count() > 0:
             action = "run_due_task"
             result = bridge_call("runAiStaffTaskRunner", {"maxItems": 1}, "POST")
             progress["runnerAttempts"] = int(progress.get("runnerAttempts", 0)) + 1
@@ -6173,7 +6322,7 @@ def run_autopilot_cycle(bridge_call: BridgeCall, force: bool = False) -> dict[st
             progress["tasksProcessed"] = int(progress.get("tasksProcessed", 0)) + processed
             sync_from_sheet(bridge_call, run_audit=False)
             snapshot = load_dashboard_snapshot()
-        elif not has_waiting_codex_task(snapshot) and int(progress.get("codexTasksQueued", 0)) < config["dailyTargets"]["codexTasksQueuedWhenIdle"]:
+        elif not has_waiting_codex_task(snapshot) and open_codex_work_count() == 0 and int(progress.get("codexTasksQueued", 0)) < config["dailyTargets"]["codexTasksQueuedWhenIdle"]:
             action = "queue_codex_research_task"
             result = queue_daily_codex_research_task("Daily KPI flow was idle without a Codex work item.")
             progress["codexTasksQueued"] = int(progress.get("codexTasksQueued", 0)) + 1
