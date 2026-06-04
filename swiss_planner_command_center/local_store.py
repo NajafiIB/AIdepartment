@@ -221,6 +221,13 @@ def init_db() -> None:
               evidence_link TEXT NOT NULL DEFAULT '',
               last_error TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS task_status_overrides (
+              task_id TEXT PRIMARY KEY,
+              status TEXT NOT NULL,
+              result_notes TEXT NOT NULL DEFAULT '',
+              evidence_link TEXT NOT NULL DEFAULT '',
+              updated_at REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS department_versions (
               version_id TEXT PRIMARY KEY,
               object_type TEXT NOT NULL,
@@ -255,6 +262,8 @@ def init_db() -> None:
               ON codex_work_items (status, assigned_staff, created_at);
             CREATE INDEX IF NOT EXISTS idx_codex_work_items_source
               ON codex_work_items (source_task_id, thread_id);
+            CREATE INDEX IF NOT EXISTS idx_task_status_overrides_updated
+              ON task_status_overrides (updated_at);
             CREATE INDEX IF NOT EXISTS idx_department_versions_object
               ON department_versions (object_type, object_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_backup_runs_created
@@ -284,6 +293,107 @@ def get_meta(key: str, default: str = "") -> str:
     with connect() as conn:
         row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return str(row["value"]) if row else default
+
+
+def set_task_status_override(task_id: str, status: str, result_notes: str = "", evidence_link: str = "") -> None:
+    """Persist a local terminal decision so sheet sync cannot reopen stale rows."""
+    task_id = str(task_id or "").strip()
+    status = str(status or "").strip()
+    if not task_id or not status:
+        return
+    init_db()
+    now = utc_ts()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO task_status_overrides (task_id, status, result_notes, evidence_link, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET
+              status=excluded.status,
+              result_notes=excluded.result_notes,
+              evidence_link=excluded.evidence_link,
+              updated_at=excluded.updated_at
+            """,
+            (task_id, status, result_notes or "", evidence_link or "", now),
+        )
+        rows = conn.execute(
+            "SELECT thread_id, source_payload FROM task_threads WHERE task_id = ?",
+            (task_id,),
+        ).fetchall()
+        for row in rows:
+            try:
+                source = json.loads(row["source_payload"] or "{}")
+            except Exception:
+                source = {}
+            source["status"] = status
+            if result_notes:
+                source["resultNotes"] = result_notes
+            if evidence_link:
+                source["evidenceLink"] = evidence_link
+            if task_is_terminal({"status": status}):
+                conn.execute(
+                    """
+                    UPDATE task_threads
+                    SET status = 'Closed',
+                        closed_at = COALESCE(closed_at, ?),
+                        unread_for = 'None',
+                        source_payload = ?,
+                        last_message_preview = ?
+                    WHERE thread_id = ?
+                    """,
+                    (
+                        now,
+                        json.dumps(source, default=str),
+                        result_notes or f"Reconciled as {status}.",
+                        row["thread_id"],
+                    ),
+                )
+            else:
+                conn.execute(
+                    "UPDATE task_threads SET source_payload = ? WHERE thread_id = ?",
+                    (json.dumps(source, default=str), row["thread_id"]),
+                )
+
+
+def task_status_overrides_map() -> dict[str, dict[str, Any]]:
+    init_db()
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT task_id, status, result_notes, evidence_link, updated_at FROM task_status_overrides"
+        ).fetchall()
+    return {
+        row["task_id"]: {
+            "status": row["status"],
+            "resultNotes": row["result_notes"],
+            "evidenceLink": row["evidence_link"],
+            "updatedAt": row["updated_at"],
+        }
+        for row in rows
+    }
+
+
+def apply_task_status_overrides(payload: Dashboard) -> Dashboard:
+    overrides = task_status_overrides_map()
+    if not overrides:
+        return payload
+    normalized = dict(payload or {})
+    tasks = [dict(row) for row in normalized.get("tasks", []) or [] if isinstance(row, dict)]
+    changed = False
+    for task in tasks:
+        task_id = str(task.get("taskId") or task.get("Task ID") or "").strip()
+        override = overrides.get(task_id)
+        if not override:
+            continue
+        task["status"] = override["status"]
+        task["completedAt"] = task.get("completedAt") or iso_like(float(override["updatedAt"] or utc_ts()))
+        if override.get("resultNotes"):
+            task["resultNotes"] = override["resultNotes"]
+        if override.get("evidenceLink"):
+            task["evidenceLink"] = override["evidenceLink"]
+        changed = True
+    if changed:
+        normalized["tasks"] = tasks
+    return normalized
 
 
 def local_status() -> dict[str, Any]:
@@ -1459,6 +1569,9 @@ def load_dashboard_snapshot() -> Dashboard | None:
     enforce_manager_human_gate()
     payload = json.loads(row["payload"])
     payload = reconcile_snapshot_tasks_from_threads(payload)
+    payload = apply_task_status_overrides(payload)
+    payload = normalize_task_table(payload)
+    payload = apply_task_status_overrides(payload)
     payload = normalize_task_table(payload)
     payload = ensure_threads_for_tasks(payload)
     payload["skillUpdates"] = list_skill_updates("Pending").get("learning", [])
@@ -1471,6 +1584,9 @@ def load_dashboard_snapshot() -> Dashboard | None:
 
 def save_dashboard_snapshot(payload: Dashboard, source: str = "bridge", error: str = "") -> Dashboard:
     saved = dict(payload or {})
+    saved = apply_task_status_overrides(saved)
+    saved = normalize_task_table(saved)
+    saved = apply_task_status_overrides(saved)
     saved = normalize_task_table(saved)
     saved = ensure_threads_for_tasks(saved)
     saved["skillUpdates"] = list_skill_updates("Pending").get("learning", [])
@@ -4659,6 +4775,8 @@ def update_snapshot_task_status(task_id: str, status: str, result_notes: str = "
     task_id = str(task_id or "").strip()
     if not task_id:
         return
+    if task_is_terminal({"status": status}):
+        set_task_status_override(task_id, status, result_notes, evidence_link)
     snapshot = load_dashboard_snapshot() or {}
     changed = False
     for task in snapshot.get("tasks", []) or []:
