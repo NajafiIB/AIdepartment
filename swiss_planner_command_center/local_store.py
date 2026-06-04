@@ -403,9 +403,9 @@ def local_status() -> dict[str, Any]:
         snapshot = conn.execute("SELECT updated_at, source, error FROM dashboard_snapshot WHERE id = 1").fetchone()
     crm_sync_enabled = normalize_text(get_meta("crm_sync_enabled", "false")) == "true"
     return {
-        "mode": "local-first" if crm_sync_enabled else "local-only",
+        "mode": "local-first" if crm_sync_enabled else "local-runtime",
         "crmSyncEnabled": crm_sync_enabled,
-        "crmSyncStatus": get_meta("crm_sync_status", "enabled" if crm_sync_enabled else "disabled"),
+        "crmSyncStatus": get_meta("crm_sync_status", "legacy-apps-script" if crm_sync_enabled else "local-runtime"),
         "dbPath": str(DB_PATH),
         "pendingActions": pending,
         "failedActions": failed,
@@ -1800,6 +1800,65 @@ def preflight_queue_document_quality(queue_id: str) -> dict[str, Any]:
     }
 
 
+def local_email_queue_status(limit: int = 80) -> dict[str, Any]:
+    snapshot = load_dashboard_snapshot() or empty_dashboard()
+    queue = snapshot.get("emailQueue")
+    if isinstance(queue, dict):
+        result = {key: value for key, value in queue.items() if isinstance(value, list)}
+    else:
+        result = {"queue": flatten_email_queue(queue)}
+    result.setdefault("queue", [])
+    result.setdefault("blocked", [])
+    result.setdefault("queued", [])
+    result.setdefault("sent", [])
+    result.setdefault("errors", [])
+    max_rows = max(1, int(limit or 80))
+    for key, rows in list(result.items()):
+        if isinstance(rows, list):
+            result[key] = rows[:max_rows]
+    result["ok"] = True
+    result["localOnly"] = True
+    return result
+
+
+def update_snapshot_queue_row(queue_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    queue_id = str(queue_id or "").strip()
+    if not queue_id:
+        return {"ok": False, "error": "Missing queueId."}
+    snapshot = load_dashboard_snapshot() or empty_dashboard()
+    queue = snapshot.get("emailQueue")
+    changed = False
+    updated_row: dict[str, Any] | None = None
+
+    def maybe_update(row: dict[str, Any]) -> None:
+        nonlocal changed, updated_row
+        row_id = str(row.get("queueId") or row.get("Queue ID") or row.get("sourceQueueId") or "").strip()
+        if row_id != queue_id:
+            return
+        for key, value in (updates or {}).items():
+            if value not in (None, ""):
+                row[key] = value
+        changed = True
+        updated_row = dict(row)
+
+    if isinstance(queue, dict):
+        for rows in queue.values():
+            if isinstance(rows, list):
+                for row in rows:
+                    if isinstance(row, dict):
+                        maybe_update(row)
+    elif isinstance(queue, list):
+        for row in queue:
+            if isinstance(row, dict):
+                maybe_update(row)
+
+    if not changed:
+        return {"ok": False, "error": f"Queue ID not found locally: {queue_id}"}
+    snapshot["refreshedAt"] = iso_like()
+    save_dashboard_snapshot(snapshot, source="local-email")
+    return {"ok": True, "queueId": queue_id, "row": updated_row}
+
+
 def text_has_phrase(value: Any, phrase: str) -> bool:
     text = normalize_text(value)
     phrase_norm = normalize_text(phrase)
@@ -2560,6 +2619,69 @@ def next_staff_wakeup(staff: str = "") -> dict[str, Any] | None:
         )
         updated = conn.execute("SELECT * FROM staff_wakeups WHERE wakeup_id = ?", (row["wakeup_id"],)).fetchone()
     return row_to_wakeup(updated) if updated else None
+
+
+def complete_staff_wakeup(wakeup_id: str, result: str = "") -> dict[str, Any]:
+    wakeup_id = str(wakeup_id or "").strip()
+    if not wakeup_id:
+        return {"ok": False, "error": "Missing wakeupId."}
+    init_db()
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM staff_wakeups WHERE wakeup_id = ?", (wakeup_id,)).fetchone()
+        if not row:
+            return {"ok": False, "error": f"Staff wake-up not found: {wakeup_id}"}
+        conn.execute(
+            """
+            UPDATE staff_wakeups
+            SET status = 'Completed', completed_at = ?, result = ?
+            WHERE wakeup_id = ?
+            """,
+            (utc_ts(), result or "Handled by local task runner.", wakeup_id),
+        )
+        updated = conn.execute("SELECT * FROM staff_wakeups WHERE wakeup_id = ?", (wakeup_id,)).fetchone()
+    return {"ok": True, "wakeup": row_to_wakeup(updated)}
+
+
+def parse_isoish_to_ts(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return time.mktime(time.strptime(text[:26].replace("Z", ""), fmt.replace("Z", "")))
+        except Exception:
+            pass
+    try:
+        from datetime import datetime
+
+        normalized = text.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized).timestamp()
+    except Exception:
+        return 0.0
+
+
+def next_due_local_task(staff: str = "") -> dict[str, Any] | None:
+    snapshot = load_dashboard_snapshot() or {}
+    now = utc_ts()
+    staff_filter = normalized_staff_id(staff, "") if staff else ""
+    candidates: list[tuple[float, dict[str, Any]]] = []
+    for row in snapshot.get("tasks", []) or []:
+        if not isinstance(row, dict) or task_is_terminal(row):
+            continue
+        assigned = normalized_staff_id(row.get("assignedTo") or row.get("Assigned To"), "")
+        if staff_filter and assigned != staff_filter:
+            continue
+        if is_human_responsible(assigned):
+            continue
+        run_after = parse_isoish_to_ts(row.get("runAfter") or row.get("Run After") or row.get("createdAt") or row.get("Created At"))
+        if run_after and run_after > now:
+            continue
+        due = parse_isoish_to_ts(row.get("dueAt") or row.get("Due At")) or run_after or now
+        candidates.append((due, row))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return dict(candidates[0][1])
 
 
 def thread_summary_counts() -> dict[str, Any]:
@@ -5943,7 +6065,8 @@ def sync_from_sheet(bridge_call: BridgeCall, run_audit: bool = False) -> dict[st
         return {"ok": False, "pending": pending, "error": error}
     if isinstance(dashboard.get("result"), dict):
         dashboard = dashboard["result"]
-    saved = save_dashboard_snapshot(dashboard, source="bridge")
+    sync_source = "local-runtime" if (dashboard.get("localSync") or {}).get("crmSyncStatus") == "local-runtime" else "bridge"
+    saved = save_dashboard_snapshot(dashboard, source=sync_source)
     manager_handoffs = ensure_manager_handoffs_for_completed_staff_tasks(saved, previous_snapshot)
     pipeline_continuity = ensure_pipeline_continuity(load_dashboard_snapshot() or saved)
     set_meta("last_sheet_sync", iso_like())

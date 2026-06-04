@@ -7,13 +7,13 @@ This repository currently contains the GCC lab AI department command center: a l
 ## Main Components
 
 - `swiss_planner_command_center/`: local Python + buildless React dashboard at `http://127.0.0.1:8765/`.
-- `gmail_bridge/`: optional Apps Script bridge for Google Sheets, Gmail, Drive package checks, and email queue safety.
+- `gmail_bridge/`: optional legacy Apps Script bridge. The default operational engine is now local Python/SQLite.
 - `skills/swiss-planner-staff/`: Codex skill and role files for the AI staff operating model.
 
 ## Local Setup
 
 1. Install Python 3.10+.
-2. Optional: copy `.env.example` to `.env.local` if you want local Manager Brain or CRM bridge settings.
+2. Optional: copy `.env.example` to `.env.local` if you want local Manager Brain, SMTP, or legacy bridge settings.
 3. Start the dashboard by double-clicking `swiss_planner_command_center/start_command_center.cmd`, or run:
 
 ```powershell
@@ -32,9 +32,10 @@ For a clean setup on another Windows computer, use [docs/INSTALL_ON_NEW_SYSTEM.m
 
 ## Optional Bridge Setup
 
-The dashboard now runs in local-only mode without Google Apps Script. To re-enable online CRM/Gmail sync later, deploy `gmail_bridge/Code.gs` as a standalone Apps Script project from the Gmail account that owns the bridge. Store the real webhook URL and token outside Git, then expose them locally as:
+The dashboard now runs through the local runtime without Google Apps Script. To re-enable online CRM/Gmail sync later, deploy `gmail_bridge/Code.gs` as a standalone Apps Script project from the Gmail account that owns the bridge, then explicitly enable it:
 
 ```text
+SWISS_PLANNER_USE_APPS_SCRIPT_BRIDGE=true
 SWISS_PLANNER_WEBHOOK_URL
 SWISS_PLANNER_WEBHOOK_TOKEN
 ```

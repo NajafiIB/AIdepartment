@@ -25,15 +25,18 @@ If you downloaded the ZIP from GitHub instead, extract it and open PowerShell in
 
 ## 3. Configure Local Secrets
 
-This step is optional. The command center runs in local-only mode without Google Apps Script. Copy the environment template only if you want to add Manager Brain settings or re-enable online CRM/Gmail sync later:
+This step is optional. The command center runs in local-runtime mode without Google Apps Script. Copy the environment template only if you want to add Manager Brain settings, SMTP sending, or re-enable online CRM/Gmail sync later:
 
 ```powershell
 Copy-Item .env.example .env.local
 ```
 
-For online CRM/Gmail sync, open `.env.local` and fill:
+For local SMTP sending, open `.env.local` and fill the SMTP fields. If you leave them blank, the system creates local `.eml` drafts instead of sending.
+
+For legacy online CRM/Gmail sync through Apps Script, set:
 
 ```text
+SWISS_PLANNER_USE_APPS_SCRIPT_BRIDGE=true
 SWISS_PLANNER_WEBHOOK_URL=
 SWISS_PLANNER_WEBHOOK_TOKEN=
 ```
@@ -107,10 +110,15 @@ Then restart the Command Center.
 
 ## 8. Troubleshooting
 
-If the app says bridge settings are missing:
+If the app says the bridge is disabled:
+
+- this is normal in local-runtime mode;
+- set `SWISS_PLANNER_USE_APPS_SCRIPT_BRIDGE=true` only if you intentionally want the legacy Apps Script bridge.
+
+If SMTP sending is not working:
 
 - check `.env.local`;
-- confirm the webhook URL and token are correct;
-- confirm the Apps Script deployment is active.
+- confirm SMTP host, port, sender, user, password, and TLS setting are correct;
+- otherwise use the generated `.eml` draft from `outbox\`.
 
 If port `8765` is already in use, another Command Center window may already be running. Close the old command window and start again.
