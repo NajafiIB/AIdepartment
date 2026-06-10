@@ -26,7 +26,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT_DIR = APP_DIR.parent
 RUNNER_FILE = ROOT_DIR / "run_swiss_planner_bridge.cmd"
 HOST = "127.0.0.1"
-PORT = 8765
+PORT = int(os.environ.get("AI_DEPARTMENT_PORT") or os.environ.get("PORT") or "8765")
 BRIDGE_CALL_LOCK = threading.Lock()
 BRIDGE_HTTP_TIMEOUT_SECONDS = 240
 LOCAL_FIRST_ACTIONS = {
@@ -329,8 +329,58 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
             json_response(self, {"ok": True, "capabilityFabric": local_store.load_capability_fabric()})
             return
 
+        if path == "/api/platform-admin/catalogs":
+            json_response(self, local_store.platform_admin_catalogs())
+            return
+
+        if path == "/api/platform-admin/export-manifest":
+            json_response(self, local_store.platform_export_manifest())
+            return
+
+        if path == "/api/workspace-profile":
+            json_response(self, {"ok": True, "workspaceProfile": local_store.workspace_profile()})
+            return
+
+        if path == "/api/communications":
+            json_response(self, local_store.list_communications(int(params.get("limit") or 80)))
+            return
+
+        if path == "/api/email-preview":
+            json_response(self, local_runtime.email_queue_preview(params.get("queueId", "")))
+            return
+
+        if path == "/api/project-plans":
+            json_response(
+                self,
+                local_store.list_project_plans(
+                    status=params.get("status", "active"),
+                    limit=int(params.get("limit") or 80),
+                    refresh=params.get("refresh", "true").lower() != "false",
+                ),
+            )
+            return
+
+        if path == "/api/project-plan":
+            json_response(
+                self,
+                local_store.get_project_plan(
+                    plan_id=params.get("planId", ""),
+                    application_id=params.get("applicationId", ""),
+                ),
+            )
+            return
+
+        if path == "/api/project-step/output":
+            json_response(self, local_store.get_project_step_output(params.get("stepId", "")))
+            return
+
         if path == "/api/department-config":
             json_response(self, local_store.department_config())
+            return
+
+        if path == "/api/operating-model":
+            fabric = local_store.load_capability_fabric()
+            json_response(self, {"ok": True, "operatingModel": fabric.get("operatingModel") or {}})
             return
 
         if path == "/api/department-versions":
@@ -409,6 +459,10 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
                 json_response(self, {"ok": False, "error": "Missing workItemId."}, 400)
                 return
             json_response(self, local_store.get_codex_work_item(work_item_id))
+            return
+
+        if path == "/api/local-worker/status":
+            json_response(self, {"ok": True, "localWorker": local_store.local_worker_status()})
             return
 
         if path == "/api/staff-wakeups":
@@ -528,6 +582,39 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
                 json_response(self, {"ok": bool(result.get("ok")), "autopilot": local_store.autopilot_status(), "cycle": result, "dashboard": snapshot})
                 return
             json_response(self, {"ok": False, "error": "Unknown autopilot action."}, 400)
+            return
+
+        if path == "/api/local-worker/control":
+            action = str(body.get("action") or "").strip().lower()
+            if action == "start":
+                json_response(self, {"ok": True, "localWorker": local_store.set_local_worker_enabled(True)})
+                return
+            if action == "pause":
+                json_response(self, {"ok": True, "localWorker": local_store.set_local_worker_enabled(False)})
+                return
+            if action == "use-test-command":
+                json_response(self, {"ok": True, "localWorker": local_store.set_local_worker_command(local_store.local_worker_recommended_command())})
+                return
+            if action == "clear-command":
+                json_response(self, {"ok": True, "localWorker": local_store.set_local_worker_command("")})
+                return
+            if action == "run-once":
+                result = local_store.run_local_worker_once(force=True)
+                json_response(self, {"ok": bool(result.get("ok", True)), "result": result, "localWorker": local_store.local_worker_status()})
+                return
+            json_response(self, {"ok": False, "error": "Unknown local worker action."}, 400)
+            return
+
+        if path == "/api/workspace-profile":
+            json_response(self, local_store.update_workspace_profile(body))
+            return
+
+        if path == "/api/project-step/action":
+            json_response(self, local_store.create_project_step_action(body))
+            return
+
+        if path == "/api/project-step/output":
+            json_response(self, local_store.save_project_step_output(body))
             return
 
         if path == "/api/run-health":
@@ -707,6 +794,7 @@ def main() -> None:
     runtime_call = bridge_request if crm_sync_enabled else local_runtime.local_bridge_call
     local_store.start_hourly_sync(runtime_call)
     local_store.start_autopilot_loop(runtime_call)
+    local_store.start_local_worker_loop()
     webbrowser.open(url)
     server.serve_forever()
 

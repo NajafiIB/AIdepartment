@@ -69,7 +69,7 @@
       ],
       "qualityGates": [
         "gate_official_evidence",
-        "gate_no_duplicate_tender case"
+        "gate_no_duplicate_opportunity"
       ],
       "outputs": [
         "lead_case_brief",
@@ -85,7 +85,7 @@
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_FitAnalyst",
       "recipes": [
-        "recipe_convert_tender case_to_Lead"
+        "recipe_convert_opportunity_to_application"
       ],
       "requiredConnections": [
         "google_sheet_crm"
@@ -128,7 +128,7 @@
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_ProfessorResearchAnalyst",
       "recipes": [
-        "recipe_build_supplier_research_fit"
+        "recipe_build_professor_research_fit"
       ],
       "requiredConnections": [
         "official_web_sources"
@@ -150,7 +150,7 @@
         "daily_kpi_cycle"
       ],
       "qualityGates": [
-        "gate_supplier_evidence",
+        "gate_professor_evidence",
         "gate_source_freshness"
       ],
       "outputs": [
@@ -166,7 +166,7 @@
       "lifecycleStatus": "Active",
       "ownerStaff": "AIstaff_ApplicationPackMaker",
       "recipes": [
-        "recipe_prepare_supplier_package"
+        "recipe_prepare_supervisor_package"
       ],
       "requiredConnections": [
         "google_drive_packages",
@@ -190,7 +190,7 @@
       ],
       "qualityGates": [
         "gate_document_template_style",
-        "gate_supplier_specificity",
+        "gate_professor_specificity",
         "gate_package_folder_registered"
       ],
       "outputs": [
@@ -434,7 +434,7 @@
             "lane_google_sheets_crm"
           ],
           "qualityGates": [
-            "gate_no_duplicate_tender case"
+            "gate_no_duplicate_opportunity"
           ]
         },
         {
@@ -514,7 +514,7 @@
             "lane_official_web_search"
           ],
           "qualityGates": [
-            "gate_supplier_evidence"
+            "gate_professor_evidence"
           ]
         },
         {
@@ -559,7 +559,7 @@
             "lane_google_drive_packages"
           ],
           "qualityGates": [
-            "gate_supplier_specificity"
+            "gate_professor_specificity"
           ]
         },
         {
@@ -905,7 +905,7 @@
       ],
       "qualityGates": [
         "gate_document_template_style",
-        "gate_supplier_specificity"
+        "gate_professor_specificity"
       ]
     },
     {
@@ -936,8 +936,8 @@
         "google_sheet_crm"
       ],
       "databases": [
-        "db_tender case",
-        "db_applications",
+        "db_lead",
+        "db_business_opportunities",
         "db_ai_staff_tasks",
         "db_ai_staff_event_log"
       ],
@@ -1831,7 +1831,7 @@
       ],
       "storage": "Companies / Contacts candidate notes",
       "qualityGates": [
-        "gate_supplier_evidence"
+        "gate_professor_evidence"
       ],
       "workspaceEditable": true
     },

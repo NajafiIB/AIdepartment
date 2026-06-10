@@ -105,9 +105,11 @@ const APPLICATION_STAGES = [
 const NAV_ITEMS = [
   ["overview", "Overview"],
   ["wikis", "Wikis"],
+  ["platform-admin", "Platform Admin"],
   ["explorer", "Department Explorer"],
   ["applications", "Leads"],
   ["work", "Tasks"],
+  ["email", "Email Alpha"],
   ["reports", "Reports"],
   ["settings", "Settings"],
 ];
@@ -121,9 +123,11 @@ function initialViewFromHash() {
 const NAV_ICONS = {
   overview: "chart",
   wikis: "book",
+  "platform-admin": "database",
   explorer: "user",
   applications: "file",
   work: "send",
+  email: "mail",
   reports: "database",
   settings: "shield",
 };
@@ -751,6 +755,32 @@ function isHumanFacingThread(thread = {}) {
     isHumanResponsible(source.assignedTo) ||
     isHumanResponsible(source.targetStaff) ||
     source.escalationLevel === "Human";
+}
+
+function operatingModelFromDashboard(dashboard = {}) {
+  const fabric = fabricOrFallback(dashboard);
+  return fabric.operatingModel || {};
+}
+
+function threadReasonLabel(thread = {}) {
+  const source = thread.source || {};
+  return thread.threadReasonLabel || source.threadReasonLabel || ({
+    human_message: "Human / manager",
+    approval: "Approval",
+    missing_input: "Missing input",
+    blocker: "Blocker",
+    review: "Review",
+    escalation: "Escalation",
+    worker_handoff: "Worker handoff",
+    system_audit: "System audit",
+  }[thread.threadReason || source.threadReason] || "Work thread");
+}
+
+function threadReasonTone(thread = {}) {
+  const reason = normalizedText((thread.source || {}).threadReason || thread.threadReason || "");
+  if (reason.includes("approval") || reason.includes("missing") || reason.includes("blocker") || reason.includes("escalation")) return "warn";
+  if (reason.includes("audit") || reason.includes("worker")) return "neutral";
+  return "ok";
 }
 
 function threadActionStaffId(thread = {}) {
@@ -1390,6 +1420,17 @@ function Badge({ children, tone }) {
   return h("span", { className: cn("ui-badge", tone || noticeTone(children)) }, children || "No status");
 }
 
+function AccessBadge({ value }) {
+  const label = String(value || "department_editable").replace(/_/g, " ");
+  const tone = value === "platform_locked" ? "warn" : value === "runtime_context" ? "neutral" : value === "workspace_editable" ? "success" : "ok";
+  return h(Badge, { tone }, label);
+}
+
+function listText(value) {
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value || "");
+}
+
 function Input(props) {
   return h("input", { ...props, className: cn("ui-input", props.className) });
 }
@@ -1664,6 +1705,51 @@ function App() {
     }, `run-one:${staff || "next"}`, staff ? "Running staff..." : "Running task...");
   }
 
+  async function runLocalWorkerOnce() {
+    await runBusy("Running one local worker item...", async () => {
+      const result = await api("/api/local-worker/control", {
+        method: "POST",
+        body: JSON.stringify({ action: "run-once" }),
+        timeoutMs: 180000,
+      });
+      const message = (result.result && (result.result.message || result.result.state)) || "Local worker finished";
+      showToast(message);
+      await loadDashboard(false, true);
+    }, "local-worker:run-once", "Running worker...");
+  }
+
+  async function useTestWorkerCommand() {
+    await runBusy("Configuring bundled local test worker...", async () => {
+      const result = await api("/api/local-worker/control", {
+        method: "POST",
+        body: JSON.stringify({ action: "use-test-command" }),
+        timeoutMs: 30000,
+      });
+      setDashboard(prev => ({ ...(prev || {}), localSync: { ...((prev && prev.localSync) || {}), localWorker: result.localWorker } }));
+      showToast("Local test worker command configured");
+      await loadDashboard(false, true);
+    }, "local-worker:use-test-command", "Configuring...");
+  }
+
+  async function startProjectStepAction(plan, step) {
+    if (!plan || !step) return;
+    const action = step.action || {};
+    await runBusy(`Starting ${step.stage || "project step"}...`, async () => {
+      const result = await api("/api/project-step/action", {
+        method: "POST",
+        body: JSON.stringify({
+          planId: plan.planId,
+          stepId: step.stepId,
+          sequence: step.sequence,
+          createOutputDraft: true,
+        }),
+        timeoutMs: 90000,
+      });
+      showToast(result.alreadyExists ? "Project-step task already exists" : (result.message || `${action.actionLabel || "Step"} started`));
+      await loadDashboard(false, true);
+    }, `project-step:${plan.planId}:${step.stepId || step.sequence}`, action.actionLabel || "Starting...");
+  }
+
   async function runAutopilotCycle() {
     await runBusy("Running KPI flow until blocked or complete...", async () => {
       const result = await api("/api/autopilot-control", { method: "POST", body: JSON.stringify({ action: "run-now", maxSteps: 8 }), timeoutMs: 240000 });
@@ -1909,11 +1995,12 @@ function App() {
       ),
       h("section", { className: "status-line" }, status),
       !dashboard ? h(LoadingView) : h(Fragment, null,
-        view === "overview" ? h(OverviewView, { dashboard, summary, runOne, openTaskDialog, runAutopilotCycle, setAutopilot, autopilotEnabled, setView }) : null,
+        view === "overview" ? h(OverviewView, { dashboard, summary, runOne, runLocalWorkerOnce, useTestWorkerCommand, openTaskDialog, runAutopilotCycle, setAutopilot, autopilotEnabled, setView }) : null,
         view === "wikis" ? h(WikisView, { setView, openTaskDialog }) : null,
+        view === "platform-admin" ? h(PlatformAdminView, { dashboard }) : null,
         view === "explorer" ? h(DepartmentExplorerView, { dashboard, runOne, openTaskDialog, setView, selectedStaffRequest: selectedExplorerStaffId }) : null,
         view === "applications" ? h(ApplicationsView, { rows: dashboard.applications || [], labels, filters: applicationFilters, setFilters: setApplicationFilters, viewMode: applicationsView, setViewMode: setApplicationsView, runOne, openTaskDialog, openRef, openUniversity }) : null,
-        view === "work" ? h(WorkView, { dashboard, tasks: allTasks, labels, filters: taskFilters, setFilters: setTaskFilters, runOne, snoozeTask, reassignTask, snoozeFollowUp, processQueueRow, approveEmail, runEmailSafetyCheck, setDecisionDialog, openTaskDialog, openRef, openUniversity, openStaffProfile }) : null,
+        view === "work" ? h(WorkView, { dashboard, tasks: allTasks, labels, filters: taskFilters, setFilters: setTaskFilters, runOne, startProjectStepAction, snoozeTask, reassignTask, snoozeFollowUp, processQueueRow, approveEmail, runEmailSafetyCheck, setDecisionDialog, openTaskDialog, openRef, openUniversity, openStaffProfile }) : null,
         view === "email" ? h(EmailView, { dashboard, processQueueRow, approveEmail, runEmailSafetyCheck, openRef, openUniversity }) : null,
         view === "reports" ? h(ReportsView, { dashboard, approveSkillUpdate, runOne, snoozeFollowUp, setView, openTaskDialog, openRef }) : null,
         view === "settings" ? h(SettingsView, { dashboard }) : null,
@@ -1932,16 +2019,147 @@ function LoadingView() {
   return h("section", { className: "metrics" }, [1, 2, 3, 4].map(i => h("div", { key: i, className: "metric skeleton" }, h("span", { className: "value" }, " "), h("span", { className: "label" }, "Loading"))));
 }
 
-function OverviewView({ dashboard, summary, runOne, openTaskDialog, runAutopilotCycle, setAutopilot, autopilotEnabled, setView }) {
-  const [activeTab, setActiveTab] = useState("sponsor");
+function PlatformAdminView({ dashboard }) {
+  const [tab, setTab] = useState("staffTemplates");
+  const [payload, setPayload] = useState({ loading: true, error: "", catalogs: null, manifest: null });
+  const fabric = fabricOrFallback(dashboard);
+  const fallbackCatalogs = {
+    departmentBlueprints: fabric.departmentTemplates || [],
+    staffTemplates: fabric.staffArchetypes || [],
+    laneAdapters: fabric.lanes || [],
+    scopedSkills: [...(fabric.platformSafetySkills || []), ...(fabric.departmentSkills || []), ...(fabric.staffTemplateSkills || []), ...(fabric.laneAdapterSkills || [])],
+    workflowTemplates: fabric.recipes || [],
+    senderIdentities: [],
+  };
+  const catalogs = (payload.catalogs && payload.catalogs.catalogs) || fallbackCatalogs;
+  const summary = (payload.catalogs && payload.catalogs.summary) || Object.fromEntries(Object.entries(catalogs).map(([key, rows]) => [key, (rows || []).length]));
+  const validation = (payload.catalogs && payload.catalogs.validation) || { errors: fabric.errors || [], errorCount: (fabric.errors || []).length };
+  const tabs = [
+    ["staffTemplates", "Staff Templates"],
+    ["laneAdapters", "Lane Adapters"],
+    ["scopedSkills", "Skill Catalog"],
+    ["workflowTemplates", "Workflow Templates"],
+    ["departmentBlueprints", "Department Blueprints"],
+    ["senderIdentities", "Sender Identities"],
+    ["exportManifest", "Export Manifests"],
+  ];
+
+  async function loadPlatformAdmin() {
+    setPayload(current => ({ ...current, loading: true, error: "" }));
+    try {
+      const [catalogResult, manifestResult] = await Promise.all([
+        api("/api/platform-admin/catalogs"),
+        api("/api/platform-admin/export-manifest"),
+      ]);
+      setPayload({ loading: false, error: "", catalogs: catalogResult, manifest: manifestResult.manifest || null });
+    } catch (error) {
+      setPayload(current => ({ ...current, loading: false, error: error.message || String(error) }));
+    }
+  }
+
+  useEffect(() => {
+    loadPlatformAdmin();
+  }, []);
+
+  return h("section", { className: "platform-admin-view chart-enter" },
+    h(Card, { className: "settings-hero" },
+      h(CardHeader, {
+        eyebrow: "Platform Admin / Developer Control Plane",
+        title: "AI Department Template Governance",
+        description: "Reusable blueprints, staff templates, lane adapters, scoped skills, workflow templates, and export manifests are governed here. Workspace users configure installed runtime instances elsewhere.",
+        action: h("div", { className: "panel-actions" },
+          h(Badge, { tone: validation.errorCount ? "danger" : "success" }, validation.errorCount ? `${validation.errorCount} validation issue(s)` : "Zero fabric errors"),
+          h(Button, { actionKey: "platform-admin:refresh", variant: "outline", onClick: loadPlatformAdmin }, icon("refresh"), "Refresh")
+        )
+      }),
+      h(CardContent, null,
+        payload.error ? h("div", { className: "form-error" }, payload.error) : null,
+        h("div", { className: "designer-summary-strip" },
+          h("span", null, h("strong", null, summary.departmentBlueprints || 0), "Blueprints"),
+          h("span", null, h("strong", null, summary.staffTemplates || 0), "Staff templates"),
+          h("span", null, h("strong", null, summary.laneAdapters || 0), "Lane adapters"),
+          h("span", null, h("strong", null, summary.scopedSkills || 0), "Scoped skills"),
+          h("span", null, h("strong", null, summary.workflowTemplates || 0), "Workflows")
+        ),
+        h("div", { className: "settings-tabs", role: "tablist", "aria-label": "Platform Admin catalogs" }, tabs.map(([key, label]) =>
+          h("button", { key, type: "button", role: "tab", "aria-selected": tab === key, className: cn("settings-tab", tab === key && "active"), onClick: () => setTab(key) },
+            h("span", null, label),
+            key !== "exportManifest" ? h("small", null, summary[key] || 0) : null
+          )
+        ))
+      )
+    ),
+    tab === "exportManifest"
+      ? h(PlatformExportManifestPanel, { manifest: payload.manifest })
+      : h(PlatformCatalogPanel, { rows: catalogs[tab] || [], catalogKey: tab, loading: payload.loading })
+  );
+}
+
+function PlatformCatalogPanel({ rows, catalogKey, loading }) {
+  const titles = {
+    departmentBlueprints: ["AiDepartmentBlueprint", "Department Blueprints"],
+    staffTemplates: ["AiStaffTemplate", "Staff Templates"],
+    laneAdapters: ["AiLaneAdapter", "Lane / Tool Adapters"],
+    scopedSkills: ["AiScopedSkillDefinition", "Scoped Skill Catalog"],
+    workflowTemplates: ["AiWorkflowTemplate", "Workflow Templates"],
+    senderIdentities: ["AiSenderIdentity", "Sender Identities"],
+  };
+  const [dtoType, title] = titles[catalogKey] || ["AiCatalogObject", catalogKey];
+  return h(Card, { className: "designer-section-card" },
+    h(CardHeader, { eyebrow: dtoType, title, description: "Read/export/review first. Locked catalog internals are platform-owned; safe client customization belongs in Workspace Settings or Department Explorer." }),
+    h(CardContent, null,
+      loading ? h("p", { className: "muted" }, "Loading catalog DTOs...") : null,
+      rows.length ? h("div", { className: "designer-object-grid platform-catalog-grid" }, rows.map(row =>
+        h("article", { className: cn("designer-object-card", (row.locked || row.accessSummary === "platform_locked") && "is-locked"), key: row.id || row.label },
+          h("div", { className: "designer-object-head" },
+            h("div", null,
+              h("p", { className: "eyebrow" }, row.dtoType || dtoType),
+              h("h3", null, row.label || row.name || row.id),
+              row.id ? h("small", null, row.id) : null
+            ),
+            h(AccessBadge, { value: row.accessSummary || (row.locked ? "platform_locked" : "department_editable") })
+          ),
+          h("p", { className: "designer-object-summary" }, shortText(row.summary || row.purpose || row.laneRule || row.providerRulesOwnedBy || row.communicationModel || "", 240)),
+          h(DetailList, { rows: [
+            { label: "Owner", value: row.ownerStaff ? h(StaffChip, { staffId: row.ownerStaff }) : row.owner || row.ownerLayer || row.providerRulesOwnedBy || "Platform Admin", raw: Boolean(row.ownerStaff) },
+            { label: "Editable", value: row.workspaceEditable === false ? "No" : "Yes" },
+            { label: "Field access", value: Object.entries(row.fieldAccess || {}).slice(0, 5).map(([key, value]) => `${key}: ${value}`).join("; "), length: 220 },
+          ] }),
+          row.allowedPluginFamilies ? h("div", { className: "overview-meta-row" }, row.allowedPluginFamilies.slice(0, 5).map(item => h("span", { key: item }, item))) : null
+        )
+      )) : h(EmptyState, { title: "No catalog rows", body: "This catalog is empty in the current local fabric." })
+    )
+  );
+}
+
+function PlatformExportManifestPanel({ manifest }) {
+  return h(Card, { className: "designer-section-card" },
+    h(CardHeader, { eyebrow: "Export Manifest", title: "Reusable Department Package", description: "JSON package for blueprints, staff templates, lane adapters, scoped skills, workflow templates, workspace profile, and validation state." }),
+    h(CardContent, null,
+      manifest ? h(Fragment, null,
+        h(DetailList, { rows: [
+          { label: "Manifest type", value: manifest.manifestType },
+          { label: "Generated", value: fmtDate(manifest.generatedAt) },
+          { label: "Runtime", value: (manifest.version || {}).runtimeMode },
+          { label: "External engine", value: ((manifest.orchestrationDecision || {}).externalEngine || "Deferred") },
+        ] }),
+        h("pre", { className: "manifest-preview" }, jsonPretty(manifest).slice(0, 9000))
+      ) : h(EmptyState, { title: "Manifest not loaded", body: "Refresh Platform Admin to generate the local export manifest." })
+    )
+  );
+}
+
+function OverviewView({ dashboard, summary, runOne, runLocalWorkerOnce, useTestWorkerCommand, openTaskDialog, runAutopilotCycle, setAutopilot, autopilotEnabled, setView }) {
+  const [activeTab, setActiveTab] = useState("home");
   const sync = dashboard.localSync || {};
   const alexOpenThreads = (((dashboard.threadsSummary || {}).byStaff || {}).AIstaff_Manager || {}).open || 0;
   const activeLeads = summary.activeEntities || (dashboard.applications || []).length || 0;
   const blockedCount = (summary.blockedEmails || 0) + (summary.overdueTasks || 0) + (summary.overdueFollowUps || 0);
   const tabs = [
-    ["sponsor", "Sponsor organization details"],
+    ["home", "AI Department Home"],
     ["howTo", "How to work with the department"],
     ["department", "Department operating model"],
+    ["runtime", "Automation runtime"],
   ];
   return h("section", { className: "overview-landing" },
     h("div", { className: "overview-hero" },
@@ -1965,24 +2183,75 @@ function OverviewView({ dashboard, summary, runOne, openTaskDialog, runAutopilot
         onClick: () => setActiveTab(key),
       }, label))
     ),
-    activeTab === "sponsor" ? h(OverviewSponsorTab, { dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync }) : null,
+    activeTab === "home" ? h(OverviewSponsorTab, { dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync, setView }) : null,
     activeTab === "howTo" ? h(OverviewHowToTab, { setView, openTaskDialog }) : null,
-    activeTab === "department" ? h(OverviewDepartmentTab, { dashboard, setView }) : null
+    activeTab === "department" ? h(OverviewDepartmentTab, { dashboard, setView }) : null,
+    activeTab === "runtime" ? h(AutomationRuntimeTab, { dashboard, sync, setView, runLocalWorkerOnce, useTestWorkerCommand }) : null
   );
 }
 
-function OverviewSponsorTab({ dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync }) {
+function OverviewSponsorTab({ dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync, setView }) {
+  const fabric = fabricOrFallback(dashboard);
+  const model = operatingModelFromDashboard(dashboard);
+  const visibility = model.visibilityModes || {};
   const mission = ((dashboard.kpis || []).find(row => normalizedText(row.Status) === "active") || {})["Owner Notes"] || "Review tender leads, read tender documents, check GCC lab fit, match suppliers or partners, request quotations, and prepare submission packages.";
+  const localWorker = sync.localWorker || {};
+  const workerCounts = localWorker.counts || {};
+  const blockers = sync.automationBlockers || {};
+  const blockerCounts = blockers.counts || {};
+  const blockerRows = [
+    ["Human approval", blockerCounts.humanApproval || 0],
+    ["Missing files", blockerCounts.missingFiles || 0],
+    ["Email approval", blockerCounts.externalEmailApproval || 0],
+    ["Codex worker", blockerCounts.codexWorker || 0],
+    ["Config errors", blockerCounts.fabricErrors || 0],
+  ];
   const cards = [
     ["Sponsor", "Iman Najafi", "Human owner and final decision maker."],
     ["Department", APP_NAME, "Tender lead review, supplier matching, quotation outreach, tender package preparation, and follow-up control."],
     ["Manager", "Alex Fergusen", `${alexOpenThreads || 0} open thread(s) with the AI manager.`],
     ["Current workload", `${activeLeads || 0} active lead case(s)`, `${summary.dueTasks || 0} due task(s), ${blockedCount || 0} risk item(s).`],
+    ["Autopilot", ((sync.autopilot || {}).enabled ? "On" : "Paused"), (((sync.autopilot || {}).progress || {}).reason || "Watching local work.")],
+    ["Local worker", localWorker.commandConfigured ? "Configured" : "Needs command", `${workerCounts.open || 0} open Codex work item(s).`],
   ];
+  const ownedDepartments = (fabric.departments || []).filter(row => normalizedText(row.ownershipMode || "ownedDepartment") !== "sponsoredassignment");
+  const sponsoredDepartments = (fabric.departments || []).filter(row => normalizedText(row.ownershipMode) === "sponsoredassignment");
   return h("div", { className: "overview-panel" },
     h("div", { className: "overview-section-head" },
-      h("div", null, h("h2", null, "Sponsor organization details"), h("p", null, "This department is configured like an internal AI team serving one sponsor organization.")),
+      h("div", null, h("h2", null, "AI Department Home"), h("p", null, "Owned departments show structure and controls. Sponsored work shows only assigned tasks, uploads, confirmations, approvals, and outputs.")),
       h(Badge, { tone: blockedCount ? "warn" : "ok" }, blockedCount ? "Needs attention" : "Operational")
+    ),
+    h("div", { className: "department-home-grid" },
+      h("article", { className: "department-home-panel" },
+        h("div", { className: "department-home-head" },
+          h("h3", null, (visibility.ownedDepartment || {}).label || "AI Departments I Own"),
+          h(Badge, null, ownedDepartments.length || 1)
+        ),
+        (ownedDepartments.length ? ownedDepartments : [{ id: "department_local_default", label: APP_NAME, humanManager: HUMAN_STAFF_ID, aiManager: "AIstaff_Manager", status: "Active" }]).map(row =>
+          h("button", { key: row.id, type: "button", className: "department-home-row", onClick: () => setView("explorer") },
+            h("span", { className: "department-home-icon" }, icon("user")),
+            h("span", null,
+              h("strong", null, row.label || APP_NAME),
+              h("small", null, `${row.status || "Active"} | Manager: ${staffProfile(row.aiManager || "AIstaff_Manager").label}`)
+            )
+          )
+        )
+      ),
+      h("article", { className: "department-home-panel" },
+        h("div", { className: "department-home-head" },
+          h("h3", null, (visibility.sponsoredAssignment || {}).label || "Sponsored Work Assigned To Me"),
+          h(Badge, { tone: sponsoredDepartments.length ? "warn" : "ok" }, sponsoredDepartments.length)
+        ),
+        sponsoredDepartments.length ? sponsoredDepartments.map(row =>
+          h("button", { key: row.id, type: "button", className: "department-home-row", onClick: () => setView("work") },
+            h("span", { className: "department-home-icon" }, icon("file")),
+            h("span", null,
+              h("strong", null, row.label || "Sponsored assignment"),
+              h("small", null, "Tasks, uploads, approvals, and outputs only")
+            )
+          )
+        ) : h("div", { className: "department-home-empty" }, "No sponsored assignments are active in this local workspace.")
+      )
     ),
     h("div", { className: "overview-info-grid" }, cards.map(([label, value, detail]) =>
       h("article", { className: "overview-info-card", key: label },
@@ -1998,6 +2267,134 @@ function OverviewSponsorTab({ dashboard, summary, activeLeads, alexOpenThreads, 
         h("span", null, sync.crmSyncEnabled ? `Last CRM sync: ${fmtDate(sync.lastSheetSync) || "not synced yet"}` : "CRM sync disabled"),
         h("span", null, `Pending local changes: ${sync.pendingActions || 0}`),
         h("span", null, `Failed actions: ${sync.failedActions || 0}`)
+      )
+    ),
+    h("article", { className: "overview-narrative" },
+      h("h3", null, "Automation blockers"),
+      h("div", { className: "overview-meta-row" }, blockerRows.map(([label, value]) =>
+        h("span", { key: label }, `${label}: ${value}`)
+      )),
+      h("p", null, localWorker.commandConfigured ? "Internal Codex worker execution is configured." : "Set AI_DEPARTMENT_WORKER_COMMAND to let queued research and writing work run automatically.")
+    )
+  );
+}
+
+function AutomationRuntimeTab({ dashboard, sync, setView, runLocalWorkerOnce, useTestWorkerCommand }) {
+  const model = operatingModelFromDashboard(dashboard);
+  const runtime = model.automationRuntimeArchitecture || {};
+  const scheduler = runtime.projectSchedulerPolicy || {};
+  const engine = runtime.externalWorkflowEnginePolicy || {};
+  const retry = runtime.retryPolicy || {};
+  const localWorker = sync.localWorker || {};
+  const workerCounts = localWorker.counts || {};
+  const blockers = ((sync.automationBlockers || {}).counts) || {};
+  const blockerGroups = (sync.automationBlockers || {}).groups || {};
+  const autopilot = sync.autopilot || {};
+  const progress = autopilot.progress || {};
+  const rows = [
+    ["Autopilot", autopilot.enabled ? "On" : "Paused", progress.reason || progress.state || "Watching local work."],
+    ["Local worker", localWorker.commandConfigured ? "Configured" : "Needs command", `${workerCounts.open || 0} open work item(s).`],
+    ["Runtime mode", "DB queue + local runner", runtime.currentApproach || "Persistent queues and internal runner."],
+    ["Retry policy", `${retry.maxAttempts || 3} attempts`, retry.afterExhaustion || "Failed Requires Attention"],
+    ["Workflow engine", engine.triggerDevDecision || "Deferred", engine.reason || "Keep the operating model stable before adding a workflow engine."],
+  ];
+  return h("div", { className: "overview-panel" },
+    h("div", { className: "overview-section-head" },
+      h("div", null, h("h2", null, "Automation runtime"), h("p", null, "The platform runs from durable queue/state tables, cron/internal runner cycles, and supervised gates.")),
+      h(Button, { variant: "secondary", onClick: () => setView("reports") }, "Open Reports")
+    ),
+    h("div", { className: "runtime-grid" }, rows.map(([label, value, detail]) =>
+      h("article", { className: "runtime-card", key: label },
+        h("span", null, label),
+        h("strong", null, value),
+        h("p", null, detail)
+      )
+    )),
+    h("article", { className: "overview-narrative autonomy-readiness" },
+      h("div", { className: "department-home-head" },
+        h("div", null,
+          h("h3", null, "Autonomy readiness"),
+          h("p", null, "Why automation stops, and the next action to unblock local supervised work.")
+        ),
+        h(Badge, { tone: localWorker.commandConfigured ? "success" : "warn" }, localWorker.commandConfigured ? "Worker ready" : "Worker setup needed")
+      ),
+      h("div", { className: "runtime-grid" },
+        [
+          ["Worker", localWorker.commandConfigured ? "Configured" : "Missing command", localWorker.commandConfigured ? "Run one worker item when internal Codex work is ready." : "Set AI_DEPARTMENT_WORKER_COMMAND to the recommended local test command."],
+          ["CRM", sync.crmSyncEnabled ? "Connected" : "Local only", sync.crmSyncEnabled ? "CRM sync can be used when needed." : "Import/transfer Leads locally until CRM sync is enabled."],
+          ["Human approvals", blockers.humanApproval || 0, "Iman approval remains required for missing inputs, closures, and irreversible decisions."],
+          ["Email approvals", blockers.externalEmailApproval || 0, "Supplier messages remain blocked until explicit approval."],
+          ["Missing files", blockers.missingFiles || 0, "Upload tender PDFs, scope, BOQ, appendices, or approve parking the Lead."],
+          ["Worker items", workerCounts.open || 0, localWorker.commandConfigured ? "Run worker once or let autopilot process internal work." : "Configure the local worker command first."],
+        ].map(([label, value, detail]) =>
+          h("article", { className: "runtime-card", key: label },
+            h("span", null, label),
+            h("strong", null, value),
+            h("p", null, detail)
+          )
+        )
+      ),
+      h("div", { className: "readiness-blocker-list" },
+        Object.entries(blockerGroups).flatMap(([kind, rows]) => (rows || []).slice(0, 4).map((row, index) =>
+          h("div", { className: "readiness-blocker-row", key: `${kind}-${index}` },
+            h(Badge, { tone: "warn" }, kind.replace(/([A-Z])/g, " $1").trim()),
+            h("span", null, row.title || row.status || row.workItemId || row.taskId || row.queueId || "Blocked item"),
+            h("small", null, row.nextAction || row.lastError || "Review this blocker and route through Alex.")
+          )
+        ))
+      )
+    ),
+    h("article", { className: "overview-narrative worker-setup-panel" },
+      h("div", { className: "department-home-head" },
+        h("div", null,
+          h("h3", null, "Worker status"),
+          h("p", null, localWorker.setupGuidance || "The local worker processes internal research and writing work only.")
+        ),
+        h("div", { className: "panel-actions" },
+          h(Button, { actionKey: "local-worker:use-test-command", variant: "outline", onClick: useTestWorkerCommand }, "Use test worker"),
+          h(Button, { actionKey: "local-worker:run-once", variant: "secondary", onClick: runLocalWorkerOnce }, "Run once")
+        )
+      ),
+      h("div", { className: "manifest-preview worker-command-preview" }, localWorker.commandConfigured ? localWorker.command : (localWorker.recommendedCommand || "AI_DEPARTMENT_WORKER_COMMAND is not configured.")),
+      h("div", { className: "overview-meta-row" },
+        h("span", null, `Enabled: ${localWorker.enabled ? "yes" : "no"}`),
+        h("span", null, `Open: ${workerCounts.open || 0}`),
+        h("span", null, `Queued: ${workerCounts.queued || 0}`),
+        h("span", null, `Ready: ${workerCounts.ready || 0}`),
+        h("span", null, `Done: ${workerCounts.done || 0}`)
+      ),
+      localWorker.lastRun && Object.keys(localWorker.lastRun).length ? h("p", null, `Last run: ${localWorker.lastRun.status || "unknown"} ${localWorker.lastRun.workItemId ? `- ${localWorker.lastRun.workItemId}` : ""}`) : null,
+      localWorker.lastError ? h("p", { className: "form-error" }, localWorker.lastError) : null
+    ),
+    h("article", { className: "overview-narrative" },
+      h("h3", null, "Project scheduler state"),
+      h("p", null, scheduler.goal || "Every project should have durable plan and step state."),
+      h("div", { className: "overview-meta-row" }, (scheduler.stepStates || ["Queued", "Ready", "In Progress", "Blocked", "Needs Approval", "Done", "Failed Requires Attention"]).map(state =>
+        h("span", { key: state }, state)
+      ))
+    ),
+    h("article", { className: "overview-narrative" },
+      h("h3", null, "Runner responsibilities"),
+      h("div", { className: "overview-meta-row" }, (runtime.runnerResponsibilities || []).map(item =>
+        h("span", { key: item }, String(item).replace(/_/g, " "))
+      ))
+    ),
+    h("div", { className: "operating-model-grid" },
+      h("article", { className: "overview-narrative" },
+        h("h3", null, "Current blocker groups"),
+        h("div", { className: "overview-meta-row" }, Object.entries(blockers).map(([key, value]) =>
+          h("span", { key }, `${key.replace(/([A-Z])/g, " $1").trim()}: ${value}`)
+        )),
+        h("p", null, progress.reason || "No automation reason recorded yet.")
+      ),
+      h("article", { className: "overview-narrative" },
+        h("h3", null, "Orchestration criteria"),
+        h("p", null, "Do not adopt Trigger.dev, Temporal, Cloud Tasks, or Google Workflows until the local DB queue/runner model fails these criteria."),
+        h("div", { className: "overview-meta-row" },
+          ["long pause/resume", "fan-out/fan-in pain", "step replay UI needed", "approval waiting durability", "cron reliability issues"].map(item =>
+            h("span", { key: item }, item)
+          )
+        )
       )
     )
   );
@@ -2030,6 +2427,9 @@ function OverviewHowToTab({ setView, openTaskDialog }) {
 }
 
 function OverviewDepartmentTab({ dashboard, setView }) {
+  const model = operatingModelFromDashboard(dashboard);
+  const contract = model.departmentContract || {};
+  const visibility = model.visibilityModes || {};
   const staff = STAFF_ORDER
     .filter(id => id !== HUMAN_STAFF_ID && id !== "AIstaff_Manager")
     .map(id => ({ id, label: staffProfile(id).label, role: staffProfile(id).systemLabel || "AI staff" }));
@@ -2037,12 +2437,38 @@ function OverviewDepartmentTab({ dashboard, setView }) {
     h("div", { className: "overview-section-head" },
       h("div", null, h("h2", null, "Department operating model"), h("p", null, "The AI Manager coordinates specialist staff; humans communicate with Alex unless policy changes."))
     ),
+    h("div", { className: "operating-rule-grid" },
+      [
+        ["Human channel", contract.humanCommunicationRule || "The human talks to the AI Manager."],
+        ["Staff channel", contract.staffCommunicationRule || "Specialist staff report to the AI Manager."],
+        ["Manager role", contract.managerRole || "Alex routes, consolidates, and escalates only real decisions."],
+        ["Safety boundary", contract.safetyBoundary || "External sends and irreversible actions remain supervised."],
+      ].map(([title, body]) =>
+        h("article", { className: "operating-rule-card", key: title }, h("strong", null, title), h("p", null, body))
+      )
+    ),
     h("div", { className: "overview-org-mini" },
       h("article", { className: "overview-org-node owner" }, staffAvatar("Human_Iman"), h("div", null, h("strong", null, "Iman / Human"), h("span", null, "Department owner"))),
       h("div", { className: "overview-org-line" }),
       h("article", { className: "overview-org-node manager" }, staffAvatar("AIstaff_Manager"), h("div", null, h("strong", null, "Alex Fergusen"), h("span", null, "AI Department Manager"))),
       h("div", { className: "overview-org-staff" }, staff.map(item =>
         h("article", { className: "overview-org-node", key: item.id }, staffAvatar(item.id), h("div", null, h("strong", null, item.label), h("span", null, item.role || "AI staff")))
+      ))
+    ),
+    h("div", { className: "visibility-grid" },
+      h("article", { className: "visibility-card" },
+        h("h3", null, (visibility.ownedDepartment || {}).label || "AI Departments I Own"),
+        h("p", null, "Owners/admins can inspect structure, support inventory, quality gates, staff, skills, outputs, and settings.")
+      ),
+      h("article", { className: "visibility-card" },
+        h("h3", null, (visibility.sponsoredAssignment || {}).label || "Sponsored Work Assigned To Me"),
+        h("p", null, "Sponsored participants see only their tasks, uploads, confirmations, approvals, and accepted outputs.")
+      )
+    ),
+    h("article", { className: "overview-narrative" },
+      h("h3", null, "Reusable template families"),
+      h("div", { className: "overview-meta-row" }, (model.templateFamilies || ["Department Templates", "Staff Models", "Skill Packs", "Toolsets", "Workflow Plans"]).map(item =>
+        h("span", { key: item }, item)
       ))
     ),
     h("div", { className: "overview-inline-actions" },
@@ -2479,7 +2905,209 @@ function StaffIdentityPreview({ staffId, dashboard, onClose, onViewProfile }) {
   );
 }
 
-function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, snoozeTask, reassignTask, snoozeFollowUp, processQueueRow, approveEmail, runEmailSafetyCheck, setDecisionDialog, openTaskDialog, openRef, openUniversity, openStaffProfile }) {
+function ProjectStepOutputDialog({ value, setValue, onClose, onSave }) {
+  if (!value) return null;
+  const output = value.output || {};
+  const step = value.step || {};
+  const plan = value.plan || {};
+  const update = (patch) => setValue({ ...value, ...patch });
+  return h("div", { className: "dialog-overlay" },
+    h("div", { className: "dialog-card react-dialog project-output-dialog", role: "dialog", "aria-modal": "true" },
+      h("div", { className: "dialog-head" },
+        h("div", null,
+          h("p", { className: "eyebrow" }, output.outputTemplateId || step.outputTemplateId || "Project output"),
+          h("h2", null, step.title || "Project step output"),
+          h("p", null, `${plan.applicationId || ""} ${step.stage ? `| ${step.stage}` : ""}`)
+        ),
+        h(Button, { type: "button", variant: "ghost", size: "icon", onClick: onClose }, icon("x"))
+      ),
+      value.notice ? h("div", { className: "thread-notice" }, value.notice) : null,
+      h("div", { className: "designer-summary-strip" },
+        h("span", null, h("strong", null, output.status || "Not started"), "Status"),
+        h("span", null, h("strong", null, fmtDate(output.updatedAt) || "new"), "Updated"),
+        h("span", null, h("strong", null, staffProfile(output.createdBy || (step.action && step.action.assignedStaff) || step.assignedStaff).label), "Owner")
+      ),
+      h(Field, { label: "Summary" },
+        h(Textarea, { rows: 4, value: value.summary || "", onChange: event => update({ summary: event.target.value }), placeholder: "Concise output summary, blocker, or next route." })
+      ),
+      h(Field, { label: "Structured content JSON" },
+        h(Textarea, { rows: 12, value: value.contentText || "", onChange: event => update({ contentText: event.target.value }), spellCheck: "false" })
+      ),
+      h("div", { className: "task-filter-grid" },
+        h(Field, { label: "Evidence link" }, h(Input, { value: value.evidenceLink || "", onChange: event => update({ evidenceLink: event.target.value }), placeholder: "local path, thread id, source link, or evidence note" })),
+        h(Field, { label: "Blocker type" }, h(Input, { value: value.blockerType || "", onChange: event => update({ blockerType: event.target.value }), placeholder: "Only needed when blocked" }))
+      ),
+      h("p", { className: "dialog-help" }, "Saving this output does not send email, submit a tender, or write to live CRM. Sending to Alex creates a manager review task/thread."),
+      h("div", { className: "dialog-actions" },
+        h(Button, { type: "button", variant: "ghost", onClick: onClose }, "Cancel"),
+        h(Button, { type: "button", variant: "outline", onClick: () => onSave("mark_blocked") }, "Mark blocked"),
+        h(Button, { type: "button", variant: "secondary", onClick: () => onSave("save") }, "Save draft"),
+        h(Button, { type: "button", onClick: () => onSave("send_to_alex") }, "Send to Alex")
+      )
+    )
+  );
+}
+
+function ProjectWorkflowPanel({ projectPlans, labels, openRef, runOne, openTaskDialog, refresh, startProjectStepAction }) {
+  const plans = (projectPlans && projectPlans.plans) || [];
+  const counts = (projectPlans && projectPlans.counts) || {};
+  const [outputDialog, setOutputDialog] = useState(null);
+
+  async function openOutputEditor(plan, step) {
+    try {
+      const result = await api(`/api/project-step/output?stepId=${encodeURIComponent(step.stepId)}`, { timeoutMs: 20000 });
+      const output = result.output || {};
+      setOutputDialog({
+        plan: result.plan || plan,
+        step: result.step || step,
+        output,
+        summary: output.summary || "",
+        contentText: JSON.stringify(output.content || {}, null, 2),
+        evidenceLink: output.evidenceLink || "",
+        blockerType: output.blockerType || "",
+        notice: "",
+      });
+    } catch (error) {
+      setOutputDialog({
+        plan,
+        step,
+        output: {},
+        summary: "",
+        contentText: "{}",
+        evidenceLink: "",
+        blockerType: "",
+        notice: error.message,
+      });
+    }
+  }
+
+  async function saveOutput(action) {
+    if (!outputDialog) return;
+    let content = {};
+    try {
+      content = JSON.parse(outputDialog.contentText || "{}");
+    } catch (error) {
+      content = { notes: outputDialog.contentText || "", parseWarning: "Content was saved as notes because it was not valid JSON." };
+    }
+    try {
+      const result = await api("/api/project-step/output", {
+        method: "POST",
+        body: JSON.stringify({
+          action,
+          stepId: outputDialog.step.stepId,
+          planId: outputDialog.plan.planId,
+          outputId: outputDialog.output.outputId,
+          status: action === "save" ? "Draft" : undefined,
+          summary: outputDialog.summary,
+          content,
+          evidenceLink: outputDialog.evidenceLink,
+          blockerType: outputDialog.blockerType,
+          createdBy: (outputDialog.step.action && outputDialog.step.action.assignedStaff) || outputDialog.step.assignedStaff,
+        }),
+        timeoutMs: 30000,
+      });
+      setOutputDialog(null);
+      if (refresh) await refresh();
+    } catch (error) {
+      setOutputDialog({ ...outputDialog, notice: error.message });
+    }
+  }
+
+  return h(Fragment, null, h(Card, { className: "project-workflow-card" },
+    h(CardHeader, {
+      eyebrow: "Project Workflow v2",
+      title: "Lead Project Plans",
+      description: "Durable local plan state for each tender Lead: AI Manager + staff-owned steps, blockers, approvals, outputs, and evidence.",
+      action: h("div", { className: "panel-actions" },
+        h(Badge, { tone: counts.blocked ? "warn" : "success" }, counts.blocked ? `${counts.blocked} blocked` : "Plans active"),
+        h(Button, { actionKey: "project-plans:refresh", variant: "outline", onClick: refresh }, icon("refresh"), "Refresh")
+      )
+    }),
+    h(CardContent, null,
+      projectPlans && projectPlans.error ? h("div", { className: "form-error" }, projectPlans.error) : null,
+      h("div", { className: "designer-summary-strip" },
+        h("span", null, h("strong", null, counts.total || plans.length || 0), "Plans"),
+        h("span", null, h("strong", null, counts.inProgress || 0), "In progress"),
+        h("span", null, h("strong", null, counts.blocked || 0), "Blocked"),
+        h("span", null, h("strong", null, counts.active || plans.length || 0), "Active")
+      ),
+      plans.length ? h("div", { className: "project-plan-grid" }, plans.slice(0, 12).map(plan =>
+        h("article", { className: cn("project-plan-card", noticeTone(plan.status)), key: plan.planId },
+          h("div", { className: "designer-object-head" },
+            h("div", null,
+              h("p", { className: "eyebrow" }, plan.planId),
+              h("h3", null, h(RefChip, { kind: "applications", id: plan.applicationId, labels, openRef, length: 160, showStatus: false })),
+              h("small", null, plan.summary || plan.title)
+            ),
+            h(Badge, null, plan.status)
+          ),
+          h(DetailList, { rows: [
+            { label: "Owner", value: h(StaffChip, { staffId: plan.ownerStaff }), raw: true },
+            { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: plan.opportunityId, labels, openRef, length: 160, showStatus: false }), raw: true },
+            { label: "Updated", value: fmtDate(plan.updatedAt) },
+          ] }),
+          h("div", { className: "project-step-list" }, (plan.steps || []).map(step =>
+            h("div", { className: cn("project-step-row", noticeTone(`${step.status} ${step.blockerType}`)), key: step.stepId },
+              h("span", { className: "project-step-index" }, step.sequence),
+              h("div", { className: "project-step-main" },
+                h("div", { className: "project-step-titleline" },
+                  h("strong", null, step.title),
+                  h(Badge, null, step.status)
+                ),
+                h("small", null, `${step.stage} | ${staffProfile(step.assignedStaff).label}`),
+                h("div", { className: "project-step-output" },
+                  h("span", null, "Output"),
+                  h("p", null, shortText(step.expectedOutput || (step.action && step.action.expectedOutput) || "Step output with evidence and next route.", 170))
+                ),
+                step.safetyGate || (step.action && step.action.safetyGate) ? h("div", { className: "project-step-output safety" },
+                  h("span", null, "Gate"),
+                  h("p", null, shortText(step.safetyGate || step.action.safetyGate, 170))
+                ) : null,
+                step.blockerType ? h("p", { className: "project-step-blocker" }, `${step.blockerType}${step.notes ? `: ${shortText(step.notes, 140)}` : ""}`) : null,
+                h("div", { className: "project-step-actions" },
+                  h(Button, {
+                    actionKey: `project-step:${plan.planId}:${step.stepId || step.sequence}`,
+                    size: "sm",
+                    variant: step.blockerType ? "secondary" : "primary",
+                    onClick: () => startProjectStepAction(plan, step),
+                  }, step.nextActionLabel || (step.action && step.action.actionLabel) || (step.status === "Done" ? "Rework" : "Start")),
+                  h(Button, { size: "sm", variant: "outline", onClick: () => openOutputEditor(plan, step) }, step.outputStatus && step.outputStatus !== "Not started" ? "Edit output" : "Output"),
+                  step.sourceThreadId ? h(Button, { size: "sm", variant: "outline", onClick: () => openTaskDialog({
+                    assignedTo: "AIstaff_Manager",
+                    taskType: "Manager Guidance",
+                    taskCategory: "Manager Guidance",
+                    relatedApplicationId: plan.applicationId,
+                    applicationId: plan.applicationId,
+                    nextAction: `Review thread ${step.sourceThreadId} for project step ${step.stepId} and decide the next route.`,
+                  }) }, "Ask Alex") : null,
+                  step.queueId ? h(Button, { size: "sm", variant: "outline", onClick: () => openTaskDialog({
+                    assignedTo: "AIstaff_Manager",
+                    taskType: "Manager Guidance",
+                    taskCategory: "Manager Guidance",
+                    relatedApplicationId: plan.applicationId,
+                    applicationId: plan.applicationId,
+                    nextAction: `Review supplier email queue ${step.queueId} for project step ${step.stepId}. Keep external sending approval-gated.`,
+                  }) }, "Queue help") : null
+                )
+              ),
+              h("div", { className: "project-step-owner" },
+                h(StaffChip, { staffId: (step.action && step.action.assignedStaff) || step.assignedStaff }),
+                step.outputTemplateId ? h("small", null, step.outputTemplateId) : null,
+                h(Badge, { tone: step.outputStatus === "Approved" ? "success" : step.outputStatus === "Blocked" ? "danger" : step.outputStatus === "Ready for Alex Review" ? "warn" : "neutral" }, step.outputStatus || "Not started")
+              )
+            )
+          )),
+          h("div", { className: "notice-actions" },
+            h(Button, { actionKey: `run-one:${plan.ownerStaff || "next"}`, variant: "secondary", onClick: () => runOne(plan.ownerStaff) }, "Run owner"),
+            h(Button, { variant: "outline", onClick: () => openTaskDialog({ assignedTo: plan.ownerStaff, relatedApplicationId: plan.applicationId, applicationId: plan.applicationId, taskType: "Manager Guidance", taskCategory: "Manager Guidance", nextAction: `Review project plan ${plan.planId} and route the next blocked or ready step.` }) }, "Ask Alex")
+          )
+        )
+      )) : h(EmptyState, { title: "No project plans yet", body: "Plans are generated from active Lead records. Transfer or seed Leads to create durable plan state." })
+    )
+  ), outputDialog ? h(ProjectStepOutputDialog, { value: outputDialog, setValue: setOutputDialog, onClose: () => setOutputDialog(null), onSave: saveOutput }) : null);
+}
+
+function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, startProjectStepAction, snoozeTask, reassignTask, snoozeFollowUp, processQueueRow, approveEmail, runEmailSafetyCheck, setDecisionDialog, openTaskDialog, openRef, openUniversity, openStaffProfile }) {
   const taskRows = tasks || [];
   const fallbackThreads = useMemo(() => buildLocalThreadsFromTasks(taskRows), [taskRows]);
   const [threadStatus, setThreadStatus] = useState("open");
@@ -2491,6 +3119,7 @@ function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, snooz
   const [threadDetail, setThreadDetail] = useState(null);
   const [composer, setComposer] = useState("");
   const [threadNotice, setThreadNotice] = useState("");
+  const [projectPlans, setProjectPlans] = useState(() => (dashboard.projectPlans || { plans: [], counts: {}, loaded: false }));
 
   const loadThreads = async () => {
     try {
@@ -2507,6 +3136,19 @@ function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, snooz
   useEffect(() => {
     loadThreads();
   }, [threadStatus, staffFilter, taskRows.length]);
+
+  async function loadProjectPlans() {
+    try {
+      const result = await api("/api/project-plans?status=active&limit=80", { timeoutMs: 20000 });
+      setProjectPlans({ ...result, loaded: true, error: "" });
+    } catch (error) {
+      setProjectPlans(current => ({ ...(current || {}), loaded: true, error: error.message || String(error) }));
+    }
+  }
+
+  useEffect(() => {
+    loadProjectPlans();
+  }, [(dashboard.applications || []).length, taskRows.length]);
 
   const sourceThreads = threadsPayload.threads && threadsPayload.threads.length ? threadsPayload.threads : fallbackThreads.threads;
   const search = normalizedText(filters.search);
@@ -2674,6 +3316,7 @@ function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, snooz
   }
 
   return h(Fragment, null,
+    h(ProjectWorkflowPanel, { projectPlans, labels, openRef, runOne, openTaskDialog, refresh: loadProjectPlans, startProjectStepAction }),
     h(Card, { className: "threads-card" },
       threadNotice ? h("div", { className: "thread-notice" }, threadNotice) : null,
       h(CardContent, { className: cn("thread-shell no-pad", staffPreviewId && "has-contact-info") },
@@ -2758,14 +3401,14 @@ function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, snooz
         h("section", { className: "thread-conversation-pane" },
           selectedThread ? h(Fragment, null,
             h("div", { className: "thread-conversation-head" },
-              h("button", { type: "button", className: "thread-person thread-person-button", onClick: () => setStaffPreviewId(threadActionStaffId(selectedThread)), title: `Open ${threadActionStaffLabel(selectedThread)} details` },
-                staffAvatar(threadActionStaffId(selectedThread)),
+              h("button", { type: "button", className: "thread-person thread-person-button", onClick: () => setStaffPreviewId(isHumanFacingThread(selectedThread) ? "AIstaff_Manager" : threadActionStaffId(selectedThread)), title: `Open ${isHumanFacingThread(selectedThread) ? "Alex / AI Manager" : threadActionStaffLabel(selectedThread)} details` },
+                staffAvatar(isHumanFacingThread(selectedThread) ? "AIstaff_Manager" : threadActionStaffId(selectedThread)),
                 h("div", { className: "thread-person-meta" },
                   h("div", { className: "thread-person-title-row" },
-                    h("h3", null, threadActionStaffLabel(selectedThread)),
-                    h(Badge, null, selectedSource.taskCategory || "Task")
+                    h("h3", null, isHumanFacingThread(selectedThread) ? "Alex / AI Manager" : threadActionStaffLabel(selectedThread)),
+                    h(Badge, { tone: threadReasonTone(selectedThread) }, threadReasonLabel(selectedThread))
                   ),
-                  h("p", null, selectedThread.status || "Open", " | ", waitingLabel(selectedThread))
+                  h("p", null, selectedThread.status || "Open", " | ", waitingLabel(selectedThread), isHumanFacingThread(selectedThread) && threadActionStaffId(selectedThread) !== "AIstaff_Manager" ? ` | Internal owner: ${threadActionStaffLabel(selectedThread)}` : "")
                 )
               ),
               h("div", { className: "thread-head-actions thread-head-actions-minimal" },
@@ -2777,6 +3420,9 @@ function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, snooz
               h(DetailList, { rows: [
                 { label: "Task", value: selectedThread.taskId },
                 { label: "Thread", value: selectedThread.threadId },
+                { label: "Reason", value: threadReasonLabel(selectedThread) },
+                { label: "Human-facing layer", value: isHumanFacingThread(selectedThread) ? "Alex / AI Manager" : "Internal AI staff thread" },
+                { label: "Internal owner", value: h(StaffChip, { staffId: threadActionStaffId(selectedThread) }), raw: true },
                 { label: "Lead", value: h(RefChip, { kind: "applications", id: selectedThread.applicationId || selectedSource.applicationId, labels, openRef, length: 160, showStatus: false }), raw: true },
                 { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: selectedThread.opportunityId || selectedSource.opportunityId, labels, openRef, length: 160, showStatus: false }), raw: true },
                 { label: "Tender source", value: h(UniversityButton, { row: selectedSource, openUniversity }), raw: true },
@@ -2803,9 +3449,9 @@ function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, snooz
               h(Button, { actionKey: `process-queue:${selectedQueueId}`, variant: "secondary", onClick: () => processQueueRow(selectedQueueId) }, "Send / continue process")
             ) : null,
             h("form", { className: "thread-composer", onSubmit: sendThreadReply },
-              h(Textarea, { value: composer, onChange: event => setComposer(event.target.value), rows: 3, placeholder: "Write your reply in Persian, English, or mixed language..." }),
+              h(Textarea, { value: composer, onChange: event => setComposer(event.target.value), rows: 3, placeholder: isHumanFacingThread(selectedThread) ? "Message Alex in Persian, English, or mixed language..." : "Add an internal note for Alex or the assigned staff..." }),
               h("div", { className: "composer-actions" },
-                h("span", null, "Replying does not send an email. Your answer goes to the Manager first."),
+                h("span", null, "Replying does not send email. Human-facing answers go to Alex first."),
                 h(Button, { type: "submit", disabled: !composer.trim() }, icon("send"), "Send reply")
               )
             )
@@ -2838,18 +3484,24 @@ function threadTopic(thread = {}) {
 function ThreadListItem({ thread, active, onClick }) {
   const source = thread.source || {};
   const actionStaff = threadActionStaffId(thread);
-  const party = threadActionStaffLabel(thread);
+  const humanFacing = isHumanFacingThread(thread);
+  const party = humanFacing ? "Alex / AI Manager" : threadActionStaffLabel(thread);
+  const internalOwner = humanFacing && actionStaff !== "AIstaff_Manager" ? threadActionStaffLabel(thread) : "";
   const topic = threadTopic(thread);
   const preview = cleanThreadPreview(thread.lastMessagePreview || source.nextAction || source.resultNotes || "");
   const updateCount = [thread.lastMessagePreview, source.nextAction, source.resultNotes, source.lastError].filter(Boolean).length || 1;
   return h("button", { className: cn("thread-list-item", active && "active", isHumanResponsible(thread.unreadFor) && "unread"), onClick, type: "button" },
-    h("div", { className: "thread-list-avatar" }, staffAvatar(actionStaff)),
+    h("div", { className: "thread-list-avatar" }, staffAvatar(humanFacing ? "AIstaff_Manager" : actionStaff)),
     h("div", { className: "thread-list-main" },
       h("div", { className: "thread-list-top" },
         h("div", { className: "thread-list-title" }, party),
         h("time", { className: "thread-list-time" }, fmtDate(thread.lastMessageAt))
       ),
-      h("div", { className: "thread-list-topic" }, topic),
+      h("div", { className: "thread-list-topic" },
+        h("span", { className: cn("thread-reason-pill", threadReasonTone(thread)) }, threadReasonLabel(thread)),
+        h("span", null, topic),
+        internalOwner ? h("span", null, `Internal owner: ${internalOwner}`) : null
+      ),
       h("div", { className: "thread-list-preview" }, `${updateCount} update${updateCount === 1 ? "" : "s"} shared. ${shortText(preview, 126)}`)
     ),
     isHumanResponsible(thread.unreadFor) ? h("span", { className: "unread-dot", title: "Unread for Iman" }) : null
@@ -2946,28 +3598,201 @@ function TaskTableRow({ row, labels, runOne, snoozeTask, reassignTask, processQu
 function EmailView({ dashboard, processQueueRow, approveEmail, runEmailSafetyCheck, openRef, openUniversity }) {
   const rows = flattenEmailQueue(dashboard.emailQueue || {});
   const labels = buildLabels(dashboard);
-  return h(Card, null,
-    h(CardHeader, {
-      title: "Supplier Outreach Queue",
-      description: "Only safe, complete, approved quotation/outreach rows can continue.",
-      action: h(Fragment, null, h(Button, { actionKey: "email-safety:configured", variant: "secondary", onClick: () => runEmailSafetyCheck("") }, icon("shield"), "Safety Check"), h(Button, { onClick: () => processQueueRow("") }, icon("send"), "Run Outreach")),
-    }),
-    h(CardContent, { className: "stack" }, rows.length ? rows.slice(0, 30).map(row =>
-      h("article", { className: cn("notice", noticeTone(`${row.sendStatus} ${row.approvalStatus}`)), key: row.queueId },
-        h("div", { className: "card-topline" }, h("div", null, h("h3", null, row.recipientName || row.to || "Email row"), h("div", { className: "card-meta" }, row.queueId)), h(Badge, null, row.sendStatus || row.approvalStatus)),
-        h(DetailList, { rows: [
-          { label: "Tender source", value: h(UniversityButton, { row, openUniversity }), raw: true },
-          { label: "Lead", value: h(RefChip, { kind: "applications", id: row.applicationId, labels, openRef }), raw: true },
-          { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: row.opportunityId, labels, openRef }), raw: true },
-          { label: "Recipient", value: row.recipientName || row.to },
-          { label: "Email", value: row.to },
-          { label: "Subject", value: row.subject, length: 220 },
-          { label: "Approval", value: row.approvalStatus },
-          { label: "Problem", value: row.lastError, length: 240 },
-        ] }),
-        h("div", { className: "notice-actions" }, h(Button, { actionKey: `process-queue:${row.queueId}`, onClick: () => processQueueRow(row.queueId) }, "Process Row"), h(Button, { actionKey: `approve-email:${row.queueId}`, variant: "outline", onClick: () => approveEmail(row.queueId) }, "Approve"), h(Button, { actionKey: `email-safety:${row.queueId}`, variant: "ghost", onClick: () => runEmailSafetyCheck(row.queueId) }, "Safety"))
+  const [communications, setCommunications] = useState({ events: [], outboundAttempts: [], senderIdentities: [], loaded: false, error: "" });
+  const [selectedQueueId, setSelectedQueueId] = useState(rows[0] && rows[0].queueId || "");
+  const [preview, setPreview] = useState({ loaded: false, error: "", data: null });
+  async function loadCommunications() {
+    try {
+      const result = await api("/api/communications?limit=80");
+      setCommunications({ ...result, loaded: true, error: "" });
+    } catch (error) {
+      setCommunications(current => ({ ...current, loaded: true, error: error.message || String(error) }));
+    }
+  }
+  useEffect(() => {
+    loadCommunications();
+  }, []);
+  useEffect(() => {
+    if (!selectedQueueId && rows.length && rows[0].queueId) {
+      setSelectedQueueId(rows[0].queueId);
+    }
+  }, [rows.map(row => row.queueId).join("|"), selectedQueueId]);
+  async function loadPreview(queueId = selectedQueueId) {
+    if (!queueId) {
+      setPreview({ loaded: true, error: "", data: null });
+      return;
+    }
+    try {
+      const result = await api(`/api/email-preview?queueId=${encodeURIComponent(queueId)}`, { timeoutMs: 20000 });
+      setPreview({ loaded: true, error: "", data: result });
+    } catch (error) {
+      setPreview({ loaded: true, error: error.message || String(error), data: null });
+    }
+  }
+  useEffect(() => {
+    if (selectedQueueId) loadPreview(selectedQueueId);
+  }, [selectedQueueId]);
+  async function approveAndRefresh(queueId) {
+    await approveEmail(queueId);
+    await loadPreview(queueId);
+    await loadCommunications();
+  }
+  async function processAndRefresh(queueId) {
+    await processQueueRow(queueId);
+    await loadPreview(queueId);
+    await loadCommunications();
+  }
+  async function safetyAndRefresh(queueId) {
+    await runEmailSafetyCheck(queueId);
+    await loadPreview(queueId);
+    await loadCommunications();
+  }
+  const blocked = rows.filter(row => noticeTone(`${row.sendStatus || ""} ${row.approvalStatus || ""} ${row.lastError || ""}`) === "danger").length;
+  const approved = rows.filter(row => normalizedText(row.approvalStatus).includes("approved")).length;
+  const previewData = preview.data || {};
+  const previewMessage = previewData.message || {};
+  const selectedRow = rows.find(row => row.queueId === selectedQueueId) || rows[0] || {};
+  return h("section", { className: "email-alpha-view" },
+    h(Card, null,
+      h(CardHeader, {
+        eyebrow: "Supervised Email Alpha",
+        title: "Supplier Outreach Queue",
+        description: "Provider-neutral approval preview, duplicate and attachment checks, communications logging, and local .eml/SMTP only after explicit approval.",
+        action: h(Fragment, null,
+          h(Button, { actionKey: "email-safety:configured", variant: "secondary", onClick: () => runEmailSafetyCheck("") }, icon("shield"), "Safety Check"),
+          h(Button, { actionKey: "communications:refresh", variant: "outline", onClick: loadCommunications }, icon("refresh"), "Refresh Log")
+        ),
+      }),
+      h(CardContent, null,
+        h("div", { className: "designer-summary-strip" },
+          h("span", null, h("strong", null, rows.length), "Queue rows"),
+          h("span", null, h("strong", null, approved), "Approved"),
+          h("span", null, h("strong", null, blocked), "Blocked"),
+          h("span", null, h("strong", null, (communications.outboundAttempts || []).length), "Attempts"),
+          h("span", null, h("strong", null, (communications.senderIdentities || []).length), "Senders")
+        ),
+        communications.error ? h("div", { className: "form-error" }, communications.error) : null
       )
-    ) : h(EmptyState, { title: "No outreach rows", body: "The current dashboard snapshot did not return supplier outreach queue rows." }))
+    ),
+    h("div", { className: "email-alpha-grid" },
+      h(Card, null,
+        h(CardHeader, { title: "Outreach Rows", description: "Select a supplier outreach row to inspect approval, body, attachments, duplicate risk, and draft generation readiness." }),
+        h(CardContent, { className: "stack" }, rows.length ? rows.slice(0, 30).map(row =>
+          h("article", { className: cn("notice email-row-preview", selectedQueueId === row.queueId && "selected", noticeTone(`${row.sendStatus} ${row.approvalStatus} ${row.lastError}`)), key: row.queueId },
+            h("div", { className: "card-topline" }, h("div", null, h("h3", null, row.recipientName || row.to || "Email row"), h("div", { className: "card-meta" }, row.queueId)), h(Badge, null, row.sendStatus || row.approvalStatus)),
+            h(DetailList, { rows: [
+              { label: "Tender source", value: h(UniversityButton, { row, openUniversity }), raw: true },
+              { label: "Lead", value: h(RefChip, { kind: "applications", id: row.applicationId, labels, openRef }), raw: true },
+              { label: "Tender case", value: h(RefChip, { kind: "opportunities", id: row.opportunityId, labels, openRef }), raw: true },
+              { label: "Provider lane", value: row.provider || row.sendProvider || "local_eml_or_smtp" },
+              { label: "Recipient", value: row.recipientName || row.to },
+              { label: "Email", value: row.to },
+              { label: "Subject", value: row.subject, length: 220 },
+              { label: "Approval", value: row.approvalStatus || "Needs approval" },
+              { label: "Problem", value: row.lastError, length: 240 },
+            ] }),
+            h("div", { className: "notice-actions" },
+              h(Button, { variant: "outline", onClick: () => setSelectedQueueId(row.queueId) }, "Preview"),
+              h(Button, { actionKey: `approve-email:${row.queueId}`, variant: "outline", onClick: () => approveAndRefresh(row.queueId) }, "Approve"),
+              h(Button, { actionKey: `process-queue:${row.queueId}`, onClick: () => processAndRefresh(row.queueId) }, "Generate .eml / Send")
+            )
+          )
+        ) : h(EmptyState, { title: "No outreach rows", body: "The current dashboard snapshot did not return supplier outreach queue rows." }))
+      ),
+      h("div", { className: "email-side-stack" },
+      h(Card, { className: "email-approval-screen" },
+        h(CardHeader, {
+          title: "Approval Screen",
+          description: "This preview must pass approval, content, document, attachment, and duplicate gates before local .eml/SMTP processing.",
+          action: selectedQueueId ? h(Badge, { tone: previewData.readyToGenerate ? "success" : "warn" }, previewData.readyToGenerate ? "Ready" : "Blocked") : null,
+        }),
+        h(CardContent, { className: "stack" },
+          preview.error ? h("div", { className: "form-error" }, preview.error) : null,
+          selectedQueueId ? h(Fragment, null,
+            h(DetailList, { rows: [
+              { label: "Queue", value: selectedQueueId },
+              { label: "Provider lane", value: previewData.providerLane || selectedRow.provider || "local_eml" },
+              { label: "Send mode", value: previewData.sendMode || selectedRow.sendMode || "DRAFT" },
+              { label: "Draft path", value: previewData.draftPath || "", length: 240 },
+              { label: "From", value: previewMessage.from || "" },
+              { label: "To", value: previewMessage.to || selectedRow.to },
+              { label: "Cc", value: previewMessage.cc || "" },
+              { label: "Subject", value: previewMessage.subject || selectedRow.subject, length: 240 },
+            ] }),
+            h("div", { className: "email-body-preview" },
+              h("span", null, "Message body"),
+              h("pre", null, previewMessage.body || selectedRow.body || selectedRow.emailBody || "")
+            ),
+            h("div", { className: "email-gate-grid" }, (previewData.gates || []).map(gate =>
+              h("article", { className: cn("email-gate-card", gate.ok ? "ok" : "blocked"), key: gate.id },
+                h("div", { className: "card-topline" }, h("strong", null, gate.label), h(Badge, { tone: gate.ok ? "success" : "danger" }, gate.status || (gate.ok ? "Passed" : "Blocked"))),
+                h("p", null, gate.message)
+              )
+            )),
+            h("div", { className: "email-evidence-grid" },
+              h("article", null,
+                h("strong", null, "Attachments"),
+                h("p", null, ((previewData.checks || {}).attachments || {}).message || ""),
+                (((previewData.checks || {}).attachments || {}).attachments || []).map(path => h("small", { key: path }, path)),
+                (((previewData.checks || {}).attachments || {}).blocked || []).map(path => h("small", { key: path, className: "danger-text" }, path))
+              ),
+              h("article", null,
+                h("strong", null, "Duplicate check"),
+                h("p", null, ((previewData.checks || {}).duplicate || {}).message || ((previewData.checks || {}).duplicate || {}).error || ""),
+                (((previewData.checks || {}).duplicate || {}).duplicates || []).map(item => h("small", { key: item.queueId }, `${item.queueId}: ${item.status}`))
+              )
+            ),
+            h("p", { className: "dialog-help" }, previewData.nextAction || "Select a row to inspect safety gates."),
+            h("div", { className: "notice-actions" },
+              h(Button, { actionKey: `approve-email:${selectedQueueId}`, variant: "outline", onClick: () => approveAndRefresh(selectedQueueId) }, "Approve exact preview"),
+              h(Button, { actionKey: `email-safety:${selectedQueueId}`, variant: "ghost", onClick: () => safetyAndRefresh(selectedQueueId) }, "Run attachment check"),
+              h(Button, { actionKey: `process-queue:${selectedQueueId}`, onClick: () => processAndRefresh(selectedQueueId) }, "Generate .eml / Send")
+            )
+          ) : h(EmptyState, { title: "Select an outreach row", body: "Choose a queue row to inspect the message and safety evidence." })
+        )
+      ),
+      h(Card, null,
+        h(CardHeader, { title: "Communications Log", description: "Approval updates, send attempts, local drafts, SMTP responses, safety evidence, and event history." }),
+        h(CardContent, { className: "stack" },
+          (communications.senderIdentities || []).length ? h("div", { className: "runtime-section-grid" }, communications.senderIdentities.map(sender =>
+            h("article", { className: "runtime-section-card", key: sender.id },
+              h("strong", null, sender.label || sender.id),
+              h("p", null, `${sender.provider || "local"} | ${sender.fromEmail || "sender email not configured"}`),
+              h(AccessBadge, { value: sender.accessSummary || "workspace_editable" })
+            )
+          )) : null,
+          (communications.outboundAttempts || []).slice(0, 12).map(attempt =>
+            h("article", { className: "notice", key: attempt.attemptId },
+              h("div", { className: "card-topline" }, h("div", null, h("h3", null, attempt.subject || attempt.queueId), h("div", { className: "card-meta" }, attempt.attemptId)), h(Badge, null, attempt.status)),
+              h(DetailList, { rows: [
+                { label: "Queue", value: attempt.queueId },
+                { label: "Provider", value: attempt.provider },
+                { label: "Recipient", value: attempt.recipient },
+                { label: "Approval", value: attempt.approvalState },
+                { label: "Evidence", value: attempt.evidenceLink, length: 220 },
+                { label: "Created", value: fmtDate(attempt.createdAt) },
+              ] })
+            )
+          ),
+          (communications.events || []).slice(0, 12).map(event =>
+            h("article", { className: "notice", key: event.eventId },
+              h("div", { className: "card-topline" }, h("div", null, h("h3", null, event.eventType || event.status), h("div", { className: "card-meta" }, event.eventId)), h(Badge, null, event.status || event.approvalState)),
+              h(DetailList, { rows: [
+                { label: "Queue", value: event.queueId },
+                { label: "Provider", value: event.provider },
+                { label: "Recipient", value: event.recipient },
+                { label: "Subject", value: event.subject, length: 180 },
+                { label: "Preview", value: event.bodyPreview, length: 220 },
+                { label: "Evidence", value: event.evidenceLink, length: 220 },
+                { label: "Created", value: fmtDate(event.createdAt) },
+              ] })
+            )
+          ),
+          !(communications.outboundAttempts || []).length ? h(EmptyState, { title: "No attempts yet", body: "Process an approved queue row to create a local email attempt or draft log." }) : null
+        )
+      )
+      )
+    )
   );
 }
 
@@ -3058,10 +3883,17 @@ function fabricOrFallback(dashboard = {}) {
     workspaceOverrides: fabric.workspaceOverrides || [],
     staffProfiles: fabric.staffProfiles || [],
     outputTemplates: fabric.outputTemplates || [],
+    platformSafetySkills: fabric.platformSafetySkills || [],
+    departmentSkills: fabric.departmentSkills || [],
+    staffTemplateSkills: fabric.staffTemplateSkills || [],
+    laneAdapterSkills: fabric.laneAdapterSkills || [],
+    skillBindings: fabric.skillBindings || [],
+    workspaceBusinessProfile: fabric.workspaceBusinessProfile || {},
     kpis: fabric.kpis || [],
     reportDefinitions: fabric.reportDefinitions || [],
     governance: fabric.governance || {},
     permissions: fabric.permissions || {},
+    operatingModel: fabric.operatingModel || {},
     automations: fabric.automations || [],
     summary: fabric.summary || {},
     errors: fabric.errors || [],
@@ -3299,9 +4131,11 @@ function DepartmentExplorerView({ dashboard, runOne, openTaskDialog, setView, se
     h("section", { className: "department-explorer-shell" },
       h("div", { className: "department-main-tabs", role: "tablist", "aria-label": "Department Explorer sections" },
         h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "org", className: cn("department-main-tab", explorerTab === "org" && "active"), onClick: () => setExplorerTab("org") }, icon("user"), "Organization Chart"),
+        h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "model", className: cn("department-main-tab", explorerTab === "model" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("model"); } }, icon("chart"), "Operating Model"),
         h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "settings", className: cn("department-main-tab", explorerTab === "settings" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("settings"); } }, icon("shield"), "Department Settings")
       ),
       explorerTab === "settings" ? h(DepartmentSettingsView, { dashboard, fabric }) : null,
+      explorerTab === "model" ? h(OperatingModelPanel, { dashboard, fabric }) : null,
       explorerTab === "org" && !selectedStaffId ? h(Card, { className: "department-chart-card chart-enter" },
         h(CardHeader, {
           eyebrow: "Department Explorer",
@@ -3322,6 +4156,125 @@ function DepartmentExplorerView({ dashboard, runOne, openTaskDialog, setView, se
   );
 }
 
+function OperatingModelPanel({ dashboard, fabric }) {
+  const model = fabric.operatingModel || {};
+  const contract = model.departmentContract || {};
+  const threadPolicy = model.threadPolicy || {};
+  const visibility = model.visibilityModes || {};
+  const runtime = model.automationRuntimeArchitecture || {};
+  const scheduler = runtime.projectSchedulerPolicy || {};
+  const engine = runtime.externalWorkflowEnginePolicy || {};
+  return h("section", { className: "operating-model-panel chart-enter" },
+    h(Card, null,
+      h(CardHeader, {
+        eyebrow: "Owner/Admin View",
+        title: model.label || "Reusable Supervised AI Department Operating Model",
+        description: "This is the product contract for every reusable AI Department: manager, staff, projects, quality gates, outputs, data, templates, and supervised autonomy.",
+        action: h(Badge, null, "Platform contract")
+      }),
+      h(CardContent, null,
+        h("div", { className: "operating-rule-grid" },
+          [
+            ["Department goal", contract.goal],
+            ["Human channel", contract.humanCommunicationRule],
+            ["Staff channel", contract.staffCommunicationRule],
+            ["Manager role", contract.managerRole],
+            ["Safety boundary", contract.safetyBoundary],
+          ].filter(([, body]) => body).map(([title, body]) =>
+            h("article", { className: "operating-rule-card", key: title }, h("strong", null, title), h("p", null, body))
+          )
+        )
+      )
+    ),
+    h("div", { className: "operating-model-grid" },
+      h(Card, null,
+        h(CardHeader, { title: "Thread Policy", description: "Threads exist for real operational reasons, not casual noise." }),
+        h(CardContent, null,
+          h("h3", null, "Create threads for"),
+          h("div", { className: "overview-meta-row" }, (threadPolicy.createThreadsFor || []).map(item => h("span", { key: item }, String(item).replace(/_/g, " ")))),
+          h("h3", null, "Do not create for"),
+          h("div", { className: "overview-meta-row" }, (threadPolicy.doNotCreateThreadsFor || []).map(item => h("span", { key: item }, String(item).replace(/_/g, " "))))
+        )
+      ),
+      h(Card, null,
+        h(CardHeader, { title: "Visibility Modes", description: "Owners inspect structure; sponsored participants see assigned work only." }),
+        h(CardContent, null,
+          Object.entries(visibility).map(([key, row]) =>
+            h("article", { className: "visibility-card compact", key },
+              h("h3", null, row.label || key),
+              h("p", null, `Visible: ${(row.visible || []).join(", ") || "configured work only"}`),
+              h("p", null, `Hidden: ${(row.hidden || []).join(", ") || "internal details"}`)
+            )
+          )
+        )
+      ),
+      h(Card, null,
+        h(CardHeader, { title: "Automation Runtime", description: "Current architecture decision for background work." }),
+        h(CardContent, null,
+          h(DetailList, { rows: [
+            { label: "Current approach", value: runtime.currentApproach },
+            { label: "Retry", value: `${(runtime.retryPolicy || {}).maxAttempts || 3} attempts, then ${(runtime.retryPolicy || {}).afterExhaustion || "Failed Requires Attention"}` },
+            { label: "Project scheduler", value: scheduler.goal },
+            { label: "Workflow engine", value: `${engine.triggerDevDecision || "Deferred"} ${engine.reason || ""}` },
+          ] })
+        )
+      ),
+      h(Card, null,
+        h(CardHeader, { title: "Template Families", description: "Exportable building blocks for reusable departments." }),
+        h(CardContent, null,
+          h("div", { className: "overview-meta-row" }, (model.templateFamilies || []).map(item => h("span", { key: item }, item)))
+        )
+      ),
+      h(Card, null,
+        h(CardHeader, { title: "Control Plane Split", description: "Reusable templates are governed by platform/admin; workspace users configure installed runtime instances." }),
+        h(CardContent, null,
+          h(ControlPlaneGrid, { model })
+        )
+      ),
+      h(Card, null,
+        h(CardHeader, { title: "Scoped Skill Catalog", description: "Skills are separated by scope and resolved in order, not stored as one giant bucket." }),
+        h(CardContent, null,
+          h(SkillCatalogSummary, { fabric })
+        )
+      )
+    )
+  );
+}
+
+function ControlPlaneGrid({ model }) {
+  const split = ((model || {}).skillArchitecture || {}).controlSplit || {};
+  const rows = [
+    ["Platform Admin", split.platformAdmin || ["department blueprints", "staff templates", "lane/tool adapters", "locked safety skills"]],
+    ["Workspace Settings", split.workspaceSettings || ["company identity", "active integrations", "approved databases"]],
+    ["Department Explorer", split.departmentExplorer || ["installed department preferences", "aliases", "vocabulary", "escalation contacts"]],
+    ["Project Workspace", split.projectWorkspace || ["plans", "tasks", "threads", "approvals", "outputs", "evidence"]],
+  ];
+  return h("div", { className: "control-plane-grid" }, rows.map(([title, items]) =>
+    h("article", { className: "control-plane-card", key: title },
+      h("strong", null, title),
+      h("ul", null, (items || []).map(item => h("li", { key: item }, item)))
+    )
+  ));
+}
+
+function SkillCatalogSummary({ fabric }) {
+  const scopes = [
+    ["Platform safety", fabric.platformSafetySkills || [], "Locked universal rules"],
+    ["Department", fabric.departmentSkills || [], "Inherited by all staff in this department"],
+    ["Staff template", fabric.staffTemplateSkills || [], "Reusable craft skills for staff roles"],
+    ["Lane / tool", fabric.laneAdapterSkills || [], "Provider and adapter execution rules"],
+  ];
+  return h("div", { className: "skill-scope-grid" }, scopes.map(([label, rows, description]) =>
+    h("article", { className: "skill-scope-card", key: label },
+      h("span", null, description),
+      h("strong", null, `${label} (${rows.length})`),
+      h("div", { className: "skill-chip-list" }, rows.slice(0, 6).map(row =>
+        h("span", { className: cn("skill-chip", row.locked && "locked"), key: row.id }, row.label || row.id)
+      ))
+    )
+  ));
+}
+
 function DepartmentSettingsView({ dashboard, fabric }) {
   const [settingsTab, setSettingsTab] = useState("departmentSkill");
   const counts = [
@@ -3329,8 +4282,9 @@ function DepartmentSettingsView({ dashboard, fabric }) {
     ["Recipes", (fabric.recipes || []).length],
     ["Stages", (fabric.recipes || []).reduce((sum, recipe) => sum + ((recipe.stages || []).length), 0)],
     ["Lanes", (fabric.lanes || []).length],
+    ["Scoped skills", (fabric.platformSafetySkills || []).length + (fabric.departmentSkills || []).length + (fabric.staffTemplateSkills || []).length + (fabric.laneAdapterSkills || []).length],
   ];
-  const settingTabs = [["departmentSkill", "Department Skill"], ...FABRIC_NOTE_SECTIONS];
+  const settingTabs = [["departmentSkill", "Department Skill"], ["workspaceProfile", "Workspace Profile"], ["scopedSkills", "Scoped Skills"], ...FABRIC_NOTE_SECTIONS];
   return h("section", { className: "department-settings-view chart-enter" },
     h(Card, { className: "department-settings-card" },
       h(CardHeader, {
@@ -3352,8 +4306,116 @@ function DepartmentSettingsView({ dashboard, fabric }) {
             title: `${APP_NAME} Staff Skill`,
             description: "Department-level rules: operating model, routing, safety, learning, and completion standards."
           })
-          : h(FabricNoteEditor, { section: settingsTab })
+          : settingsTab === "workspaceProfile"
+          ? h(WorkspaceProfilePanel, { fabric })
+          : settingsTab === "scopedSkills"
+          ? h(ScopedSkillsPanel, { fabric })
+          : h(Fragment, null, h(DepartmentRuntimeSectionPanel, { section: settingsTab, fabric, dashboard }), h(FabricNoteEditor, { section: settingsTab }))
       )
+    )
+  );
+}
+
+function DepartmentRuntimeSectionPanel({ section, fabric, dashboard }) {
+  if (!FABRIC_NOTE_SECTIONS.some(([key]) => key === section)) return null;
+  const rowsBySection = {
+    workMap: fabric.capabilities || [],
+    lanesTools: fabric.lanes || [],
+    qualityGates: fabric.qualityGates || [],
+    dataConnectors: [...(fabric.connections || []), ...(fabric.databases || [])],
+    aiBrain: fabric.aiSupport || [],
+    outputTemplates: fabric.outputTemplates || [],
+    learningLibrary: (dashboard.skillUpdatesAll || dashboard.skillUpdates || []),
+  };
+  const rows = rowsBySection[section] || [];
+  const titles = {
+    workMap: "Work Map Runtime",
+    lanesTools: "AI Staff, Lanes & Tools",
+    qualityGates: "Quality Gates",
+    dataConnectors: "Connections & Databases",
+    aiBrain: "AI Brain",
+    outputTemplates: "Output Templates",
+    learningLibrary: "Learning Library",
+  };
+  return h("div", { className: "runtime-section-panel" },
+    h("div", { className: "profile-section-head" },
+      h("h3", null, titles[section] || "Runtime Section"),
+      h("p", null, "Structured local-alpha view for this department section. Edit the Markdown below for operating instructions.")
+    ),
+    rows.length ? h("div", { className: "runtime-section-grid" }, rows.slice(0, 12).map(row =>
+      h("article", { className: "runtime-section-card", key: row.id || row.learningId || row.label },
+        h("div", { className: "designer-object-head" },
+          h("div", null,
+            h("strong", null, row.label || row.name || row.proposedRule || row.id || row.learningId),
+            h("small", null, row.id || row.learningId || row.status || "")
+          ),
+          h(AccessBadge, { value: row.locked ? "platform_locked" : row.workspaceEditable === false ? "platform_locked" : section === "learningLibrary" ? "runtime_context" : "department_editable" })
+        ),
+        h("p", null, shortText(row.summary || row.purpose || row.rule || row.usage || row.storage || row.reason || "", 190))
+      )
+    )) : h(EmptyState, { title: "No rows yet", body: "This section is ready for the local alpha, but no structured rows are currently available." })
+  );
+}
+
+function WorkspaceProfilePanel({ fabric }) {
+  const profile = fabric.workspaceBusinessProfile || {};
+  return h("div", { className: "workspace-profile-panel" },
+    h("div", { className: "profile-section-head" },
+      h("h3", null, "Workspace Business Identity"),
+      h("p", null, "Company-wide defaults live here and are inherited by AI Departments. These are runtime workspace facts, not platform templates.")
+    ),
+    h(DetailList, { rows: [
+      { label: "Company display name", value: profile.companyDisplayName || "Not set" },
+      { label: "Legal company name", value: profile.legalCompanyName || "Not set" },
+      { label: "VAT / Tax ID", value: profile.vatOrTaxId || "Not set" },
+      { label: "Commercial registration", value: profile.commercialRegistrationNumber || "Not set" },
+      { label: "Registered address", value: profile.registeredAddress || "Not set" },
+      { label: "Industry", value: profile.industrySector || "Not set" },
+      { label: "Default language", value: profile.defaultLanguage || "Not set" },
+      { label: "Brand tone", value: profile.approvedBrandTone || "Not set", length: 220 },
+      { label: "Manager title", value: profile.defaultManagerTitle || "Not set" },
+      { label: "Approved databases", value: (profile.approvedDatabases || []).join(", ") || "Not set", length: 260 },
+    ] })
+  );
+}
+
+function ScopedSkillsPanel({ fabric }) {
+  const architecture = ((fabric.operatingModel || {}).skillArchitecture || {});
+  const scopes = [
+    ["Locked Platform Safety", fabric.platformSafetySkills || [], "Platform Admin", "Cannot be overridden by workspace preferences."],
+    ["Department-Level Skills", fabric.departmentSkills || [], "Department Explorer", "Inherited by every staff member in this installed department."],
+    ["Staff Template Skills", fabric.staffTemplateSkills || [], "Platform Admin", "Reusable staff craft, such as Outreach Agent or Report Maker."],
+    ["Lane / Tool Skills", fabric.laneAdapterSkills || [], "Platform Admin", "Provider-specific execution rules for Gmail, Outlook, CRM, MCP, files, and local adapters."],
+  ];
+  return h("div", { className: "scoped-skills-panel" },
+    h("div", { className: "profile-section-head" },
+      h("h3", null, "Scoped Skill Resolution"),
+      h("p", null, architecture.overrideRule || "User preferences never override locked safety, department policy, or lane/tool rules.")
+    ),
+    h("div", { className: "resolution-order" }, (architecture.resolutionOrder || []).map((item, index) =>
+      h("span", { key: item }, h("strong", null, index + 1), item.replace(/([A-Z])/g, " $1").trim())
+    )),
+    h("div", { className: "skill-scope-grid detailed" }, scopes.map(([title, rows, owner, description]) =>
+      h("article", { className: "skill-scope-card", key: title },
+        h("span", null, owner),
+        h("strong", null, `${title} (${rows.length})`),
+        h("p", null, description),
+        h("div", { className: "skill-list" }, rows.map(row =>
+          h("div", { className: "skill-list-row", key: row.id },
+            h("div", null, h("strong", null, row.label || row.id), h("p", null, shortText(row.summary || "", 150))),
+            h(Badge, { tone: row.locked ? "neutral" : "ok" }, row.locked ? "Locked" : "Editable")
+          )
+        ))
+      )
+    )),
+    h("article", { className: "overview-narrative" },
+      h("h3", null, "Bindings"),
+      h("div", { className: "skill-list" }, (fabric.skillBindings || []).map(binding =>
+        h("div", { className: "skill-list-row", key: binding.id },
+          h("div", null, h("strong", null, binding.id), h("p", null, `${binding.bindingType} -> ${binding.targetId} | ${binding.skillScope}`)),
+          h(Badge, null, `Order ${binding.resolutionOrder || ""}`)
+        )
+      ))
     )
   );
 }
@@ -4083,6 +5145,7 @@ function SettingsView({ dashboard }) {
   const [config, setConfig] = useState({ loading: true, error: "", fabric: fabricOrFallback(dashboard), versions: [], backups: [] });
   const fabric = fabricOrFallback({ ...(dashboard || {}), capabilityFabric: config.fabric || (dashboard && dashboard.capabilityFabric) });
   const sections = [
+    ["workspaceProfile", "Workspace Defaults"],
     ["departmentTemplates", "Department Templates"],
     ["staffProfiles", "Staff Profiles"],
     ["capabilities", "Capabilities"],
@@ -4101,6 +5164,7 @@ function SettingsView({ dashboard }) {
     ["backup", "Backup / Restore"],
   ];
   const totals = {
+    workspaceProfile: 1,
     departmentTemplates: (fabric.departmentTemplates || []).length,
     staffProfiles: (fabric.staffProfiles || []).length,
     capabilities: (fabric.capabilities || []).length,
@@ -4170,10 +5234,94 @@ function SettingsView({ dashboard }) {
       )
     ),
     collectionSections.has(section) ? h(DesignerCollectionSection, { collection: section, fabric, refresh: loadConfig }) : null,
+    section === "workspaceProfile" ? h(WorkspaceProfileEditor, { fabric, refresh: loadConfig }) : null,
     section === "stages" ? h(SettingsStagesSection, { fabric }) : null,
     section === "governance" ? h(GovernanceDesignerSection, { fabric }) : null,
     section === "history" ? h(VersionHistorySection, { versions: config.versions, refresh: loadConfig }) : null,
     section === "backup" ? h(BackupRestoreSection, { backups: config.backups, refresh: loadConfig }) : null
+  );
+}
+
+function WorkspaceProfileEditor({ fabric, refresh }) {
+  const [profile, setProfile] = useState(() => ({ ...((fabric && fabric.workspaceBusinessProfile) || {}) }));
+  const [status, setStatus] = useState("");
+  const fields = [
+    ["companyDisplayName", "Company display name"],
+    ["legalCompanyName", "Legal company name"],
+    ["vatOrTaxId", "VAT / Tax ID"],
+    ["commercialRegistrationNumber", "Commercial registration"],
+    ["registeredAddress", "Registered address"],
+    ["industrySector", "Industry / sector"],
+    ["defaultLanguage", "Default language"],
+    ["defaultManagerTitle", "Manager title/name"],
+    ["approvedEmailSignature", "Approved email signature"],
+  ];
+
+  useEffect(() => {
+    setProfile({ ...((fabric && fabric.workspaceBusinessProfile) || {}) });
+  }, [fabric && fabric.workspaceBusinessProfile && fabric.workspaceBusinessProfile.updatedAt]);
+
+  function setProfileValue(key, value) {
+    setProfile(current => ({ ...(current || {}), [key]: value }));
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    setStatus("Saving workspace defaults...");
+    try {
+      const result = await api("/api/workspace-profile", {
+        method: "POST",
+        body: JSON.stringify({
+          ...profile,
+          approvedSenderIdentities: listText(profile.approvedSenderIdentities),
+          activeConnections: listText(profile.activeConnections),
+          approvedDatabases: listText(profile.approvedDatabases),
+          updatedBy: "Human_Iman",
+        }),
+      });
+      setProfile(result.workspaceProfile || profile);
+      setStatus("Workspace defaults saved and versioned.");
+      await refresh();
+    } catch (error) {
+      setStatus(error.message || String(error));
+    }
+  }
+
+  return h(Card, { className: "designer-section-card" },
+    h(CardHeader, {
+      eyebrow: "Workspace Settings",
+      title: "Workspace Defaults",
+      description: "Company identity and safe defaults inherited by installed AI Departments. These are workspace facts, not platform template internals.",
+      action: h(AccessBadge, { value: "workspace_editable" }),
+    }),
+    h(CardContent, null,
+      status ? h("div", { className: "designer-status" }, status) : null,
+      h("form", { className: "workspace-profile-form", onSubmit: saveProfile },
+        fields.map(([key, label]) =>
+          h(Field, { key, label },
+            key === "registeredAddress" || key === "approvedEmailSignature"
+              ? h(Textarea, { rows: 3, value: profile[key] || "", onChange: event => setProfileValue(key, event.target.value) })
+              : h(Input, { value: profile[key] || "", onChange: event => setProfileValue(key, event.target.value) })
+          )
+        ),
+        h(Field, { label: "Approved brand tone", className: "wide" },
+          h(Textarea, { rows: 3, value: profile.approvedBrandTone || "", onChange: event => setProfileValue("approvedBrandTone", event.target.value) })
+        ),
+        h(Field, { label: "Approved sender identities", className: "wide" },
+          h(Textarea, { rows: 3, value: listText(profile.approvedSenderIdentities), onChange: event => setProfileValue("approvedSenderIdentities", event.target.value), placeholder: "One sender identity per line or comma-separated" })
+        ),
+        h(Field, { label: "Active connections", className: "wide" },
+          h(Textarea, { rows: 3, value: listText(profile.activeConnections), onChange: event => setProfileValue("activeConnections", event.target.value) })
+        ),
+        h(Field, { label: "Approved databases", className: "wide" },
+          h(Textarea, { rows: 3, value: listText(profile.approvedDatabases), onChange: event => setProfileValue("approvedDatabases", event.target.value) })
+        ),
+        h("div", { className: "profile-settings-actions wide" },
+          h(Button, { type: "submit" }, icon("save"), "Save workspace defaults"),
+          h("span", { className: "muted" }, "Locked platform and lane rules cannot be changed here.")
+        )
+      )
+    )
   );
 }
 

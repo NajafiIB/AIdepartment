@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import threading
 import time
 import urllib.error
@@ -22,12 +23,14 @@ BridgeCall = Callable[[str | None, dict | None, str], dict]
 DB_PATH = Path(__file__).resolve().parent / "swiss_planner_local.db"
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CAPABILITY_FABRIC_PATH = Path(__file__).resolve().parent / "capability_fabric.json"
+TEST_WORKER_SCRIPT_PATH = Path(__file__).resolve().parent / "tools" / "local_test_worker.py"
 STAFF_SKILL_DIR = Path(
     os.environ.get("SWISS_PLANNER_STAFF_SKILL_DIR", "")
     or ROOT_DIR / "skills" / "swiss-planner-staff"
 )
 LOCAL_ENV_PATH = ROOT_DIR / ".env.local"
 BACKUP_DIR = ROOT_DIR / "backups"
+LOCAL_WORKER_LOCK = threading.Lock()
 
 FABRIC_NOTE_SECTIONS = {
     "workMap": "Work Map",
@@ -49,6 +52,17 @@ TASK_CATEGORIES = {
     "research": "Research Work",
 }
 
+THREAD_REASON_LABELS = {
+    "human_message": "Human/manager conversation",
+    "approval": "Approval needed",
+    "missing_input": "Missing input",
+    "blocker": "Blocker",
+    "review": "Review",
+    "escalation": "Escalation",
+    "worker_handoff": "Worker handoff",
+    "system_audit": "System audit",
+}
+
 DEFAULT_STAFF_ALIASES = {
     "AIstaff_Manager": "Alex",
     "AIstaff_OpportunityHunter": "Ava",
@@ -67,6 +81,12 @@ FABRIC_COLLECTION_LABELS = {
     "departmentTemplates": "Department Templates",
     "workspaceOverrides": "Workspace Overrides",
     "staffProfiles": "Staff Profiles",
+    "staffArchetypes": "Predefined Staff Types",
+    "platformSafetySkills": "Platform Safety Skills",
+    "departmentSkills": "Department Skills",
+    "staffTemplateSkills": "Staff Template Skills",
+    "laneAdapterSkills": "Lane / Tool Adapter Skills",
+    "skillBindings": "Skill Bindings",
     "capabilities": "Capabilities",
     "recipes": "Playbooks",
     "lanes": "Tool Lanes",
@@ -228,6 +248,55 @@ def init_db() -> None:
               evidence_link TEXT NOT NULL DEFAULT '',
               updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS project_plans (
+              plan_id TEXT PRIMARY KEY,
+              application_id TEXT NOT NULL DEFAULT '',
+              opportunity_id TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'Active',
+              owner_staff TEXT NOT NULL DEFAULT 'AIstaff_Manager',
+              current_step_id TEXT NOT NULL DEFAULT '',
+              summary TEXT NOT NULL DEFAULT '',
+              source_payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS project_plan_steps (
+              step_id TEXT PRIMARY KEY,
+              plan_id TEXT NOT NULL,
+              sequence INTEGER NOT NULL DEFAULT 0,
+              stage TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '',
+              assigned_staff TEXT NOT NULL DEFAULT 'AIstaff_Manager',
+              status TEXT NOT NULL DEFAULT 'Queued',
+              blocker_type TEXT NOT NULL DEFAULT '',
+              source_task_id TEXT NOT NULL DEFAULT '',
+              source_thread_id TEXT NOT NULL DEFAULT '',
+              queue_id TEXT NOT NULL DEFAULT '',
+              due_at TEXT NOT NULL DEFAULT '',
+              evidence_link TEXT NOT NULL DEFAULT '',
+              notes TEXT NOT NULL DEFAULT '',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS project_step_outputs (
+              output_id TEXT PRIMARY KEY,
+              step_id TEXT NOT NULL,
+              plan_id TEXT NOT NULL,
+              application_id TEXT NOT NULL DEFAULT '',
+              output_template_id TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'Draft',
+              title TEXT NOT NULL DEFAULT '',
+              summary TEXT NOT NULL DEFAULT '',
+              content_json TEXT NOT NULL DEFAULT '{}',
+              blocker_type TEXT NOT NULL DEFAULT '',
+              evidence_link TEXT NOT NULL DEFAULT '',
+              reviewed_by TEXT NOT NULL DEFAULT '',
+              created_by TEXT NOT NULL DEFAULT 'AIstaff_Manager',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              sent_to_alex_at REAL
+            );
             CREATE TABLE IF NOT EXISTS department_versions (
               version_id TEXT PRIMARY KEY,
               object_type TEXT NOT NULL,
@@ -248,6 +317,49 @@ def init_db() -> None:
               error TEXT NOT NULL DEFAULT '',
               notes TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS sender_identities (
+              sender_id TEXT PRIMARY KEY,
+              label TEXT NOT NULL,
+              provider TEXT NOT NULL DEFAULT 'local',
+              from_email TEXT NOT NULL DEFAULT '',
+              reply_to TEXT NOT NULL DEFAULT '',
+              approval_required INTEGER NOT NULL DEFAULT 1,
+              status TEXT NOT NULL DEFAULT 'Draft',
+              metadata TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS outbound_attempts (
+              attempt_id TEXT PRIMARY KEY,
+              queue_id TEXT NOT NULL DEFAULT '',
+              provider TEXT NOT NULL DEFAULT 'local',
+              sender_id TEXT NOT NULL DEFAULT '',
+              recipient TEXT NOT NULL DEFAULT '',
+              subject TEXT NOT NULL DEFAULT '',
+              approval_state TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT '',
+              safety_json TEXT NOT NULL DEFAULT '{}',
+              provider_metadata TEXT NOT NULL DEFAULT '{}',
+              evidence_link TEXT NOT NULL DEFAULT '',
+              created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS communication_events (
+              event_id TEXT PRIMARY KEY,
+              queue_id TEXT NOT NULL DEFAULT '',
+              thread_id TEXT NOT NULL DEFAULT '',
+              direction TEXT NOT NULL DEFAULT '',
+              provider TEXT NOT NULL DEFAULT 'local',
+              sender_id TEXT NOT NULL DEFAULT '',
+              recipient TEXT NOT NULL DEFAULT '',
+              subject TEXT NOT NULL DEFAULT '',
+              event_type TEXT NOT NULL DEFAULT '',
+              approval_state TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT '',
+              body_preview TEXT NOT NULL DEFAULT '',
+              evidence_link TEXT NOT NULL DEFAULT '',
+              metadata TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS idx_task_threads_responsible
               ON task_threads (responsible, status, archived, last_message_at);
             CREATE INDEX IF NOT EXISTS idx_task_threads_task
@@ -264,16 +376,31 @@ def init_db() -> None:
               ON codex_work_items (source_task_id, thread_id);
             CREATE INDEX IF NOT EXISTS idx_task_status_overrides_updated
               ON task_status_overrides (updated_at);
+            CREATE INDEX IF NOT EXISTS idx_project_plans_application
+              ON project_plans (application_id, status, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_project_plan_steps_plan
+              ON project_plan_steps (plan_id, sequence, status);
+            CREATE INDEX IF NOT EXISTS idx_project_step_outputs_step
+              ON project_step_outputs (step_id, status, updated_at);
             CREATE INDEX IF NOT EXISTS idx_department_versions_object
               ON department_versions (object_type, object_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_backup_runs_created
               ON backup_runs (created_at);
+            CREATE INDEX IF NOT EXISTS idx_outbound_attempts_queue
+              ON outbound_attempts (queue_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_communication_events_queue
+              ON communication_events (queue_id, created_at);
             """
         )
     if not get_meta("autopilot_enabled"):
         set_meta("autopilot_enabled", "TRUE")
+    elif get_meta("autopilot_enabled", "TRUE").upper() == "FALSE" and get_meta("autopilot_explicitly_paused", "FALSE").upper() != "TRUE":
+        set_meta("autopilot_enabled", "TRUE")
     if not get_meta("autopilot_interval_seconds"):
         set_meta("autopilot_interval_seconds", "600")
+    if not get_meta("local_worker_enabled"):
+        set_meta("local_worker_enabled", "TRUE")
+    ensure_default_sender_identity()
 
 
 def set_meta(key: str, value: Any) -> None:
@@ -293,6 +420,318 @@ def get_meta(key: str, default: str = "") -> str:
     with connect() as conn:
         row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return str(row["value"]) if row else default
+
+
+def parse_json_text(raw: Any, fallback: Any) -> Any:
+    if not raw:
+        return json_clone(fallback)
+    try:
+        return json.loads(str(raw))
+    except Exception:
+        return json_clone(fallback)
+
+
+def parse_json_meta(key: str, default: Any) -> Any:
+    raw = get_meta(key, "")
+    if not raw:
+        return json_clone(default)
+    try:
+        return json.loads(raw)
+    except Exception:
+        return json_clone(default)
+
+
+def field_access_for_key(key: str, row: dict[str, Any] | None = None) -> str:
+    row = row or {}
+    if row.get("locked") or key in {"id", "schemaVersion", "architecture", "templateId", "solutionModuleId"}:
+        return "platform_locked"
+    if key in {"status", "lifecycleStatus", "source_payload", "context_json", "createdAt", "updatedAt", "lastRun", "lastError"}:
+        return "runtime_context"
+    if key in {
+        "companyDisplayName",
+        "legalCompanyName",
+        "vatOrTaxId",
+        "commercialRegistrationNumber",
+        "registeredAddress",
+        "industrySector",
+        "defaultLanguage",
+        "approvedBrandTone",
+        "defaultManagerTitle",
+        "approvedEmailSignature",
+        "approvedSenderIdentities",
+        "activeConnections",
+        "approvedDatabases",
+        "alias",
+        "avatarUrl",
+    }:
+        return "workspace_editable"
+    if row.get("workspaceEditable") is False:
+        return "platform_locked"
+    return "department_editable"
+
+
+def attach_field_access(row: dict[str, Any], object_type: str = "") -> dict[str, Any]:
+    decorated = json_clone(row or {})
+    decorated["dtoType"] = object_type or decorated.get("dtoType") or "AiCatalogObject"
+    decorated["fieldAccess"] = {key: field_access_for_key(key, decorated) for key in decorated.keys() if key != "fieldAccess"}
+    decorated["accessSummary"] = (
+        "platform_locked" if decorated.get("locked") or decorated.get("workspaceEditable") is False
+        else "workspace_editable" if decorated.get("workspaceEditable") is True
+        else "department_editable"
+    )
+    return decorated
+
+
+def workspace_profile() -> dict[str, Any]:
+    profile = default_workspace_business_profile()
+    saved = parse_json_meta("workspace_business_profile", {})
+    if isinstance(saved, dict):
+        profile.update({key: value for key, value in saved.items() if key in profile or key in {"updatedAt", "updatedBy"}})
+    return attach_field_access(profile, "WorkspaceBusinessProfile")
+
+
+WORKSPACE_PROFILE_EDITABLE_FIELDS = {
+    "companyDisplayName",
+    "legalCompanyName",
+    "vatOrTaxId",
+    "commercialRegistrationNumber",
+    "registeredAddress",
+    "industrySector",
+    "defaultLanguage",
+    "approvedBrandTone",
+    "defaultManagerTitle",
+    "approvedEmailSignature",
+    "approvedSenderIdentities",
+    "activeConnections",
+    "approvedDatabases",
+}
+
+
+def update_workspace_profile(payload: dict[str, Any]) -> dict[str, Any]:
+    current = workspace_profile()
+    profile_payload = payload.get("profile") if isinstance(payload.get("profile"), dict) else payload
+    updated = {key: current.get(key) for key in default_workspace_business_profile().keys()}
+    for key in WORKSPACE_PROFILE_EDITABLE_FIELDS:
+        if key in profile_payload:
+            value = profile_payload.get(key)
+            if key in {"approvedSenderIdentities", "activeConnections", "approvedDatabases"}:
+                if isinstance(value, str):
+                    value = [item.strip() for item in re.split(r"[\n,;]+", value) if item.strip()]
+                elif not isinstance(value, list):
+                    value = []
+            updated[key] = value
+    updated["updatedAt"] = iso_like()
+    updated["updatedBy"] = str(payload.get("updatedBy") or "Human_Iman")
+    set_meta("workspace_business_profile", updated)
+    record_department_version(
+        object_type="workspaceBusinessProfile",
+        object_id=str(updated.get("id") or "workspace_business_profile"),
+        action="Update workspace profile",
+        before_payload=current,
+        after_payload=updated,
+        created_by=updated["updatedBy"],
+        reason=str(payload.get("reason") or "Workspace defaults updated."),
+    )
+    return {"ok": True, "workspaceProfile": workspace_profile()}
+
+
+def ensure_default_sender_identity() -> None:
+    now = utc_ts()
+    profile = default_workspace_business_profile()
+    with connect() as conn:
+        existing = conn.execute("SELECT 1 FROM sender_identities LIMIT 1").fetchone()
+        if existing:
+            return
+        conn.execute(
+            """
+            INSERT INTO sender_identities (
+              sender_id, label, provider, from_email, reply_to, approval_required,
+              status, metadata, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "sender_gcc_lab_default",
+                "GCC lab approved sender",
+                "local_eml_or_smtp",
+                "",
+                "",
+                1,
+                "Draft",
+                json.dumps({"source": "local alpha", "companyDisplayName": profile.get("companyDisplayName")}),
+                now,
+                now,
+            ),
+        )
+
+
+def list_sender_identities() -> list[dict[str, Any]]:
+    init_db()
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM sender_identities ORDER BY updated_at DESC").fetchall()
+    return [
+        attach_field_access(
+            {
+                "id": row["sender_id"],
+                "label": row["label"],
+                "provider": row["provider"],
+                "fromEmail": row["from_email"],
+                "replyTo": row["reply_to"],
+                "approvalRequired": bool(row["approval_required"]),
+                "status": row["status"],
+                "metadata": parse_json_text(row["metadata"], {}),
+                "createdAt": iso_like(row["created_at"]),
+                "updatedAt": iso_like(row["updated_at"]),
+                "workspaceEditable": True,
+            },
+            "AiSenderIdentity",
+        )
+        for row in rows
+    ]
+
+
+def record_outbound_attempt(
+    queue_id: str,
+    row: dict[str, Any] | None,
+    status: str,
+    safety: dict[str, Any] | None = None,
+    evidence_link: str = "",
+    provider_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    init_db()
+    row = row or {}
+    now = utc_ts()
+    attempt_id = "attempt_" + str(uuid.uuid4())
+    provider = str((provider_metadata or {}).get("provider") or row.get("provider") or row.get("Provider") or "local_eml_or_smtp")
+    sender_id = str(row.get("senderId") or row.get("Sender ID") or "sender_gcc_lab_default")
+    recipient = str(row.get("to") or row.get("To") or row.get("recipientEmail") or "")
+    subject = str(row.get("subject") or row.get("Subject") or "")
+    approval_state = str(row.get("approvalStatus") or row.get("Approval Status") or "")
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO outbound_attempts (
+              attempt_id, queue_id, provider, sender_id, recipient, subject,
+              approval_state, status, safety_json, provider_metadata, evidence_link, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                attempt_id,
+                queue_id or "",
+                provider,
+                sender_id,
+                recipient,
+                subject,
+                approval_state,
+                status or "",
+                json.dumps(safety or {}, ensure_ascii=False, default=str),
+                json.dumps(provider_metadata or {}, ensure_ascii=False, default=str),
+                evidence_link or "",
+                now,
+            ),
+        )
+    record_communication_event(
+        queue_id=queue_id,
+        row=row,
+        event_type="outbound_attempt",
+        status=status,
+        evidence_link=evidence_link,
+        metadata={"attemptId": attempt_id, "safety": safety or {}, "providerMetadata": provider_metadata or {}},
+    )
+    return {"ok": True, "attemptId": attempt_id}
+
+
+def record_communication_event(
+    queue_id: str = "",
+    row: dict[str, Any] | None = None,
+    event_type: str = "event",
+    status: str = "",
+    direction: str = "outbound",
+    evidence_link: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    init_db()
+    row = row or {}
+    event_id = "comm_" + str(uuid.uuid4())
+    provider = str((metadata or {}).get("provider") or row.get("provider") or row.get("Provider") or "local")
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO communication_events (
+              event_id, queue_id, thread_id, direction, provider, sender_id, recipient, subject,
+              event_type, approval_state, status, body_preview, evidence_link, metadata, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                queue_id or str(row.get("queueId") or row.get("Queue ID") or ""),
+                str(row.get("threadId") or row.get("Thread ID") or ""),
+                direction,
+                provider,
+                str(row.get("senderId") or row.get("Sender ID") or "sender_gcc_lab_default"),
+                str(row.get("to") or row.get("To") or row.get("recipientEmail") or ""),
+                str(row.get("subject") or row.get("Subject") or ""),
+                event_type,
+                str(row.get("approvalStatus") or row.get("Approval Status") or ""),
+                status or "",
+                thread_preview(str(row.get("body") or row.get("Body") or row.get("emailBody") or ""), 260),
+                evidence_link or "",
+                json.dumps(metadata or {}, ensure_ascii=False, default=str),
+                utc_ts(),
+            ),
+        )
+    return {"ok": True, "eventId": event_id}
+
+
+def list_communications(limit: int = 80) -> dict[str, Any]:
+    init_db()
+    safe_limit = max(1, min(int(limit or 80), 250))
+    with connect() as conn:
+        events = conn.execute("SELECT * FROM communication_events ORDER BY created_at DESC LIMIT ?", (safe_limit,)).fetchall()
+        attempts = conn.execute("SELECT * FROM outbound_attempts ORDER BY created_at DESC LIMIT ?", (safe_limit,)).fetchall()
+    return {
+        "ok": True,
+        "senderIdentities": list_sender_identities(),
+        "events": [
+            {
+                "eventId": row["event_id"],
+                "queueId": row["queue_id"],
+                "threadId": row["thread_id"],
+                "direction": row["direction"],
+                "provider": row["provider"],
+                "senderId": row["sender_id"],
+                "recipient": row["recipient"],
+                "subject": row["subject"],
+                "eventType": row["event_type"],
+                "approvalState": row["approval_state"],
+                "status": row["status"],
+                "bodyPreview": row["body_preview"],
+                "evidenceLink": row["evidence_link"],
+                "metadata": parse_json_text(row["metadata"], {}),
+                "createdAt": iso_like(row["created_at"]),
+            }
+            for row in events
+        ],
+        "outboundAttempts": [
+            {
+                "attemptId": row["attempt_id"],
+                "queueId": row["queue_id"],
+                "provider": row["provider"],
+                "senderId": row["sender_id"],
+                "recipient": row["recipient"],
+                "subject": row["subject"],
+                "approvalState": row["approval_state"],
+                "status": row["status"],
+                "safety": parse_json_text(row["safety_json"], {}),
+                "providerMetadata": parse_json_text(row["provider_metadata"], {}),
+                "evidenceLink": row["evidence_link"],
+                "createdAt": iso_like(row["created_at"]),
+            }
+            for row in attempts
+        ],
+    }
 
 
 def set_task_status_override(task_id: str, status: str, result_notes: str = "", evidence_link: str = "") -> None:
@@ -400,7 +839,13 @@ def local_status() -> dict[str, Any]:
     with connect() as conn:
         pending = conn.execute("SELECT COUNT(*) AS c FROM pending_actions WHERE status = 'Queued'").fetchone()["c"]
         failed = conn.execute("SELECT COUNT(*) AS c FROM pending_actions WHERE status = 'Error'").fetchone()["c"]
-        snapshot = conn.execute("SELECT updated_at, source, error FROM dashboard_snapshot WHERE id = 1").fetchone()
+        snapshot = conn.execute("SELECT payload, updated_at, source, error FROM dashboard_snapshot WHERE id = 1").fetchone()
+    snapshot_payload: Dashboard | None = None
+    if snapshot:
+        try:
+            snapshot_payload = json.loads(snapshot["payload"] or "{}")
+        except Exception:
+            snapshot_payload = None
     crm_sync_enabled = normalize_text(get_meta("crm_sync_enabled", "false")) == "true"
     return {
         "mode": "local-first" if crm_sync_enabled else "local-runtime",
@@ -416,8 +861,169 @@ def local_status() -> dict[str, Any]:
         "snapshotError": snapshot["error"] if snapshot else "",
         "staffWakeups": staff_wakeup_summary(),
         "autopilot": autopilot_status(),
+        "localWorker": local_worker_status(),
+        "automationBlockers": automation_blockers(snapshot_payload),
         "documentQuality": document_quality_status(),
     }
+
+
+def local_worker_command() -> str:
+    return str(os.environ.get("AI_DEPARTMENT_WORKER_COMMAND") or get_meta("local_worker_command", "") or "").strip()
+
+
+def local_worker_recommended_command() -> str:
+    return f'python "{TEST_WORKER_SCRIPT_PATH}"'
+
+
+def local_worker_enabled() -> bool:
+    return get_meta("local_worker_enabled", "TRUE").upper() == "TRUE"
+
+
+def codex_work_counts() -> dict[str, int]:
+    init_db()
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT status, COUNT(*) AS count
+            FROM codex_work_items
+            GROUP BY status
+            """
+        ).fetchall()
+    counts = {str(row["status"] or "Unknown"): int(row["count"] or 0) for row in rows}
+    open_count = sum(count for status, count in counts.items() if status not in {"Done", "Blocked", "Cancelled"})
+    return {
+        "open": open_count,
+        "queued": counts.get("Queued", 0),
+        "ready": counts.get("Ready", 0),
+        "inProgress": counts.get("In Progress", 0),
+        "blocked": counts.get("Blocked", 0),
+        "done": counts.get("Done", 0),
+    }
+
+
+def local_worker_status() -> dict[str, Any]:
+    command = local_worker_command()
+    with connect() as conn:
+        running = conn.execute(
+            """
+            SELECT * FROM codex_work_items
+            WHERE status = 'In Progress'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    return {
+        "enabled": local_worker_enabled(),
+        "commandConfigured": bool(command),
+        "command": command,
+        "recommendedCommand": local_worker_recommended_command(),
+        "setupGuidance": (
+            "Set AI_DEPARTMENT_WORKER_COMMAND to the recommended command for the bundled local test worker, "
+            "or replace it with an enterprise/Codex/OpenAI worker command that accepts one work item JSON on stdin."
+        ),
+        "workerContract": {
+            "stdin": "one codex work item as JSON",
+            "stdout": {"status": "Done | Blocked | Ready", "resultSummary": "string", "evidenceLink": "string", "lastError": "string"},
+            "safety": "Worker output must not send email, submit tenders, or perform external side effects.",
+        },
+        "currentlyRunningItem": row_to_codex_work_item(running) if running else None,
+        "counts": codex_work_counts(),
+        "lastRun": parse_json_meta("local_worker_last_run", {}),
+        "lastError": get_meta("local_worker_last_error", ""),
+    }
+
+
+def set_local_worker_enabled(enabled: bool) -> dict[str, Any]:
+    set_meta("local_worker_enabled", "TRUE" if enabled else "FALSE")
+    record_worker_run("Local Worker", "Enabled" if enabled else "Paused", "Local worker setting changed.", "")
+    return local_worker_status()
+
+
+def set_local_worker_command(command: str) -> dict[str, Any]:
+    command = str(command or "").strip()
+    set_meta("local_worker_command", command)
+    set_meta("local_worker_last_error", "" if command else "Worker command not configured.")
+    record_worker_run("Local Worker", "Configured" if command else "Unconfigured", "Local worker command updated.", "")
+    return local_worker_status()
+
+
+def short_blocker_row(row: dict[str, Any], kind: str = "task") -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "taskId": row.get("taskId") or row.get("Task ID") or "",
+        "queueId": row.get("queueId") or row.get("Queue ID") or row.get("sourceQueueId") or "",
+        "applicationId": row.get("applicationId") or row.get("Application ID") or "",
+        "assignedTo": row.get("assignedTo") or row.get("Assigned To") or "",
+        "status": row.get("status") or row.get("sendStatus") or row.get("approvalStatus") or "",
+        "title": row.get("taskType") or row.get("recipientName") or row.get("subject") or "",
+        "nextAction": row.get("nextAction") or row.get("lastError") or row.get("resultNotes") or row.get("subject") or "",
+    }
+
+
+def automation_blockers(snapshot: Dashboard | None = None) -> dict[str, Any]:
+    snapshot = snapshot or {}
+    manager = snapshot.get("managerReview") or {}
+    tasks = [row for row in (snapshot.get("tasks") or []) if isinstance(row, dict)]
+    manager_tasks = [row for row in (manager.get("tasks") or []) if isinstance(row, dict)]
+    email_rows = flatten_email_queue(snapshot.get("emailQueue") or manager.get("queue") or {})
+    human: list[dict[str, Any]] = []
+    missing_files: list[dict[str, Any]] = []
+    email_approval: list[dict[str, Any]] = []
+    codex_items = list_codex_work_items("open", limit=50).get("workItems", [])
+    for row in manager_tasks + tasks:
+        text = normalize_text(
+            compact_join(
+                [
+                    row.get("status"),
+                    row.get("taskType"),
+                    row.get("taskCategory"),
+                    row.get("nextAction"),
+                    row.get("lastError"),
+                    row.get("resultNotes"),
+                ]
+            )
+        )
+        if task_is_terminal(row):
+            continue
+        if "missing" in text and ("file" in text or "pdf" in text or "appendix" in text or "scope" in text):
+            missing_files.append(short_blocker_row(row, "missing_files"))
+        if is_human_responsible(row.get("assignedTo")) or normalize_text(row.get("taskCategory")) == "human decision":
+            human.append(short_blocker_row(row, "human_approval"))
+    for row in email_rows:
+        text = normalize_text(compact_join([row.get("sendStatus"), row.get("approvalStatus"), row.get("lastError")]))
+        if "needs approval" in text or "not approved" in text or "blocked" in text:
+            email_approval.append(short_blocker_row(row, "email_approval"))
+    fabric_errors = (load_capability_fabric().get("errors") or [])[:25]
+    def dedupe(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen: set[str] = set()
+        unique: list[dict[str, Any]] = []
+        for row in rows:
+            key = str(row.get("taskId") or row.get("queueId") or row.get("workItemId") or row.get("nextAction") or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(row)
+        return unique
+
+    groups = {
+        "humanApproval": dedupe(human)[:25],
+        "missingFiles": dedupe(missing_files)[:25],
+        "externalEmailApproval": dedupe(email_approval)[:25],
+        "codexWorker": [
+            {
+                "workItemId": item.get("workItemId"),
+                "sourceTaskId": item.get("sourceTaskId"),
+                "assignedStaff": item.get("assignedStaff"),
+                "status": item.get("status"),
+                "title": item.get("title"),
+                "lastError": item.get("lastError"),
+            }
+            for item in codex_items
+        ][:25],
+        "fabricErrors": [{"message": error} for error in fabric_errors],
+    }
+    counts = {key: len(value) for key, value in groups.items()}
+    return {"counts": counts, "groups": groups}
 
 
 def local_day_key() -> str:
@@ -479,6 +1085,7 @@ def autopilot_config() -> dict[str, Any]:
 
 def set_autopilot_enabled(enabled: bool) -> dict[str, Any]:
     set_meta("autopilot_enabled", "TRUE" if enabled else "FALSE")
+    set_meta("autopilot_explicitly_paused", "FALSE" if enabled else "TRUE")
     status = autopilot_status()
     record_worker_run("Control", "Enabled" if enabled else "Paused", "Autopilot setting changed.", "")
     return status
@@ -558,6 +1165,11 @@ def default_staff_profiles() -> list[dict[str, Any]]:
             "role": "Human Manager",
             "managerId": "",
             "contactPolicy": "Human gives instructions only to AI Manager.",
+            "communicationScope": "human_to_manager",
+            "canContactHuman": True,
+            "canCreateHumanFacingThreads": True,
+            "reportsTo": "",
+            "visibilityMode": "ownedDepartment",
             "avatarKind": "human-owner",
             "workspaceEditable": False,
             "locked": True,
@@ -570,7 +1182,12 @@ def default_staff_profiles() -> list[dict[str, Any]]:
             "role": "Department Manager",
             "managerId": "Human_Iman",
             "intelligenceLevel": levels["AIstaff_Manager"],
-            "contactPolicy": "Only AI Manager communicates directly with the human manager.",
+            "contactPolicy": "Only AI Manager communicates directly with the human manager and routes specialist work underneath the department.",
+            "communicationScope": "manager_human_and_staff",
+            "canContactHuman": True,
+            "canCreateHumanFacingThreads": True,
+            "reportsTo": "Human_Iman",
+            "visibilityMode": "ownedDepartment",
             "avatarKind": "human-ai",
             "workspaceEditable": True,
             "locked": False,
@@ -589,12 +1206,611 @@ def default_staff_profiles() -> list[dict[str, Any]]:
                 "managerId": "AIstaff_Manager",
                 "intelligenceLevel": levels.get(staff_id, "Senior"),
                 "contactPolicy": "Specialist staff communicate with AI Manager; Manager decides whether Human is needed.",
+                "communicationScope": "staff_to_manager_only",
+                "canContactHuman": False,
+                "canCreateHumanFacingThreads": False,
+                "reportsTo": "AIstaff_Manager",
+                "visibilityMode": "ownedDepartment",
                 "avatarKind": "abstract-ai",
                 "workspaceEditable": True,
                 "locked": False,
             }
         )
     return rows
+
+
+def default_staff_archetypes() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "archetype_manager_orchestrator",
+            "label": "Manager / Orchestrator",
+            "purpose": "Receive human intent, select the right specialist, create or route tasks, and keep the department moving without bypassing safety gates.",
+            "preferredModel": "fast reasoning model for routing; higher reasoning only for complex strategy",
+            "allowedPluginFamilies": ["local_tasks", "crm_read", "reporting", "codex_worker_queue"],
+            "requiresApprovalFor": ["external_email", "portal_submission", "deleting_records", "applying_learning", "closing_incomplete_leads"],
+            "outputContract": ["decision", "next_owner", "task_or_thread_update", "blocker_if_any"],
+            "stopConditions": ["missing human policy", "destructive action", "external communication", "credentials or billing change"],
+            "workspaceEditable": True,
+        },
+        {
+            "id": "archetype_thinking_analyst",
+            "label": "Thinking / Analysis Model",
+            "purpose": "Read evidence, reason over fit and risk, produce structured recommendations, and cite sources before routing downstream.",
+            "preferredModel": "reasoning model with medium effort",
+            "allowedPluginFamilies": ["crm_read", "files_read", "official_web_sources", "local_tasks"],
+            "requiresApprovalFor": ["external_email", "crm_write_except_task_notes", "final_bid_no_bid_decision"],
+            "outputContract": ["finding_summary", "evidence_links", "confidence", "recommended_next_action"],
+            "stopConditions": ["missing tender files", "unverified source", "low confidence", "human bid/no-bid decision needed"],
+            "workspaceEditable": True,
+        },
+        {
+            "id": "archetype_email_sender",
+            "label": "Email Sender / Outreach Operator",
+            "purpose": "Prepare, safety-check, queue, and process approved outbound emails through configured mail plugins or local SMTP draft mode.",
+            "preferredModel": "low-cost model for safety checks; no creative rewriting after approval without review",
+            "allowedPluginFamilies": ["email_queue", "gmail_or_outlook", "smtp_draft", "attachment_verification", "local_tasks"],
+            "requiresApprovalFor": ["first_contact_email", "supplier_quote_request", "resending_to_duplicate_recipient", "attachments_to_external_party"],
+            "outputContract": ["recipient", "subject", "approval_status", "safety_status", "send_or_draft_result"],
+            "stopConditions": ["approval missing", "unsafe wording", "missing attachments", "duplicate recipient unresolved"],
+            "workspaceEditable": True,
+        },
+        {
+            "id": "archetype_document_maker",
+            "label": "Document / Package Maker",
+            "purpose": "Create structured document packages from approved templates, evidence, and task requirements.",
+            "preferredModel": "higher reasoning/writing model for final packages",
+            "allowedPluginFamilies": ["documents", "files_read", "local_packages", "crm_read", "local_tasks"],
+            "requiresApprovalFor": ["external_send", "final_submission", "template_policy_change"],
+            "outputContract": ["package_path", "content_summary", "missing_inputs", "style_qa_status"],
+            "stopConditions": ["missing source files", "template unavailable", "style QA failed", "commercial data missing"],
+            "workspaceEditable": True,
+        },
+        {
+            "id": "archetype_report_maker",
+            "label": "Report Maker",
+            "purpose": "Summarize department health, KPIs, blockers, staff workload, and next actions for human review.",
+            "preferredModel": "fast summarization model with deterministic structure",
+            "allowedPluginFamilies": ["local_dashboard", "crm_read", "spreadsheets", "documents", "charts"],
+            "requiresApprovalFor": ["publishing_report_external", "changing_kpi_targets", "closing_blockers"],
+            "outputContract": ["executive_summary", "kpis", "blockers", "next_actions"],
+            "stopConditions": ["data unavailable", "conflicting counts", "missing reporting period"],
+            "workspaceEditable": True,
+        },
+        {
+            "id": "archetype_crm_operator",
+            "label": "CRM / Data Operator",
+            "purpose": "Read and update CRM/local records according to schema-aware rules and preserve an event trail.",
+            "preferredModel": "low-cost deterministic model for schema routing and validation",
+            "allowedPluginFamilies": ["appsheet_crm", "local_sqlite", "spreadsheets", "task_threads"],
+            "requiresApprovalFor": ["deleting_records", "bulk_updates", "status_to_submitted_or_won", "schema_change"],
+            "outputContract": ["record_id", "table", "field_changes", "event_log"],
+            "stopConditions": ["unknown table", "missing required key", "ambiguous record match", "write permission missing"],
+            "workspaceEditable": True,
+        },
+        {
+            "id": "archetype_file_qa",
+            "label": "File / Upload QA",
+            "purpose": "Check uploaded files, tender PDFs, screenshots, imports, and mapping evidence before other staff rely on them.",
+            "preferredModel": "vision/document-capable model when files are visual or scanned",
+            "allowedPluginFamilies": ["files_read", "documents", "spreadsheets", "ocr_or_pdf_tools", "local_tasks"],
+            "requiresApprovalFor": ["discarding_files", "accepting_uncertain_mapping", "external_file_sharing"],
+            "outputContract": ["accepted_files", "rejected_files", "data_shape", "mapping_assumptions", "blockers"],
+            "stopConditions": ["corrupt file", "unreadable scan", "missing source file", "mapping cannot be verified"],
+            "workspaceEditable": True,
+        },
+    ]
+
+
+def default_platform_operating_model() -> dict[str, Any]:
+    return {
+        "id": "platform_ai_department_operating_model_v1",
+        "label": "Reusable Supervised AI Department Operating Model",
+        "terminologyAliases": {
+            "Musahama": "platform",
+            "Solution": "AI Department",
+            "Project": "Department case",
+            "Task Thread": "Human / AI Manager work record",
+        },
+        "departmentContract": {
+            "goal": (
+                "Each solution becomes a reusable supervised AI Department with an AI Manager, specialist AI Staff, "
+                "project plans, quality gates, outputs, connections, databases, and reusable templates."
+            ),
+            "humanCommunicationRule": "The human talks to the AI Manager. Specialist AI Staff work underneath the Manager.",
+            "staffCommunicationRule": "Specialist AI Staff report to the AI Manager and do not ask the human directly unless the Manager routes the request.",
+            "managerRole": "Interpret human intent, route specialist work, consolidate results, and escalate only real decisions or blockers.",
+            "safetyBoundary": "External supplier emails, tender submissions, learning updates, destructive CRM changes, and incomplete-case closures remain supervised.",
+        },
+        "threadPolicy": {
+            "createThreadsFor": ["human_message", "approval", "missing_input", "blocker", "review", "escalation", "worker_handoff", "system_audit"],
+            "doNotCreateThreadsFor": ["casual_internal_progress", "duplicate_status_noise", "routine_completed_work_without_decision"],
+            "closedThreadLearning": "Closed threads may create skill-update candidates, but applying learnings requires human approval.",
+        },
+        "skillArchitecture": {
+            "model": "Scoped skills with explicit bindings, not one giant skill table.",
+            "resolutionOrder": [
+                "platformSafetySkills",
+                "departmentSkills",
+                "staffTemplateSkills",
+                "laneAdapterSkills",
+                "projectContext",
+                "userPreferences",
+                "approvedLearnedUpdates",
+            ],
+            "overrideRule": "User-editable preferences and learned updates must never override locked platform safety, department policy, or lane/tool execution rules.",
+            "controlSplit": {
+                "platformAdmin": ["department blueprints", "staff templates", "lane/tool adapters", "workflow templates", "locked safety skills", "locked lane execution skills"],
+                "workspaceSettings": ["company identity", "business registration", "tax/VAT IDs", "approved sender identities", "brand tone", "active integrations", "approved databases"],
+                "departmentExplorer": ["installed department preferences", "manager aliases", "staff aliases", "vocabulary", "escalation contacts", "allowed quality-gate thresholds"],
+                "projectWorkspace": ["plans", "tasks", "threads", "approvals", "outputs", "evidence"],
+            },
+        },
+        "automationRuntimeArchitecture": {
+            "currentApproach": "Use the platform database, explicit queue/state tables, cron triggers, and the internal runner before adding an external workflow engine.",
+            "persistentState": [
+                "department project plans",
+                "project plan steps",
+                "task threads",
+                "thread messages",
+                "task assignments",
+                "skill-update candidates",
+                "worker runs",
+                "codex work items",
+            ],
+            "runnerResponsibilities": [
+                "pick queued work",
+                "record run status",
+                "record current step and progress",
+                "persist result summary",
+                "persist last error",
+                "retry recoverable failures",
+                "stop at approval, missing input, or safety gates",
+            ],
+            "projectSchedulerPolicy": {
+                "goal": "Every AI Department project should have durable scheduler state and a plan whose steps are owned by the AI Manager or specialist AI Staff.",
+                "stepStates": ["Queued", "Ready", "In Progress", "Blocked", "Needs Approval", "Done", "Failed Requires Attention"],
+                "ownerRule": "Plan steps are assigned to AI Manager or specialist AI Staff; human-facing work is routed through Manager threads.",
+                "progressRule": "Async work must write partial progress so operators can replay, triage, or resume without trusting in-process memory.",
+            },
+            "retryPolicy": {
+                "maxAttempts": 3,
+                "afterExhaustion": "failed_requires_attention",
+                "operatorExpectation": "Failures should leave enough state, last error, and next action for support triage.",
+            },
+            "externalWorkflowEnginePolicy": {
+                "triggerDevDecision": "Do not add Trigger.dev in v1.",
+                "reason": "The current database plus cron/internal-runner approach is enough while the product model still needs stronger plan, state, approval, visibility, and escalation discipline.",
+                "reconsiderWhen": [
+                    "step-level durable execution is needed across many autonomous jobs",
+                    "long-running workflows need built-in heartbeats or cancellation",
+                    "concurrency control is difficult to maintain locally",
+                    "workflow replay UI becomes a product/support requirement",
+                    "distributed locks are needed across multiple runners",
+                    "deep observability is required across many departments",
+                ],
+            },
+        },
+        "visibilityModes": {
+            "ownedDepartment": {
+                "label": "AI Departments I Own",
+                "visible": ["overview", "projects", "AI Manager", "AI Staff", "skills", "connections", "databases", "quality gates", "outputs", "settings"],
+                "hidden": ["provider secrets", "raw operation keys"],
+            },
+            "sponsoredAssignment": {
+                "label": "Sponsored Work Assigned To Me",
+                "visible": ["sponsor", "assignment", "next task", "project thread", "uploads", "confirmations", "approvals", "outputs"],
+                "hidden": ["internal recipes", "lanes", "provider routing", "scoring internals", "staff implementation details"],
+            },
+        },
+        "templateFamilies": [
+            "Department Templates",
+            "Staff Models",
+            "Skill Packs",
+            "Toolsets",
+            "Workflow Plans",
+        ],
+        "supportInventoryPattern": {
+            "columns": ["Must Have", "Nice To Have"],
+            "groups": ["Connections", "Databases"],
+            "defaultRowFields": ["status", "name", "reason", "action"],
+        },
+        "internalPlatformTeam": [
+            {
+                "id": "platform_designer_agent",
+                "label": "Designer Agent",
+                "purpose": "Turn UI requests into approved patterns and acceptance checks before implementation.",
+                "laneRule": "Design review happens before code edits for UI changes.",
+            },
+            {
+                "id": "platform_upload_qa_agent",
+                "label": "Upload QA Agent",
+                "purpose": "Check screenshots, document references, imports, and mapping evidence before implementation relies on them.",
+                "laneRule": "Upload evidence is verified before downstream implementation.",
+            },
+            {
+                "id": "platform_codex_developer",
+                "label": "Codex Developer",
+                "purpose": "Own code edits, validation, PR body, versioning, and final handoff.",
+                "laneRule": "One actor owns one code branch or implementation lane at a time.",
+            },
+            {
+                "id": "platform_deployment_watcher",
+                "label": "Deployment Watcher",
+                "purpose": "Verify merged changes are actually live in the deployed runtime.",
+                "laneRule": "Deployment verification is separate from implementation.",
+            },
+            {
+                "id": "platform_ux_auditor",
+                "label": "M3 UX Auditor",
+                "purpose": "Check Material 3, house style, and page-pattern drift.",
+                "laneRule": "UX drift is reported as review evidence, not hidden inside implementation notes.",
+            },
+            {
+                "id": "platform_review_resolver",
+                "label": "Review Resolver",
+                "purpose": "Check unresolved AI and human PR comments and route fixes.",
+                "laneRule": "Review comments are resolved before final handoff.",
+            },
+        ],
+        "workspaceEditable": False,
+    }
+
+
+def default_scoped_skill_catalogs() -> dict[str, list[dict[str, Any]]]:
+    platform_safety = [
+        {
+            "id": "platform_safety_supervised_external_actions",
+            "label": "Supervised External Actions",
+            "scope": "platformSafety",
+            "summary": "External communication, tender submission, destructive data changes, and learning application require approved gates.",
+            "rules": [
+                "Do not send external supplier/client emails without approval.",
+                "Do not submit tender portals automatically.",
+                "Do not delete CRM rows or files as normal staff work.",
+                "Do not apply learned behavior updates without human approval.",
+            ],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "platform_safety_manager_human_gate",
+            "label": "Manager First Human Contact",
+            "scope": "platformSafety",
+            "summary": "Specialist AI Staff report to the AI Manager; only the Manager asks the human directly.",
+            "rules": [
+                "Human-facing requests go through AIstaff_Manager.",
+                "Specialist staff report blockers/questions to AIstaff_Manager.",
+                "Create human-facing threads only for decisions, blockers, approvals, missing inputs, review, or escalation.",
+            ],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "platform_safety_no_backend_disclosure",
+            "label": "No Backend/System Detail Disclosure",
+            "scope": "platformSafety",
+            "summary": "Keep provider keys, backend routing, raw operation keys, and protected system prompts out of user-facing workspace views.",
+            "rules": [
+                "Do not expose provider keys or raw operation IDs in normal workspace views.",
+                "Do not show sponsored participants recipes, lanes, scoring internals, or staff implementation details.",
+            ],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+    ]
+    department_skills = [
+        {
+            "id": "dept_skill_gcc_lab_tone_vocabulary",
+            "label": "GCC Lab Tone And Vocabulary",
+            "scope": "department",
+            "summary": "Use GCC lab tender vocabulary, concise business tone, and approved manager/sponsor naming.",
+            "rules": [
+                "Use tender Lead, tender case, supplier, quotation, package, and submission vocabulary.",
+                "Write concise business updates with exact blocker, next owner, and next action.",
+                "Accept English/Persian mixed instructions from Iman.",
+            ],
+            "ownerLayer": "departmentExplorer",
+            "locked": False,
+            "workspaceEditable": True,
+        },
+        {
+            "id": "dept_skill_gcc_lab_approval_policy",
+            "label": "GCC Lab Approval Policy",
+            "scope": "department",
+            "summary": "Department-level approval and visibility policy inherited by every staff member.",
+            "rules": [
+                "All supplier outreach remains approval-gated.",
+                "Incomplete Leads are not closed automatically unless Iman approves an auto-close policy.",
+                "Human-facing questions are phrased as operational choices for Alex to route.",
+            ],
+            "ownerLayer": "departmentExplorer",
+            "locked": False,
+            "workspaceEditable": True,
+        },
+        {
+            "id": "dept_skill_owner_sponsor_visibility",
+            "label": "Owner / Sponsored Visibility",
+            "scope": "department",
+            "summary": "Owners inspect department structure; sponsored participants see assigned work only.",
+            "rules": [
+                "Owners/admins can inspect staff, skills, connections, databases, quality gates, and outputs.",
+                "Sponsored participants see tasks, uploads, confirmations, approvals, and accepted outputs only.",
+            ],
+            "ownerLayer": "departmentExplorer",
+            "locked": False,
+            "workspaceEditable": True,
+        },
+    ]
+    staff_template_skills = [
+        {
+            "id": "staff_skill_manager_orchestrator",
+            "label": "Manager Orchestrator Skill",
+            "scope": "staffTemplate",
+            "archetypeId": "archetype_manager_orchestrator",
+            "summary": "Interpret human intent, route specialist work, consolidate results, and escalate only real decisions.",
+            "rules": ["Choose the next specialist.", "Keep Iman informed through task threads.", "Do not bypass safety gates."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "staff_skill_thinking_analyst",
+            "label": "Thinking Analyst Skill",
+            "scope": "staffTemplate",
+            "archetypeId": "archetype_thinking_analyst",
+            "summary": "Read evidence, reason over fit/risk, and produce structured recommendations with sources.",
+            "rules": ["Cite evidence.", "Separate facts from assumptions.", "Escalate low-confidence decisions to Manager."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "staff_skill_outreach_operator",
+            "label": "Outreach Operator Skill",
+            "scope": "staffTemplate",
+            "archetypeId": "archetype_email_sender",
+            "summary": "Prepare professional business outreach, summarize replies, and keep send actions approval-gated.",
+            "rules": ["Draft concise supplier messages.", "Detect objections or sensitive claims.", "Ask Manager before sending or changing approved text."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "staff_skill_document_maker",
+            "label": "Document Maker Skill",
+            "scope": "staffTemplate",
+            "archetypeId": "archetype_document_maker",
+            "summary": "Create tender packages from templates, evidence, compliance requirements, and approved inputs.",
+            "rules": ["Use approved templates.", "List missing inputs.", "Keep package QA explicit before external send."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "staff_skill_report_maker",
+            "label": "Report Maker Skill",
+            "scope": "staffTemplate",
+            "archetypeId": "archetype_report_maker",
+            "summary": "Summarize department health, KPIs, blockers, workload, and next actions.",
+            "rules": ["Lead with blockers.", "Show next action and owner.", "Avoid hiding failed or waiting work."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "staff_skill_crm_operator",
+            "label": "CRM Operator Skill",
+            "scope": "staffTemplate",
+            "archetypeId": "archetype_crm_operator",
+            "summary": "Use schema-aware CRM/local data operations with event trails and guarded writes.",
+            "rules": ["Validate table names and keys.", "Avoid ambiguous writes.", "Leave event-log evidence."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "staff_skill_file_qa",
+            "label": "File QA Skill",
+            "scope": "staffTemplate",
+            "archetypeId": "archetype_file_qa",
+            "summary": "Validate tender files, uploads, screenshots, imports, and mapping evidence before downstream work uses them.",
+            "rules": ["Reject corrupt or unreadable files.", "Record mapping assumptions.", "Escalate missing files to Manager."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+    ]
+    lane_adapter_skills = [
+        {
+            "id": "lane_skill_email_queue_safety",
+            "label": "Email Queue Safety Lane",
+            "scope": "laneAdapter",
+            "laneId": "lane_gmail_bridge",
+            "summary": "Queue, preflight, and process approved outreach without bypassing content/attachment/duplicate checks.",
+            "rules": ["Draft before send when approval is required.", "Verify attachments.", "Log queue row and result."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "lane_skill_gmail_adapter",
+            "label": "Gmail Adapter Skill",
+            "scope": "laneAdapter",
+            "laneId": "lane_gmail_adapter",
+            "summary": "Gmail-specific execution rules for drafts/sends, thread IDs, message IDs, and errors.",
+            "rules": ["Preserve Gmail thread ID.", "Log sent message ID.", "Handle Gmail API/MCP errors without retry storms."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "lane_skill_outlook_adapter",
+            "label": "Outlook Adapter Skill",
+            "scope": "laneAdapter",
+            "laneId": "lane_outlook_adapter",
+            "summary": "Outlook/Microsoft Graph-specific rules for conversation IDs, attachments, sent item IDs, and errors.",
+            "rules": ["Preserve Outlook conversation ID.", "Verify attachments before send.", "Log sent item ID."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "lane_skill_local_crm_adapter",
+            "label": "Local CRM Adapter Skill",
+            "scope": "laneAdapter",
+            "laneId": "lane_local_thread_tasks",
+            "summary": "Local task/thread/SQLite execution rules before optional CRM sync.",
+            "rules": ["Persist task/thread state locally.", "Queue CRM sync actions instead of blocking local work.", "Keep last error and evidence link."],
+            "ownerLayer": "platformAdmin",
+            "locked": True,
+            "workspaceEditable": False,
+        },
+    ]
+    skill_bindings = [
+        {
+            "id": "binding_platform_safety_global",
+            "bindingType": "global",
+            "targetId": "*",
+            "skillScope": "platformSafetySkills",
+            "skillIds": [row["id"] for row in platform_safety],
+            "resolutionOrder": 1,
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "binding_department_gcc_lab",
+            "bindingType": "department",
+            "targetId": "department_swiss_planner_applications",
+            "skillScope": "departmentSkills",
+            "skillIds": [row["id"] for row in department_skills],
+            "resolutionOrder": 2,
+            "locked": False,
+            "workspaceEditable": True,
+        },
+        {
+            "id": "binding_archetype_manager",
+            "bindingType": "staffArchetype",
+            "targetId": "archetype_manager_orchestrator",
+            "skillScope": "staffTemplateSkills",
+            "skillIds": ["staff_skill_manager_orchestrator", "staff_skill_report_maker"],
+            "resolutionOrder": 3,
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "binding_archetype_thinking",
+            "bindingType": "staffArchetype",
+            "targetId": "archetype_thinking_analyst",
+            "skillScope": "staffTemplateSkills",
+            "skillIds": ["staff_skill_thinking_analyst"],
+            "resolutionOrder": 3,
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "binding_archetype_outreach",
+            "bindingType": "staffArchetype",
+            "targetId": "archetype_email_sender",
+            "skillScope": "staffTemplateSkills",
+            "skillIds": ["staff_skill_outreach_operator"],
+            "resolutionOrder": 3,
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "binding_archetype_document",
+            "bindingType": "staffArchetype",
+            "targetId": "archetype_document_maker",
+            "skillScope": "staffTemplateSkills",
+            "skillIds": ["staff_skill_document_maker"],
+            "resolutionOrder": 3,
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "binding_archetype_crm",
+            "bindingType": "staffArchetype",
+            "targetId": "archetype_crm_operator",
+            "skillScope": "staffTemplateSkills",
+            "skillIds": ["staff_skill_crm_operator"],
+            "resolutionOrder": 3,
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "binding_archetype_file_qa",
+            "bindingType": "staffArchetype",
+            "targetId": "archetype_file_qa",
+            "skillScope": "staffTemplateSkills",
+            "skillIds": ["staff_skill_file_qa"],
+            "resolutionOrder": 3,
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "binding_email_lane_adapter",
+            "bindingType": "lane",
+            "targetId": "lane_gmail_bridge",
+            "skillScope": "laneAdapterSkills",
+            "skillIds": ["lane_skill_email_queue_safety", "lane_skill_gmail_adapter", "lane_skill_outlook_adapter"],
+            "resolutionOrder": 4,
+            "locked": True,
+            "workspaceEditable": False,
+        },
+        {
+            "id": "binding_local_thread_lane_adapter",
+            "bindingType": "lane",
+            "targetId": "lane_local_thread_tasks",
+            "skillScope": "laneAdapterSkills",
+            "skillIds": ["lane_skill_local_crm_adapter"],
+            "resolutionOrder": 4,
+            "locked": True,
+            "workspaceEditable": False,
+        },
+    ]
+    return {
+        "platformSafetySkills": platform_safety,
+        "departmentSkills": department_skills,
+        "staffTemplateSkills": staff_template_skills,
+        "laneAdapterSkills": lane_adapter_skills,
+        "skillBindings": skill_bindings,
+    }
+
+
+def default_workspace_business_profile() -> dict[str, Any]:
+    return {
+        "id": "workspace_business_profile_gcc_lab",
+        "workspaceId": "workspace_iman_swiss_planner",
+        "companyDisplayName": "GCC lab",
+        "legalCompanyName": "",
+        "vatOrTaxId": "",
+        "commercialRegistrationNumber": "",
+        "registeredAddress": "",
+        "industrySector": "Testing, calibration, inspection, and tender services",
+        "defaultLanguage": "English/Persian mixed accepted",
+        "approvedBrandTone": "Concise, professional, evidence-based business communication",
+        "defaultManagerTitle": "Iman / Human Manager",
+        "approvedEmailSignature": "",
+        "approvedSenderIdentities": [],
+        "activeConnections": ["local_runtime", "local_sqlite", "email_queue"],
+        "approvedDatabases": ["Lead", "Companies", "Contacts", "Tasks List", "LeadMatchedSuppliers", "Files Manager", "Docs"],
+        "workspaceEditable": True,
+    }
+
+
+STAFF_ARCHETYPE_DEFAULTS = {
+    "AIstaff_Manager": ["archetype_manager_orchestrator", "archetype_report_maker"],
+    "AIstaff_OpportunityHunter": ["archetype_thinking_analyst", "archetype_file_qa"],
+    "AIstaff_FitAnalyst": ["archetype_thinking_analyst", "archetype_crm_operator"],
+    "AIstaff_ProfessorResearchAnalyst": ["archetype_thinking_analyst"],
+    "AIstaff_ApplicationPackMaker": ["archetype_document_maker", "archetype_file_qa"],
+    "AIstaff_ApplicationPackSender": ["archetype_email_sender"],
+    "AIstaff_FollowUpController": ["archetype_email_sender", "archetype_report_maker"],
+    "AIstaff_CRMController": ["archetype_crm_operator", "archetype_report_maker"],
+}
 
 
 def default_output_templates() -> list[dict[str, Any]]:
@@ -695,6 +1911,7 @@ def default_kpis() -> list[dict[str, Any]]:
 
 
 def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, list[dict[str, Any]] | dict[str, Any]]:
+    scoped_skills = default_scoped_skill_catalogs()
     return {
         "workspaces": [
             {
@@ -712,6 +1929,9 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
                 "label": "GCC lab AI department",
                 "workspaceId": "workspace_iman_swiss_planner",
                 "templateId": "template_swiss_planner_application_department",
+                "ownershipMode": "ownedDepartment",
+                "humanFacingSurface": "AI Manager project threads",
+                "sponsoredParticipantsSee": ["tasks", "uploads", "confirmations", "approvals", "outputs"],
                 "humanManager": "Human_Iman",
                 "aiManager": "AIstaff_Manager",
                 "status": "Active",
@@ -724,8 +1944,12 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
                 "label": "GCC lab AI department",
                 "purpose": "Review tender Leads, read documents, match suppliers or partners, request quotations, prepare tender packages, and follow up.",
                 "solutionModuleId": "solution_swiss_planner_apply_department",
+                "ownershipModes": ["ownedDepartment", "sponsoredAssignment"],
+                "projectTypes": ["Tender Lead", "Supplier Quote Request", "Tender Package", "Missing File Review"],
+                "communicationModel": "Human talks to AI Manager; specialist AI Staff report through AI Manager.",
                 "capabilities": [row.get("id") for row in fabric.get("capabilities", []) or [] if isinstance(row, dict)],
                 "staffProfiles": [row.get("id") for row in default_staff_profiles()],
+                "templateFamilies": ["Department Templates", "Staff Models", "Skill Packs", "Toolsets", "Workflow Plans"],
                 "status": "Active",
                 "locked": True,
                 "workspaceEditable": False,
@@ -735,8 +1959,12 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
                 "label": "Sample Sales Research Department",
                 "purpose": "Sample reusable department template proving the platform is not tied to one department.",
                 "solutionModuleId": "solution_sample_sales_research_department",
+                "ownershipModes": ["ownedDepartment", "sponsoredAssignment"],
+                "projectTypes": ["Lead Discovery", "Fit Review", "CRM Follow-up"],
+                "communicationModel": "Human talks to AI Manager; specialist AI Staff report through AI Manager.",
                 "capabilities": ["opportunity_discovery", "fit_assessment", "workflow_automation"],
                 "staffProfiles": ["Human_Iman", "AIstaff_Manager", "AIstaff_OpportunityHunter", "AIstaff_FitAnalyst", "AIstaff_CRMController"],
+                "templateFamilies": ["Department Templates", "Staff Models", "Skill Packs", "Toolsets", "Workflow Plans"],
                 "status": "Sample",
                 "locked": False,
                 "workspaceEditable": True,
@@ -754,7 +1982,15 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
                 "workspaceEditable": True,
             }
         ],
+        "staffArchetypes": default_staff_archetypes(),
         "staffProfiles": default_staff_profiles(),
+        "platformSafetySkills": scoped_skills["platformSafetySkills"],
+        "departmentSkills": scoped_skills["departmentSkills"],
+        "staffTemplateSkills": scoped_skills["staffTemplateSkills"],
+        "laneAdapterSkills": scoped_skills["laneAdapterSkills"],
+        "skillBindings": scoped_skills["skillBindings"],
+        "operatingModel": default_platform_operating_model(),
+        "workspaceBusinessProfile": default_workspace_business_profile(),
         "outputTemplates": default_output_templates(),
         "kpis": default_kpis(),
         "reportDefinitions": default_report_definitions(),
@@ -784,6 +2020,39 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
     }
 
 
+def apply_staff_archetype_defaults(fabric: dict[str, Any]) -> None:
+    archetype_ids = {str(row.get("id")) for row in fabric.get("staffArchetypes", []) if isinstance(row, dict)}
+    for profile in fabric.get("staffProfiles", []) or []:
+        if not isinstance(profile, dict):
+            continue
+        staff_id = str(profile.get("id") or "")
+        defaults = [item for item in STAFF_ARCHETYPE_DEFAULTS.get(staff_id, []) if item in archetype_ids]
+        if defaults and not profile.get("archetypeIds"):
+            profile["archetypeIds"] = defaults
+        if defaults and not profile.get("primaryArchetypeId"):
+            profile["primaryArchetypeId"] = defaults[0]
+        if defaults and not profile.get("toolOperatingMode"):
+            profile["toolOperatingMode"] = "Use inherited Staff Archetype plugin rules before taking tool or worker action."
+        if staff_id == "Human_Iman":
+            profile.setdefault("communicationScope", "human_to_manager")
+            profile.setdefault("canContactHuman", True)
+            profile.setdefault("canCreateHumanFacingThreads", True)
+            profile.setdefault("reportsTo", "")
+            profile.setdefault("visibilityMode", "ownedDepartment")
+        elif staff_id == "AIstaff_Manager":
+            profile.setdefault("communicationScope", "manager_human_and_staff")
+            profile.setdefault("canContactHuman", True)
+            profile.setdefault("canCreateHumanFacingThreads", True)
+            profile.setdefault("reportsTo", "Human_Iman")
+            profile.setdefault("visibilityMode", "ownedDepartment")
+        elif staff_id.startswith("AIstaff_"):
+            profile.setdefault("communicationScope", "staff_to_manager_only")
+            profile.setdefault("canContactHuman", False)
+            profile.setdefault("canCreateHumanFacingThreads", False)
+            profile.setdefault("reportsTo", "AIstaff_Manager")
+            profile.setdefault("visibilityMode", "ownedDepartment")
+
+
 def merge_default_rows(existing: list[Any], defaults: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = [row for row in (existing or []) if isinstance(row, dict)]
     ids = {str(row.get("id")) for row in rows if row.get("id")}
@@ -794,14 +2063,26 @@ def merge_default_rows(existing: list[Any], defaults: list[dict[str, Any]]) -> l
     return rows
 
 
+def merge_default_dict(existing: Any, defaults: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(existing, dict):
+        return json_clone(defaults)
+    merged = json_clone(existing)
+    for key, value in defaults.items():
+        if key not in merged:
+            merged[key] = json_clone(value)
+        elif isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge_default_dict(merged[key], value)
+    return merged
+
+
 def normalize_capability_fabric(fabric: dict[str, Any]) -> dict[str, Any]:
     fabric = json_clone(fabric or {})
     defaults = default_department_platform_objects(fabric)
     for collection, default_rows in defaults.items():
         if isinstance(default_rows, list):
             fabric[collection] = merge_default_rows(fabric.get(collection, []), default_rows)
-        elif collection not in fabric or not isinstance(fabric.get(collection), dict):
-            fabric[collection] = json_clone(default_rows)
+        elif isinstance(default_rows, dict):
+            fabric[collection] = merge_default_dict(fabric.get(collection), default_rows)
     if not any(row.get("id") == "solution_sample_sales_research_department" for row in fabric.get("solutionModules", []) if isinstance(row, dict)):
         fabric.setdefault("solutionModules", []).append(
             {
@@ -820,6 +2101,7 @@ def normalize_capability_fabric(fabric: dict[str, Any]) -> dict[str, Any]:
     fabric.setdefault("architecture", "Capability Orchestration Fabric")
     fabric.setdefault("status", "Active")
     fabric.setdefault("lastReviewed", time.strftime("%Y-%m-%d", time.localtime()))
+    apply_staff_archetype_defaults(fabric)
     return fabric
 
 
@@ -832,6 +2114,14 @@ def validate_capability_fabric(fabric: dict[str, Any]) -> list[str]:
     databases = {row.get("id") for row in fabric.get("databases", []) if isinstance(row, dict)}
     ai_support = {row.get("id") for row in fabric.get("aiSupport", []) if isinstance(row, dict)}
     gates = {row.get("id") for row in fabric.get("qualityGates", []) if isinstance(row, dict)}
+    archetypes = {row.get("id") for row in fabric.get("staffArchetypes", []) if isinstance(row, dict)}
+    departments = {row.get("id") for row in fabric.get("departments", []) if isinstance(row, dict)}
+    skill_catalogs = {
+        "platformSafetySkills": {row.get("id") for row in fabric.get("platformSafetySkills", []) if isinstance(row, dict)},
+        "departmentSkills": {row.get("id") for row in fabric.get("departmentSkills", []) if isinstance(row, dict)},
+        "staffTemplateSkills": {row.get("id") for row in fabric.get("staffTemplateSkills", []) if isinstance(row, dict)},
+        "laneAdapterSkills": {row.get("id") for row in fabric.get("laneAdapterSkills", []) if isinstance(row, dict)},
+    }
     for capability in fabric.get("capabilities", []) or []:
         if not isinstance(capability, dict):
             continue
@@ -879,6 +2169,34 @@ def validate_capability_fabric(fabric: dict[str, Any]) -> list[str]:
         for gate_id in lane.get("qualityGates", []) or []:
             if gate_id not in gates:
                 errors.append(f"Lane {lane.get('id')} references missing quality gate {gate_id}.")
+    for staff in fabric.get("staffProfiles", []) or []:
+        if not isinstance(staff, dict):
+            continue
+        for archetype_id in staff.get("archetypeIds", []) or []:
+            if archetype_id not in archetypes:
+                errors.append(f"Staff {staff.get('id')} references missing staff archetype {archetype_id}.")
+        primary = staff.get("primaryArchetypeId")
+        if primary and primary not in archetypes:
+            errors.append(f"Staff {staff.get('id')} references missing primary staff archetype {primary}.")
+    for binding in fabric.get("skillBindings", []) or []:
+        if not isinstance(binding, dict):
+            continue
+        scope = str(binding.get("skillScope") or "")
+        skill_ids = skill_catalogs.get(scope)
+        if skill_ids is None:
+            errors.append(f"Skill binding {binding.get('id')} references unknown skill scope {scope}.")
+            continue
+        for skill_id in binding.get("skillIds", []) or []:
+            if skill_id not in skill_ids:
+                errors.append(f"Skill binding {binding.get('id')} references missing skill {skill_id} in {scope}.")
+        binding_type = str(binding.get("bindingType") or "")
+        target = binding.get("targetId")
+        if binding_type == "department" and target not in departments:
+            errors.append(f"Skill binding {binding.get('id')} references missing department {target}.")
+        if binding_type == "staffArchetype" and target not in archetypes:
+            errors.append(f"Skill binding {binding.get('id')} references missing staff archetype {target}.")
+        if binding_type == "lane" and target not in lanes:
+            errors.append(f"Skill binding {binding.get('id')} references missing lane {target}.")
     return errors
 
 
@@ -1054,6 +2372,10 @@ def load_capability_fabric() -> dict[str, Any]:
             "operatingNotes": {},
         }
     fabric = normalize_capability_fabric(fabric)
+    try:
+        fabric["workspaceBusinessProfile"] = workspace_profile()
+    except Exception:
+        fabric["workspaceBusinessProfile"] = attach_field_access(default_workspace_business_profile(), "WorkspaceBusinessProfile")
     errors = validate_capability_fabric(fabric)
     if not isinstance(fabric.get("operatingNotes"), dict):
         fabric["operatingNotes"] = {}
@@ -1071,6 +2393,12 @@ def load_capability_fabric() -> dict[str, Any]:
         "departmentTemplates": len(fabric.get("departmentTemplates", []) or []),
         "departments": len(fabric.get("departments", []) or []),
         "staffProfiles": len(fabric.get("staffProfiles", []) or []),
+        "staffArchetypes": len(fabric.get("staffArchetypes", []) or []),
+        "platformSafetySkills": len(fabric.get("platformSafetySkills", []) or []),
+        "departmentSkills": len(fabric.get("departmentSkills", []) or []),
+        "staffTemplateSkills": len(fabric.get("staffTemplateSkills", []) or []),
+        "laneAdapterSkills": len(fabric.get("laneAdapterSkills", []) or []),
+        "skillBindings": len(fabric.get("skillBindings", []) or []),
         "outputTemplates": len(fabric.get("outputTemplates", []) or []),
         "kpis": len(fabric.get("kpis", []) or []),
         "reportDefinitions": len(fabric.get("reportDefinitions", []) or []),
@@ -1078,6 +2406,13 @@ def load_capability_fabric() -> dict[str, Any]:
         "operatingNotes": len(fabric.get("operatingNotes", {}) or {}),
         "errors": len(errors),
     }
+    fabric["fieldAccessLegend"] = {
+        "platform_locked": "Owned by Platform Admin/developer control plane.",
+        "workspace_editable": "Safe workspace defaults or preferences.",
+        "department_editable": "Safe installed-department runtime configuration.",
+        "runtime_context": "Operational state produced by queues, workers, approvals, or integrations.",
+    }
+    fabric["typedCatalogSummary"] = platform_catalog_summary(fabric)
     return fabric
 
 
@@ -1519,11 +2854,150 @@ def department_config() -> dict[str, Any]:
     }
 
 
+def workflow_templates_from_fabric(fabric: dict[str, Any]) -> list[dict[str, Any]]:
+    templates: list[dict[str, Any]] = []
+    capability_lookup = {row.get("id"): row for row in fabric.get("capabilities", []) or [] if isinstance(row, dict)}
+    for recipe in fabric.get("recipes", []) or []:
+        if not isinstance(recipe, dict):
+            continue
+        capability = capability_lookup.get(recipe.get("capabilityId")) or {}
+        templates.append(
+            {
+                "id": f"workflow_{recipe.get('id')}",
+                "recipeId": recipe.get("id"),
+                "label": recipe.get("label") or recipe.get("id"),
+                "summary": recipe.get("summary") or capability.get("summary") or "",
+                "capabilityId": recipe.get("capabilityId"),
+                "ownerStaff": recipe.get("ownerStaff") or capability.get("ownerStaff") or "AIstaff_Manager",
+                "stages": recipe.get("stages") or [],
+                "outputs": recipe.get("outputs") or capability.get("outputs") or [],
+                "locked": bool(recipe.get("locked")),
+                "workspaceEditable": recipe.get("workspaceEditable", True),
+            }
+        )
+    return templates
+
+
+def scoped_skill_definitions(fabric: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for collection, dto_scope in [
+        ("platformSafetySkills", "platformSafety"),
+        ("departmentSkills", "department"),
+        ("staffTemplateSkills", "staffTemplate"),
+        ("laneAdapterSkills", "laneAdapter"),
+    ]:
+        for row in fabric.get(collection, []) or []:
+            if not isinstance(row, dict):
+                continue
+            item = json_clone(row)
+            item["catalog"] = collection
+            item["scope"] = item.get("scope") or dto_scope
+            rows.append(item)
+    return rows
+
+
+def platform_catalog_summary(fabric: dict[str, Any]) -> dict[str, int]:
+    return {
+        "departmentBlueprints": len(fabric.get("departmentTemplates", []) or []),
+        "staffTemplates": len(fabric.get("staffArchetypes", []) or []),
+        "laneAdapters": len(fabric.get("lanes", []) or []),
+        "scopedSkills": len(scoped_skill_definitions(fabric)),
+        "workflowTemplates": len(workflow_templates_from_fabric(fabric)),
+        "senderIdentities": len(list_sender_identities()) if DB_PATH.exists() else 0,
+    }
+
+
+def platform_admin_catalogs() -> dict[str, Any]:
+    fabric = load_capability_fabric()
+    catalogs = {
+        "departmentBlueprints": [
+            attach_field_access(
+                {
+                    **json_clone(row),
+                    "capabilityCount": len(row.get("capabilities", []) or []),
+                    "staffCount": len(row.get("staffProfiles", []) or []),
+                },
+                "AiDepartmentBlueprint",
+            )
+            for row in (fabric.get("departmentTemplates", []) or [])
+            if isinstance(row, dict)
+        ],
+        "staffTemplates": [
+            attach_field_access(
+                {
+                    **json_clone(row),
+                    "capabilityBased": True,
+                    "providerSpecificBehavior": "lane_adapter",
+                },
+                "AiStaffTemplate",
+            )
+            for row in (fabric.get("staffArchetypes", []) or [])
+            if isinstance(row, dict)
+        ],
+        "laneAdapters": [
+            attach_field_access(
+                {
+                    **json_clone(row),
+                    "providerRulesOwnedBy": "platformAdmin",
+                    "fieldAccessMode": "platform_locked_execution_rules",
+                },
+                "AiLaneAdapter",
+            )
+            for row in (fabric.get("lanes", []) or [])
+            if isinstance(row, dict)
+        ],
+        "scopedSkills": [attach_field_access(row, "AiScopedSkillDefinition") for row in scoped_skill_definitions(fabric)],
+        "workflowTemplates": [attach_field_access(row, "AiWorkflowTemplate") for row in workflow_templates_from_fabric(fabric)],
+        "senderIdentities": list_sender_identities(),
+    }
+    return {
+        "ok": True,
+        "catalogs": catalogs,
+        "summary": {key: len(value) for key, value in catalogs.items()},
+        "fieldAccessLegend": fabric.get("fieldAccessLegend") or {},
+        "validation": {"errors": fabric.get("errors") or [], "errorCount": len(fabric.get("errors") or [])},
+        "exportReady": {
+            "departmentBlueprints": [row.get("id") for row in catalogs["departmentBlueprints"]],
+            "staffTemplates": [row.get("id") for row in catalogs["staffTemplates"]],
+            "laneAdapters": [row.get("id") for row in catalogs["laneAdapters"]],
+            "scopedSkills": [row.get("id") for row in catalogs["scopedSkills"]],
+            "workflowTemplates": [row.get("id") for row in catalogs["workflowTemplates"]],
+        },
+    }
+
+
+def platform_export_manifest() -> dict[str, Any]:
+    catalogs = platform_admin_catalogs()
+    fabric = load_capability_fabric()
+    manifest = {
+        "manifestType": "AiDepartmentLocalAlphaExport",
+        "generatedAt": iso_like(),
+        "schemaVersion": fabric.get("schemaVersion") or "1.0",
+        "source": "local command center",
+        "version": {
+            "fabricLastReviewed": fabric.get("lastReviewed"),
+            "activeDepartment": "department_swiss_planner_applications",
+            "runtimeMode": get_meta("crm_sync_status", "local-runtime"),
+        },
+        "catalogs": catalogs.get("catalogs") or {},
+        "workspaceProfile": workspace_profile(),
+        "fieldAccessLegend": catalogs.get("fieldAccessLegend") or {},
+        "validation": catalogs.get("validation") or {},
+        "orchestrationDecision": {
+            "currentEngine": "DB queue + local runner + autopilot",
+            "externalEngine": "Deferred",
+            "criteria": ((fabric.get("operatingModel") or {}).get("automationRuntimeArchitecture") or {}).get("externalWorkflowEnginePolicy", {}),
+        },
+    }
+    return {"ok": True, "manifest": manifest}
+
+
 def capability_fabric_manager_context() -> dict[str, Any]:
     fabric = load_capability_fabric()
     return {
         "architecture": fabric.get("architecture"),
         "normalRelationship": "Solution module -> Capability -> Recipe -> Stage -> Lane -> Quality gate -> Output",
+        "operatingModel": fabric.get("operatingModel") or {},
         "capabilities": [
             {
                 "id": row.get("id"),
@@ -1550,6 +3024,16 @@ def capability_fabric_manager_context() -> dict[str, Any]:
             for row in (fabric.get("qualityGates", []) or [])
             if isinstance(row, dict)
         ],
+        "staffArchetypes": [
+            {
+                "id": row.get("id"),
+                "label": row.get("label"),
+                "allowedPluginFamilies": row.get("allowedPluginFamilies", []),
+                "requiresApprovalFor": row.get("requiresApprovalFor", []),
+            }
+            for row in (fabric.get("staffArchetypes", []) or [])
+            if isinstance(row, dict)
+        ],
         "operatingNoteSections": [
             {
                 "section": section,
@@ -1574,6 +3058,8 @@ def load_dashboard_snapshot() -> Dashboard | None:
     payload = apply_task_status_overrides(payload)
     payload = normalize_task_table(payload)
     payload = ensure_threads_for_tasks(payload)
+    ensure_project_plans_from_snapshot(payload)
+    payload["projectPlans"] = list_project_plans("active", 100, refresh=False)
     payload["skillUpdates"] = list_skill_updates("Pending").get("learning", [])
     payload["skillUpdatesAll"] = list_skill_updates("All").get("learning", [])
     payload["staffWakeups"] = staff_wakeup_summary()
@@ -1589,6 +3075,8 @@ def save_dashboard_snapshot(payload: Dashboard, source: str = "bridge", error: s
     saved = apply_task_status_overrides(saved)
     saved = normalize_task_table(saved)
     saved = ensure_threads_for_tasks(saved)
+    ensure_project_plans_from_snapshot(saved)
+    saved["projectPlans"] = list_project_plans("active", 100, refresh=False)
     saved["skillUpdates"] = list_skill_updates("Pending").get("learning", [])
     saved["skillUpdatesAll"] = list_skill_updates("All").get("learning", [])
     saved["staffWakeups"] = staff_wakeup_summary()
@@ -1857,6 +3345,967 @@ def update_snapshot_queue_row(queue_id: str, updates: dict[str, Any]) -> dict[st
     snapshot["refreshedAt"] = iso_like()
     save_dashboard_snapshot(snapshot, source="local-email")
     return {"ok": True, "queueId": queue_id, "row": updated_row}
+
+
+def update_email_queue_approval(payload: dict[str, Any]) -> dict[str, Any]:
+    queue_id = str(payload.get("queueId") or payload.get("id") or "").strip()
+    if not queue_id:
+        return {"ok": False, "error": "Missing queueId."}
+    approval = str(payload.get("approvalStatus") or payload.get("Approval Status") or "Approved").strip()
+    approved_by = str(payload.get("approvedBy") or "Human_Iman")
+    now = iso_like()
+    result = update_snapshot_queue_row(
+        queue_id,
+        {
+            "approvalStatus": approval,
+            "Approval Status": approval,
+            "approvedBy": approved_by,
+            "Approved By": approved_by,
+            "approvedAt": now,
+            "Approved At": now,
+            "sendStatus": "Approved - Waiting Safety Check" if approval.lower() == "approved" else "Blocked - Needs Iman Approval",
+            "Send Status": "Approved - Waiting Safety Check" if approval.lower() == "approved" else "Blocked - Needs Iman Approval",
+        },
+    )
+    row = result.get("row") if isinstance(result.get("row"), dict) else queue_row_from_snapshot(queue_id) or {}
+    record_communication_event(
+        queue_id=queue_id,
+        row=row,
+        event_type="approval_update",
+        status=approval,
+        metadata={"approvedBy": approved_by, "approvedAt": now},
+    )
+    return result | {"approvalStatus": approval, "approvedBy": approved_by, "approvedAt": now}
+
+
+PROJECT_WORKFLOW_BLUEPRINT = [
+    {
+        "stage": "Lead Received",
+        "title": "Intake Lead and transferred tender files",
+        "assignedStaff": "AIstaff_Manager",
+        "readyAfter": -1,
+        "taskType": "Lead Intake",
+        "taskCategory": TASK_CATEGORIES["manager"],
+        "outputTemplateId": "output_lead_intake_record",
+        "actionLabel": "Review intake",
+        "expectedOutput": "Lead intake brief with source, owner, tender case link, files received, and the first blocker or next staff route.",
+        "safetyGate": "Manager-owned only; do not create supplier outreach or tender submission from intake.",
+    },
+    {
+        "stage": "Tender Docs Reviewed",
+        "title": "Review tender documents, scope, deadline, and missing inputs",
+        "assignedStaff": "AIstaff_OpportunityHunter",
+        "readyAfter": 0,
+        "taskType": "Tender Document Review",
+        "taskCategory": TASK_CATEGORIES["application"],
+        "outputTemplateId": "output_tender_document_review",
+        "actionLabel": "Start doc review",
+        "expectedOutput": "Document review brief covering tender scope, required files, deadlines, mandatory forms, missing files, and first fit signals.",
+        "safetyGate": "If technical appendix, scope PDF, BOQ, forms, or portal files are missing, stop and ask Alex to request them from Iman.",
+    },
+    {
+        "stage": "Fit / Eligibility Checked",
+        "title": "Assess GCC lab fit, eligibility, partner need, and supplier route",
+        "assignedStaff": "AIstaff_FitAnalyst",
+        "readyAfter": 1,
+        "taskType": "Fit Review",
+        "taskCategory": TASK_CATEGORIES["research"],
+        "outputTemplateId": "output_fit_eligibility_report",
+        "actionLabel": "Run fit review",
+        "expectedOutput": "Fit and eligibility report with go/no-go, GCC lab capability match, partner need, supplier route, risks, and required approvals.",
+        "safetyGate": "Do not mark eligible unless tender requirements and GCC lab capability evidence are both clear.",
+    },
+    {
+        "stage": "Supplier Match Needed",
+        "title": "Map existing suppliers/partners or discover new candidates",
+        "assignedStaff": "AIstaff_ProfessorResearchAnalyst",
+        "readyAfter": 2,
+        "taskType": "Supplier Mapping",
+        "taskCategory": TASK_CATEGORIES["research"],
+        "outputTemplateId": "output_supplier_shortlist",
+        "actionLabel": "Map suppliers",
+        "expectedOutput": "Supplier or partner shortlist with existing CRM matches, missing capability gaps, new supplier candidates, contacts, and evidence.",
+        "safetyGate": "Do not contact suppliers directly; prepare a shortlist and route outreach through Alex and the supervised email lane.",
+    },
+    {
+        "stage": "Quotation Requested",
+        "title": "Prepare approved supplier quotation outreach and capture replies",
+        "assignedStaff": "AIstaff_ApplicationPackSender",
+        "readyAfter": 3,
+        "taskType": "Quotation Outreach",
+        "taskCategory": TASK_CATEGORIES["email"],
+        "outputTemplateId": "output_supplier_quotation_outreach",
+        "actionLabel": "Prepare outreach",
+        "expectedOutput": "Draft supplier quotation request, selected recipients, attachment checklist, duplicate check, approval preview, and communications log entry.",
+        "safetyGate": "External supplier email must remain blocked until Iman approves the exact message, recipients, and attachments.",
+    },
+    {
+        "stage": "Tender Package In Progress",
+        "title": "Prepare compliance matrix, technical response, and commercial package",
+        "assignedStaff": "AIstaff_ApplicationPackMaker",
+        "readyAfter": 4,
+        "taskType": "Tender Package",
+        "taskCategory": TASK_CATEGORIES["application"],
+        "outputTemplateId": "output_tender_package",
+        "actionLabel": "Build package",
+        "expectedOutput": "Tender package checklist, compliance matrix, technical response outline, commercial inputs, quotation evidence, and submission-readiness score.",
+        "safetyGate": "Do not submit tender package; only prepare and mark readiness for Iman/Alex approval.",
+    },
+    {
+        "stage": "Submitted / Waiting",
+        "title": "Follow up, track submission/waiting state, and close or learn",
+        "assignedStaff": "AIstaff_FollowUpController",
+        "readyAfter": 5,
+        "taskType": "Tender Follow-up",
+        "taskCategory": TASK_CATEGORIES["audit"],
+        "outputTemplateId": "output_followup_tracker",
+        "actionLabel": "Track follow-up",
+        "expectedOutput": "Follow-up tracker with pending supplier/client responses, due dates, next reminders, closure decision, and learning candidates.",
+        "safetyGate": "Do not close incomplete Leads or change tender outcome unless Iman approved the closure/submission policy.",
+    },
+]
+
+
+PROJECT_STAGE_ORDER = [
+    "lead received",
+    "tender docs reviewed",
+    "fit eligibility checked",
+    "supplier match needed",
+    "quotation requested",
+    "tender package in progress",
+    "tender package ready",
+    "submitted waiting",
+]
+
+
+def project_step_contract(sequence: int, blocker_type: str = "") -> dict[str, Any]:
+    index = max(0, int(sequence or 1) - 1)
+    template = PROJECT_WORKFLOW_BLUEPRINT[index] if index < len(PROJECT_WORKFLOW_BLUEPRINT) else PROJECT_WORKFLOW_BLUEPRINT[-1]
+    blocker = str(blocker_type or "").strip()
+    assigned_staff = template.get("assignedStaff") or "AIstaff_Manager"
+    task_category = template.get("taskCategory") or TASK_CATEGORIES["application"]
+    action_label = template.get("actionLabel") or "Start step"
+    task_type = template.get("taskType") or template.get("stage") or "Project Step"
+    completion = (
+        f"Produce {template.get('expectedOutput')}. Respect safety gate: {template.get('safetyGate')}. "
+        "Update the task thread with evidence, blocker, or next route through AIstaff_Manager."
+    )
+    if blocker == "Missing tender files":
+        assigned_staff = "Human_Iman"
+        task_category = TASK_CATEGORIES["human"]
+        action_label = "Request files"
+        task_type = "Missing Tender Files"
+        completion = (
+            "Iman uploads the missing tender files, confirms they are unavailable, or approves closing/parking the Lead. "
+            "Alex then routes the next internal staff step."
+        )
+    elif blocker == "External email approval needed":
+        assigned_staff = "Human_Iman"
+        task_category = TASK_CATEGORIES["human"]
+        action_label = "Request approval"
+        task_type = "Supplier Outreach Approval"
+        completion = (
+            "Iman approves, rejects, or edits the supplier outreach preview. No supplier email is sent by creating this task."
+        )
+    elif blocker == "Human approval needed":
+        assigned_staff = "Human_Iman"
+        task_category = TASK_CATEGORIES["human"]
+        action_label = "Ask Iman"
+        task_type = "Tender Decision"
+        completion = "Iman gives the decision Alex needs, then Alex routes the next staff task internally."
+    return {
+        "actionLabel": action_label,
+        "taskType": task_type,
+        "taskCategory": task_category,
+        "assignedStaff": assigned_staff,
+        "outputTemplateId": template.get("outputTemplateId") or "",
+        "expectedOutput": template.get("expectedOutput") or "",
+        "safetyGate": template.get("safetyGate") or "",
+        "completionCriteria": completion,
+        "successStatus": f"{task_type} Done",
+        "failureStatus": f"Blocked - {task_type}",
+        "canStart": True,
+    }
+
+
+def project_step_output_id(step_id: str) -> str:
+    return "output_" + safe_task_part(step_id or "project_step")
+
+
+def default_project_output_content(output_template_id: str, step_title: str = "") -> dict[str, Any]:
+    template = str(output_template_id or "")
+    sections_by_template = {
+        "output_tender_document_review": ["scope", "filesReviewed", "missingInputs", "deadlines", "mandatoryForms", "initialFitSignals"],
+        "output_fit_eligibility_report": ["recommendation", "capabilityMatch", "eligibilityRequirements", "partnerNeed", "supplierRoute", "risks"],
+        "output_supplier_shortlist": ["existingMatches", "newCandidates", "contacts", "capabilityGaps", "evidence"],
+        "output_supplier_quotation_outreach": ["recipients", "messageDraft", "attachments", "duplicateCheck", "approvalPreview"],
+        "output_tender_package": ["complianceMatrix", "technicalResponse", "commercialInputs", "quotationEvidence", "readinessScore"],
+        "output_followup_tracker": ["pendingResponses", "nextReminders", "dueDates", "closureDecision", "learningCandidates"],
+        "output_lead_intake_record": ["source", "leadOwner", "tenderCase", "filesReceived", "firstBlocker", "nextRoute"],
+    }
+    return {
+        "notes": "",
+        "sections": {name: "" for name in sections_by_template.get(template, ["summary", "evidence", "nextRoute"])},
+        "checklist": [],
+        "sourceStep": step_title,
+    }
+
+
+def row_to_project_step_output(row: sqlite3.Row | dict[str, Any] | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    return {
+        "outputId": row_value(row, "output_id"),
+        "stepId": row_value(row, "step_id"),
+        "planId": row_value(row, "plan_id"),
+        "applicationId": row_value(row, "application_id"),
+        "outputTemplateId": row_value(row, "output_template_id"),
+        "status": row_value(row, "status") or "Draft",
+        "title": row_value(row, "title"),
+        "summary": row_value(row, "summary"),
+        "content": parse_json_text(row_value(row, "content_json"), {}),
+        "blockerType": row_value(row, "blocker_type"),
+        "evidenceLink": row_value(row, "evidence_link"),
+        "reviewedBy": row_value(row, "reviewed_by"),
+        "createdBy": row_value(row, "created_by"),
+        "createdAt": iso_like(row_value(row, "created_at")),
+        "updatedAt": iso_like(row_value(row, "updated_at")),
+        "sentToAlexAt": iso_like(row_value(row, "sent_to_alex_at")) if row_value(row, "sent_to_alex_at") else "",
+    }
+
+
+def latest_project_step_output(step_id: str) -> dict[str, Any] | None:
+    step_id = str(step_id or "").strip()
+    if not step_id:
+        return None
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM project_step_outputs
+            WHERE step_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (step_id,),
+        ).fetchone()
+    return row_to_project_step_output(row)
+
+
+def project_step_next_action_label(step_status: str, output_status: str, action_label: str) -> str:
+    if output_status == "Not started":
+        return action_label or "Start"
+    if output_status == "Draft":
+        return "Continue output"
+    if output_status == "Ready for Alex Review":
+        return "Await Alex review"
+    if output_status == "Blocked":
+        return "Review blocker"
+    if output_status == "Approved":
+        return "Approved"
+    return action_label or ("Rework" if step_status == "Done" else "Start")
+
+
+def project_step_output_summary(step_id: str, step_status: str, action_label: str) -> dict[str, Any]:
+    output = latest_project_step_output(step_id)
+    output_status = output.get("status") if output else "Not started"
+    return {
+        "outputStatus": output_status,
+        "outputId": output.get("outputId") if output else "",
+        "outputUpdatedAt": output.get("updatedAt") if output else "",
+        "nextActionLabel": project_step_next_action_label(step_status, output_status, action_label),
+    }
+
+
+def project_plan_id(application_id: str) -> str:
+    return "plan_" + safe_task_part(application_id or "lead")
+
+
+def project_step_id(plan_id: str, sequence: int) -> str:
+    return f"{plan_id}_step_{int(sequence):02d}"
+
+
+def application_identifier(app: dict[str, Any]) -> str:
+    return str(
+        app.get("applicationId")
+        or app.get("Application ID")
+        or app.get("entityId")
+        or app.get("EntityID")
+        or ""
+    ).strip()
+
+
+def application_stage_index(app: dict[str, Any]) -> int:
+    text = normalize_text(compact_join([app.get("currentStage"), app.get("currentStatus"), app.get("stage"), app.get("status")]))
+    if not text:
+        return 0
+    if any(term in text for term in ["submitted", "waiting", "awarded", "closed"]):
+        return 7
+    if "ready" in text and "package" in text:
+        return 6
+    if "package" in text:
+        return 5
+    if any(term in text for term in ["quotation", "quote requested", "requested"]):
+        return 4
+    if any(term in text for term in ["supplier", "partner", "match"]):
+        return 3
+    if any(term in text for term in ["fit", "eligibility", "eligible"]):
+        return 2
+    if any(term in text for term in ["doc", "document", "reviewed", "file"]):
+        return 1
+    return 0
+
+
+def project_related_rows(application_id: str, snapshot: Dashboard | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    app_id = str(application_id or "").strip()
+    tasks = [
+        row for row in (snapshot or {}).get("tasks", []) or []
+        if isinstance(row, dict)
+        and app_id
+        and str(row.get("applicationId") or row.get("Application ID") or row.get("relatedApplicationId") or row.get("entityId") or "").strip() == app_id
+    ]
+    emails = [
+        row for row in flatten_email_queue((snapshot or {}).get("emailQueue"))
+        if isinstance(row, dict)
+        and app_id
+        and str(row.get("applicationId") or row.get("Application ID") or row.get("relatedApplicationId") or "").strip() == app_id
+    ]
+    return tasks, emails
+
+
+def infer_step_blocker(sequence: int, tasks: list[dict[str, Any]], emails: list[dict[str, Any]]) -> tuple[str, str, str, str, str]:
+    blob = normalize_text(compact_join([json.dumps(tasks, default=str)[:4000], json.dumps(emails, default=str)[:4000]]))
+    source_task = ""
+    source_thread = ""
+    queue_id = ""
+    due_at = ""
+    notes = ""
+    for task in tasks:
+        task_blob = normalize_text(compact_join([task.get("status"), task.get("taskType"), task.get("taskCategory"), task.get("nextAction"), task.get("lastError"), task.get("resultNotes")]))
+        if sequence == 1 and "missing" in task_blob and any(term in task_blob for term in ["file", "pdf", "appendix", "scope"]):
+            return "Missing tender files", str(task.get("taskId") or ""), str(task.get("threadId") or ""), str(task.get("sourceQueueId") or ""), str(task.get("dueAt") or task.get("runAfter") or ""), "Tender document review is blocked by missing files."
+        if not task_is_terminal(task) and any(term in task_blob for term in ["approval", "needs iman", "human decision"]):
+            source_task = str(task.get("taskId") or source_task)
+            source_thread = str(task.get("threadId") or source_thread)
+            due_at = str(task.get("dueAt") or task.get("runAfter") or due_at)
+            notes = str(task.get("nextAction") or task.get("resultNotes") or notes)
+    if sequence == 4:
+        for email in emails:
+            text = normalize_text(compact_join([email.get("sendStatus"), email.get("approvalStatus"), email.get("lastError")]))
+            if any(term in text for term in ["needs approval", "not approved", "blocked"]):
+                return "External email approval needed", source_task, source_thread, str(email.get("queueId") or email.get("Queue ID") or ""), due_at, str(email.get("lastError") or email.get("subject") or "Supplier outreach is approval-gated.")
+    if "worker command not configured" in blob or "codex worker" in blob:
+        return "Codex worker unavailable", source_task, source_thread, queue_id, due_at, notes or "Research/writing work is waiting for a local worker."
+    if source_task:
+        return "Human approval needed", source_task, source_thread, queue_id, due_at, notes or "Waiting for a human/manager decision."
+    return "", source_task, source_thread, queue_id, due_at, notes
+
+
+def build_project_steps(app: dict[str, Any], snapshot: Dashboard | None) -> list[dict[str, Any]]:
+    app_id = application_identifier(app)
+    tasks, emails = project_related_rows(app_id, snapshot)
+    current_index = application_stage_index(app)
+    steps: list[dict[str, Any]] = []
+    blocked_seen = False
+    for index, template in enumerate(PROJECT_WORKFLOW_BLUEPRINT):
+        blocker, source_task, source_thread, queue_id, due_at, notes = infer_step_blocker(index, tasks, emails)
+        blocker_applies = (
+            (blocker == "Missing tender files" and index == 1)
+            or (blocker == "External email approval needed" and index == 4)
+            or (blocker in {"Human approval needed", "Codex worker unavailable"} and index in {current_index, current_index + 1})
+        )
+        if blocker and not blocker_applies:
+            blocker = ""
+            source_task = ""
+            source_thread = ""
+            queue_id = ""
+            due_at = ""
+            notes = ""
+        if blocker and blocker_applies:
+            status = "Blocked"
+            blocked_seen = True
+        elif index < current_index:
+            status = "Done"
+        elif index == current_index:
+            status = "In Progress" if not blocked_seen else "Queued"
+        elif index == current_index + 1:
+            status = "Ready" if not blocked_seen else "Queued"
+        else:
+            status = "Queued"
+        if status == "Done":
+            blocker = ""
+        contract = project_step_contract(index + 1, blocker)
+        step_id = project_step_id(project_plan_id(app_id), index + 1)
+        output_summary = project_step_output_summary(step_id, status, contract.get("actionLabel") or "")
+        steps.append(
+            {
+                "sequence": index + 1,
+                "stepId": step_id,
+                "stage": template["stage"],
+                "title": template["title"],
+                "assignedStaff": template["assignedStaff"],
+                "status": status,
+                "blockerType": blocker,
+                "action": contract,
+                "expectedOutput": contract.get("expectedOutput") or "",
+                "outputTemplateId": contract.get("outputTemplateId") or "",
+                "safetyGate": contract.get("safetyGate") or "",
+                **output_summary,
+                "sourceTaskId": source_task,
+                "sourceThreadId": source_thread,
+                "queueId": queue_id,
+                "dueAt": due_at,
+                "evidenceLink": "",
+                "notes": notes,
+            }
+        )
+    return steps
+
+
+def plan_status_from_steps(steps: list[dict[str, Any]]) -> str:
+    if any(row.get("status") == "Blocked" for row in steps):
+        return "Blocked"
+    if steps and all(row.get("status") == "Done" for row in steps):
+        return "Done"
+    if any(row.get("status") == "In Progress" for row in steps):
+        return "In Progress"
+    return "Active"
+
+
+def upsert_project_plan_for_application(app: dict[str, Any], snapshot: Dashboard | None) -> dict[str, Any] | None:
+    app_id = application_identifier(app)
+    if not app_id:
+        return None
+    plan_id = project_plan_id(app_id)
+    steps = build_project_steps(app, snapshot)
+    status = plan_status_from_steps(steps)
+    current = next((row for row in steps if row.get("status") in {"Blocked", "In Progress", "Ready"}), steps[0] if steps else {})
+    now = utc_ts()
+    title = str(app.get("title") or app.get("leadTitle") or app.get("Lead Title") or app.get("currentStage") or app_id)
+    owner = normalized_staff_id(app.get("responsibleStaff") or current.get("assignedStaff"), "AIstaff_Manager")
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO project_plans (
+              plan_id, application_id, opportunity_id, title, status, owner_staff,
+              current_step_id, summary, source_payload, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(plan_id) DO UPDATE SET
+              opportunity_id=excluded.opportunity_id,
+              title=excluded.title,
+              status=excluded.status,
+              owner_staff=excluded.owner_staff,
+              current_step_id=excluded.current_step_id,
+              summary=excluded.summary,
+              source_payload=excluded.source_payload,
+              updated_at=excluded.updated_at
+            """,
+            (
+                plan_id,
+                app_id,
+                str(app.get("opportunityId") or app.get("Opportunity ID") or ""),
+                title,
+                status,
+                owner,
+                project_step_id(plan_id, int(current.get("sequence") or 1)),
+                f"{status}: {current.get('title') or 'Project plan ready'}",
+                json.dumps(app, ensure_ascii=False, default=str),
+                now,
+                now,
+            ),
+        )
+        for step in steps:
+            conn.execute(
+                """
+                INSERT INTO project_plan_steps (
+                  step_id, plan_id, sequence, stage, title, assigned_staff, status,
+                  blocker_type, source_task_id, source_thread_id, queue_id, due_at,
+                  evidence_link, notes, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(step_id) DO UPDATE SET
+                  stage=excluded.stage,
+                  title=excluded.title,
+                  assigned_staff=excluded.assigned_staff,
+                  status=excluded.status,
+                  blocker_type=excluded.blocker_type,
+                  source_task_id=excluded.source_task_id,
+                  source_thread_id=excluded.source_thread_id,
+                  queue_id=excluded.queue_id,
+                  due_at=excluded.due_at,
+                  evidence_link=excluded.evidence_link,
+                  notes=excluded.notes,
+                  updated_at=excluded.updated_at
+                """,
+                (
+                    project_step_id(plan_id, int(step.get("sequence") or 1)),
+                    plan_id,
+                    int(step.get("sequence") or 0),
+                    step.get("stage") or "",
+                    step.get("title") or "",
+                    step.get("assignedStaff") or "AIstaff_Manager",
+                    step.get("status") or "Queued",
+                    step.get("blockerType") or "",
+                    step.get("sourceTaskId") or "",
+                    step.get("sourceThreadId") or "",
+                    step.get("queueId") or "",
+                    step.get("dueAt") or "",
+                    step.get("evidenceLink") or "",
+                    step.get("notes") or "",
+                    now,
+                    now,
+                ),
+            )
+    return {"planId": plan_id, "applicationId": app_id, "status": status, "steps": steps}
+
+
+def ensure_project_plans_from_snapshot(snapshot: Dashboard | None) -> dict[str, Any]:
+    init_db()
+    apps = [row for row in (snapshot or {}).get("applications", []) or [] if isinstance(row, dict)]
+    plans = []
+    for app in apps:
+        plan = upsert_project_plan_for_application(app, snapshot)
+        if plan:
+            plans.append(plan)
+    return {"ok": True, "createdOrUpdated": len(plans), "plans": plans}
+
+
+def row_to_project_plan(row: sqlite3.Row, steps: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    return {
+        "planId": row["plan_id"],
+        "applicationId": row["application_id"],
+        "opportunityId": row["opportunity_id"],
+        "title": row["title"],
+        "status": row["status"],
+        "ownerStaff": row["owner_staff"],
+        "currentStepId": row["current_step_id"],
+        "summary": row["summary"],
+        "source": parse_json_text(row["source_payload"], {}),
+        "createdAt": iso_like(row["created_at"]),
+        "updatedAt": iso_like(row["updated_at"]),
+        "steps": steps or [],
+    }
+
+
+def row_to_project_step(row: sqlite3.Row) -> dict[str, Any]:
+    contract = project_step_contract(int(row["sequence"] or 1), row["blocker_type"] or "")
+    output_summary = project_step_output_summary(row["step_id"], row["status"] or "", contract.get("actionLabel") or "")
+    return {
+        "stepId": row["step_id"],
+        "planId": row["plan_id"],
+        "sequence": row["sequence"],
+        "stage": row["stage"],
+        "title": row["title"],
+        "assignedStaff": row["assigned_staff"],
+        "status": row["status"],
+        "blockerType": row["blocker_type"],
+        "action": contract,
+        "expectedOutput": contract.get("expectedOutput") or "",
+        "outputTemplateId": contract.get("outputTemplateId") or "",
+        "safetyGate": contract.get("safetyGate") or "",
+        **output_summary,
+        "sourceTaskId": row["source_task_id"],
+        "sourceThreadId": row["source_thread_id"],
+        "queueId": row["queue_id"],
+        "dueAt": row["due_at"],
+        "evidenceLink": row["evidence_link"],
+        "notes": row["notes"],
+        "createdAt": iso_like(row["created_at"]),
+        "updatedAt": iso_like(row["updated_at"]),
+    }
+
+
+def list_project_plans(status: str = "active", limit: int = 80, refresh: bool = True) -> dict[str, Any]:
+    init_db()
+    if refresh:
+        snapshot = load_dashboard_snapshot()
+        if snapshot:
+            ensure_project_plans_from_snapshot(snapshot)
+    safe_limit = max(1, min(int(limit or 80), 250))
+    where = ""
+    params: list[Any] = []
+    if normalize_text(status) in {"active", "open"}:
+        where = "WHERE status NOT IN ('Done', 'Archived')"
+    elif status and normalize_text(status) != "all":
+        where = "WHERE status = ?"
+        params.append(status)
+    with connect() as conn:
+        plan_rows = conn.execute(
+            f"SELECT * FROM project_plans {where} ORDER BY updated_at DESC LIMIT ?",
+            (*params, safe_limit),
+        ).fetchall()
+        plan_ids = [row["plan_id"] for row in plan_rows]
+        step_rows: list[sqlite3.Row] = []
+        if plan_ids:
+            placeholders = ",".join("?" for _ in plan_ids)
+            step_rows = conn.execute(
+                f"SELECT * FROM project_plan_steps WHERE plan_id IN ({placeholders}) ORDER BY plan_id, sequence",
+                plan_ids,
+            ).fetchall()
+    by_plan: dict[str, list[dict[str, Any]]] = {}
+    for row in step_rows:
+        by_plan.setdefault(row["plan_id"], []).append(row_to_project_step(row))
+    plans = [row_to_project_plan(row, by_plan.get(row["plan_id"], [])) for row in plan_rows]
+    counts = {
+        "total": len(plans),
+        "blocked": len([row for row in plans if row.get("status") == "Blocked"]),
+        "inProgress": len([row for row in plans if row.get("status") == "In Progress"]),
+        "active": len([row for row in plans if row.get("status") not in {"Done", "Archived"}]),
+    }
+    return {"ok": True, "plans": plans, "counts": counts}
+
+
+def get_project_plan(plan_id: str = "", application_id: str = "") -> dict[str, Any]:
+    init_db()
+    plan_id = str(plan_id or "").strip()
+    application_id = str(application_id or "").strip()
+    with connect() as conn:
+        if plan_id:
+            plan = conn.execute("SELECT * FROM project_plans WHERE plan_id = ?", (plan_id,)).fetchone()
+        elif application_id:
+            plan = conn.execute("SELECT * FROM project_plans WHERE application_id = ?", (application_id,)).fetchone()
+        else:
+            return {"ok": False, "error": "Missing planId or applicationId."}
+        if not plan:
+            return {"ok": False, "error": "Project plan not found."}
+        steps = conn.execute("SELECT * FROM project_plan_steps WHERE plan_id = ? ORDER BY sequence", (plan["plan_id"],)).fetchall()
+    return {"ok": True, "plan": row_to_project_plan(plan, [row_to_project_step(row) for row in steps])}
+
+
+def create_project_step_action(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    plan_id = str(payload.get("planId") or "").strip()
+    step_id = str(payload.get("stepId") or "").strip()
+    sequence = int(payload.get("sequence") or 0)
+    if not plan_id:
+        return {"ok": False, "error": "Missing planId."}
+    with connect() as conn:
+        plan_row = conn.execute("SELECT * FROM project_plans WHERE plan_id = ?", (plan_id,)).fetchone()
+        if not plan_row:
+            return {"ok": False, "error": f"Project plan not found: {plan_id}"}
+        if step_id:
+            step_row = conn.execute("SELECT * FROM project_plan_steps WHERE step_id = ? AND plan_id = ?", (step_id, plan_id)).fetchone()
+        elif sequence:
+            step_row = conn.execute(
+                "SELECT * FROM project_plan_steps WHERE plan_id = ? AND sequence = ?",
+                (plan_id, sequence),
+            ).fetchone()
+        else:
+            step_row = conn.execute(
+                """
+                SELECT * FROM project_plan_steps
+                WHERE plan_id = ?
+                  AND status IN ('Blocked', 'In Progress', 'Ready', 'Queued')
+                ORDER BY CASE status
+                  WHEN 'Blocked' THEN 0
+                  WHEN 'In Progress' THEN 1
+                  WHEN 'Ready' THEN 2
+                  ELSE 3
+                END, sequence
+                LIMIT 1
+                """,
+                (plan_id,),
+            ).fetchone()
+        if not step_row:
+            return {"ok": False, "error": "Project step not found."}
+    plan = row_to_project_plan(plan_row, [])
+    step = row_to_project_step(step_row)
+    contract = step.get("action") or project_step_contract(step.get("sequence") or 1, step.get("blockerType") or "")
+    target_staff = normalized_staff_id(contract.get("assignedStaff") or step.get("assignedStaff"), "AIstaff_Manager")
+    task_id = "staff_task_project_step_" + safe_task_part(plan_id) + "_" + f"{int(step.get('sequence') or 0):02d}"
+    if local_or_pending_task_exists(task_id):
+        thread_id = thread_id_for_task(task_id)
+        return {
+            "ok": True,
+            "alreadyExists": True,
+            "taskId": task_id,
+            "threadId": thread_id,
+            "message": "This project-step task already exists.",
+            "plan": get_project_plan(plan_id=plan_id).get("plan"),
+        }
+    lead_title = str(plan.get("title") or plan.get("applicationId") or plan_id)
+    blocker = step.get("blockerType") or ""
+    blocker_line = f" Current blocker: {blocker}. {step.get('notes') or ''}".strip() if blocker else ""
+    next_action = (
+        f"Alex has started project step {step.get('sequence')}: {step.get('title')} for Lead {lead_title} "
+        f"({plan.get('applicationId')}).\n\n"
+        f"Expected output: {contract.get('expectedOutput') or 'Complete the step output with evidence.'}\n"
+        f"Safety gate: {contract.get('safetyGate') or 'Route irreversible actions through AIstaff_Manager.'}\n"
+        f"Output template: {contract.get('outputTemplateId') or 'department default'}.\n"
+        f"{blocker_line}\n\n"
+        "Work under AIstaff_Manager. Do not ask Human_Iman directly unless this task is assigned to Human_Iman. "
+        "Do not send supplier emails or submit tenders from this task."
+    ).strip()
+    task_payload = {
+        "taskId": task_id,
+        "taskType": contract.get("taskType") or step.get("stage") or "Project Step",
+        "taskCategory": contract.get("taskCategory") or TASK_CATEGORIES["application"],
+        "taskTemplateId": "template_project_workflow_step",
+        "assignedTo": target_staff,
+        "createdBy": "AIstaff_Manager",
+        "sourceStaff": "AIstaff_Manager",
+        "targetStaff": target_staff,
+        "relatedApplicationId": plan.get("applicationId") or "",
+        "relatedOpportunityId": plan.get("opportunityId") or "",
+        "priority": "High" if step.get("status") in {"Blocked", "In Progress", "Ready"} else "Normal",
+        "runAfter": iso_like(),
+        "dueAt": iso_like(utc_ts() + (2 if target_staff == "Human_Iman" else 4) * 60 * 60),
+        "nextAction": next_action,
+        "completionCriteria": contract.get("completionCriteria") or "Complete or block this project step with evidence.",
+        "successStatus": contract.get("successStatus") or f"{step.get('stage')} Done",
+        "failureStatus": contract.get("failureStatus") or f"Blocked - {step.get('stage')}",
+        "status": "Queued" if target_staff == "Human_Iman" else "Waiting for Codex Worker",
+        "escalationLevel": "Human Approval" if target_staff == "Human_Iman" else "Manager",
+        "evidenceLink": step.get("sourceThreadId") or step.get("queueId") or plan_id,
+        "resultNotes": f"Created from project workflow step {step.get('stepId')} by AIstaff_Manager.",
+        "projectPlanId": plan_id,
+        "projectStepId": step.get("stepId") or "",
+        "workflowStage": step.get("stage") or "",
+        "outputTemplateId": contract.get("outputTemplateId") or "",
+        "expectedOutput": contract.get("expectedOutput") or "",
+        "safetyGate": contract.get("safetyGate") or "",
+    }
+    saved = queue_action("appendAiStaffTask", task_payload, method="POST", sync_online=False)
+    thread_id = thread_id_for_task(task_id)
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE project_plan_steps
+            SET status = CASE WHEN status = 'Queued' THEN 'Ready' ELSE status END,
+                source_task_id = ?,
+                source_thread_id = ?,
+                notes = CASE
+                  WHEN notes = '' THEN ?
+                  ELSE notes || ' | ' || ?
+                END,
+                updated_at = ?
+            WHERE step_id = ?
+            """,
+            (
+                task_id,
+                thread_id,
+                "Action task created by Alex.",
+                "Action task created by Alex.",
+                utc_ts(),
+                step.get("stepId") or "",
+            ),
+        )
+    refreshed = get_project_plan(plan_id=plan_id).get("plan")
+    detail = get_thread(thread_id)
+    output_result = None
+    if payload.get("createOutputDraft"):
+        output_result = save_project_step_output(
+            {
+                "stepId": step.get("stepId") or "",
+                "planId": plan_id,
+                "status": "Draft",
+                "summary": "",
+                "createdBy": target_staff,
+            }
+        )
+    return {
+        "ok": bool(saved.get("ok")),
+        "saved": saved,
+        "taskId": task_id,
+        "threadId": thread_id,
+        "assignedTo": target_staff,
+        "step": step,
+        "plan": refreshed,
+        "thread": detail.get("thread"),
+        "messages": detail.get("messages"),
+        "output": output_result.get("output") if isinstance(output_result, dict) else None,
+        "message": f"Created {contract.get('taskType') or 'project step'} task for {staff_label(target_staff)}.",
+    }
+
+
+def get_project_step_output(step_id: str) -> dict[str, Any]:
+    init_db()
+    step_id = str(step_id or "").strip()
+    if not step_id:
+        return {"ok": False, "error": "Missing stepId."}
+    with connect() as conn:
+        step_row = conn.execute("SELECT * FROM project_plan_steps WHERE step_id = ?", (step_id,)).fetchone()
+        if not step_row:
+            return {"ok": False, "error": f"Project step not found: {step_id}"}
+        plan_row = conn.execute("SELECT * FROM project_plans WHERE plan_id = ?", (step_row["plan_id"],)).fetchone()
+    step = row_to_project_step(step_row)
+    plan = row_to_project_plan(plan_row, []) if plan_row else {}
+    output = latest_project_step_output(step_id)
+    if not output:
+        output = {
+            "outputId": project_step_output_id(step_id),
+            "stepId": step_id,
+            "planId": step.get("planId") or "",
+            "applicationId": plan.get("applicationId") or "",
+            "outputTemplateId": step.get("outputTemplateId") or "",
+            "status": "Not started",
+            "title": step.get("title") or "",
+            "summary": "",
+            "content": default_project_output_content(step.get("outputTemplateId") or "", step.get("title") or ""),
+            "blockerType": "",
+            "evidenceLink": "",
+            "reviewedBy": "",
+            "createdBy": (step.get("action") or {}).get("assignedStaff") or step.get("assignedStaff") or "AIstaff_Manager",
+            "createdAt": "",
+            "updatedAt": "",
+            "sentToAlexAt": "",
+        }
+    return {"ok": True, "output": output, "step": step, "plan": plan}
+
+
+def queue_project_output_alex_review(output: dict[str, Any], step: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+    task_id = "staff_task_project_output_review_" + safe_task_part(step.get("stepId") or output.get("stepId") or "")
+    thread_id = thread_id_for_task(task_id)
+    summary = output.get("summary") or "Project step output is ready for Alex review."
+    message = (
+        f"Review project step output for Lead {plan.get('applicationId') or ''}.\n\n"
+        f"Step: {step.get('title') or step.get('stage')}\n"
+        f"Output status: {output.get('status')}\n"
+        f"Summary: {summary}\n"
+        f"Evidence: {output.get('evidenceLink') or 'not attached'}\n\n"
+        "Decide whether to approve the output, route the next staff step, request missing input from Iman, or keep it blocked. "
+        "Do not send supplier email or submit tender from this review task."
+    )
+    if local_or_pending_task_exists(task_id):
+        return add_thread_message(
+            {
+                "threadId": thread_id,
+                "senderType": "AI Staff",
+                "senderId": output.get("createdBy") or step.get("assignedStaff") or "AIstaff_Manager",
+                "senderLabel": staff_label(output.get("createdBy") or step.get("assignedStaff")),
+                "body": message,
+                "evidenceLink": output.get("evidenceLink") or "",
+                "metadata": {"project_step_output": output.get("outputId"), "alex_review": True},
+            }
+        )
+    return queue_action(
+        "appendAiStaffTask",
+        {
+            "taskId": task_id,
+            "taskType": "Project Output Review",
+            "taskCategory": TASK_CATEGORIES["manager"],
+            "taskTemplateId": "template_project_output_alex_review",
+            "assignedTo": "AIstaff_Manager",
+            "createdBy": output.get("createdBy") or step.get("assignedStaff") or "AIstaff_Manager",
+            "sourceStaff": output.get("createdBy") or step.get("assignedStaff") or "AIstaff_Manager",
+            "targetStaff": "AIstaff_Manager",
+            "relatedApplicationId": plan.get("applicationId") or "",
+            "relatedOpportunityId": plan.get("opportunityId") or "",
+            "priority": "High",
+            "runAfter": iso_like(),
+            "dueAt": iso_like(utc_ts() + 2 * 60 * 60),
+            "nextAction": message,
+            "completionCriteria": "Alex approves, blocks, or routes the next supervised project step.",
+            "successStatus": "Project Output Reviewed",
+            "failureStatus": "Blocked - Project Output Review",
+            "status": "Queued",
+            "evidenceLink": output.get("evidenceLink") or output.get("outputId") or "",
+            "resultNotes": "Project step output sent to Alex for supervised review.",
+            "projectPlanId": plan.get("planId") or "",
+            "projectStepId": step.get("stepId") or "",
+            "outputTemplateId": output.get("outputTemplateId") or "",
+        },
+        method="POST",
+        sync_online=False,
+    )
+
+
+def save_project_step_output(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    step_id = str(payload.get("stepId") or "").strip()
+    if not step_id:
+        return {"ok": False, "error": "Missing stepId."}
+    with connect() as conn:
+        step_row = conn.execute("SELECT * FROM project_plan_steps WHERE step_id = ?", (step_id,)).fetchone()
+        if not step_row:
+            return {"ok": False, "error": f"Project step not found: {step_id}"}
+        plan_row = conn.execute("SELECT * FROM project_plans WHERE plan_id = ?", (step_row["plan_id"],)).fetchone()
+    step = row_to_project_step(step_row)
+    plan = row_to_project_plan(plan_row, []) if plan_row else {}
+    action_raw = str(payload.get("action") or "").strip().lower()
+    action = action_raw.replace("-", "_").replace(" ", "_")
+    existing = latest_project_step_output(step_id)
+    output_id = str(payload.get("outputId") or (existing or {}).get("outputId") or project_step_output_id(step_id))
+    status = str(payload.get("status") or (existing or {}).get("status") or "Draft").strip() or "Draft"
+    if action == "mark_blocked":
+        status = "Blocked"
+    elif action == "send_to_alex":
+        status = "Ready for Alex Review"
+    elif action == "approve":
+        status = "Approved"
+    summary = str(payload.get("summary") if payload.get("summary") is not None else (existing or {}).get("summary") or "").strip()
+    content = payload.get("content") if isinstance(payload.get("content"), dict) else (existing or {}).get("content")
+    if not isinstance(content, dict):
+        content = default_project_output_content(step.get("outputTemplateId") or "", step.get("title") or "")
+    blocker_type = str(payload.get("blockerType") or (existing or {}).get("blockerType") or "").strip()
+    if action == "mark_blocked" and not blocker_type:
+        blocker_type = "Output blocked"
+    evidence_link = str(payload.get("evidenceLink") or (existing or {}).get("evidenceLink") or "").strip()
+    created_by = normalized_staff_id(payload.get("createdBy") or (existing or {}).get("createdBy") or (step.get("action") or {}).get("assignedStaff") or step.get("assignedStaff"), "AIstaff_Manager")
+    now = utc_ts()
+    created_at = now
+    if existing and existing.get("createdAt"):
+        try:
+            created_at = time.mktime(time.strptime(existing["createdAt"][:19], "%Y-%m-%dT%H:%M:%S"))
+        except Exception:
+            created_at = now
+    sent_to_alex_at = now if action == "send_to_alex" else None
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO project_step_outputs (
+              output_id, step_id, plan_id, application_id, output_template_id,
+              status, title, summary, content_json, blocker_type, evidence_link,
+              reviewed_by, created_by, created_at, updated_at, sent_to_alex_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(output_id) DO UPDATE SET
+              status=excluded.status,
+              title=excluded.title,
+              summary=excluded.summary,
+              content_json=excluded.content_json,
+              blocker_type=excluded.blocker_type,
+              evidence_link=excluded.evidence_link,
+              reviewed_by=excluded.reviewed_by,
+              updated_at=excluded.updated_at,
+              sent_to_alex_at=COALESCE(excluded.sent_to_alex_at, project_step_outputs.sent_to_alex_at)
+            """,
+            (
+                output_id,
+                step_id,
+                step.get("planId") or plan.get("planId") or payload.get("planId") or "",
+                plan.get("applicationId") or payload.get("applicationId") or "",
+                step.get("outputTemplateId") or payload.get("outputTemplateId") or "",
+                status,
+                str(payload.get("title") or (existing or {}).get("title") or step.get("title") or ""),
+                summary,
+                json.dumps(content, ensure_ascii=False, default=str),
+                blocker_type,
+                evidence_link,
+                str(payload.get("reviewedBy") or (existing or {}).get("reviewedBy") or ""),
+                created_by,
+                created_at,
+                now,
+                sent_to_alex_at,
+            ),
+        )
+    output = latest_project_step_output(step_id) or {}
+    alex_review = None
+    if action == "send_to_alex":
+        alex_review = queue_project_output_alex_review(output, step, plan)
+    if action == "mark_blocked":
+        with connect() as conn:
+            conn.execute(
+                "UPDATE project_plan_steps SET status = 'Blocked', blocker_type = ?, notes = ?, updated_at = ? WHERE step_id = ?",
+                (blocker_type or "Output blocked", summary or "Project step output marked blocked.", now, step_id),
+            )
+    return {
+        "ok": True,
+        "output": output,
+        "step": get_project_plan(plan_id=step.get("planId") or "").get("plan", {}).get("steps", []),
+        "alexReview": alex_review,
+        "message": "Output sent to Alex for review." if action == "send_to_alex" else "Project step output saved.",
+    }
 
 
 def text_has_phrase(value: Any, phrase: str) -> bool:
@@ -2137,6 +4586,56 @@ def is_thread_task(row: dict[str, Any]) -> bool:
     if not row or task_is_terminal(row):
         return False
     return bool(row.get("taskId") or row.get("Task ID"))
+
+
+def task_thread_reason(row: dict[str, Any]) -> str:
+    if not is_thread_task(row):
+        return ""
+    source_kind = normalize_text(row.get("sourceKind") or row.get("Source Kind"))
+    category = task_category_for_signal(row, source_kind)
+    source_staff, target_staff, routing_note = routed_thread_parties(row)
+    text = normalize_text(
+        compact_join(
+            [
+                row.get("taskType"),
+                row.get("Task Type"),
+                row.get("taskCategory"),
+                row.get("Task Category"),
+                row.get("status"),
+                row.get("sendStatus"),
+                row.get("approvalStatus"),
+                row.get("failureStatus"),
+                row.get("lastError"),
+                row.get("resultNotes"),
+                row.get("nextAction"),
+                row.get("completionCriteria"),
+                row.get("subject"),
+                row.get("reason"),
+                row.get("escalationLevel"),
+                source_kind,
+                routing_note,
+            ]
+        )
+    )
+    if is_human_responsible(source_staff) or is_human_responsible(target_staff) or category == TASK_CATEGORIES["human"]:
+        return "human_message"
+    if any(term in text for term in ["approval", "approve", "not approved", "needs review", "human review", "duplicate recipient"]):
+        return "approval"
+    if any(term in text for term in ["missing", "upload", "incomplete", "required file", "scope pdf", "appendix"]):
+        return "missing_input"
+    if any(term in text for term in ["blocked", "failed", "error", "unsafe", "cannot", "unavailable", "style qa", "template style"]):
+        return "blocker"
+    if any(term in text for term in ["escalat", "human decision", "manager decision"]):
+        return "escalation"
+    if any(term in text for term in ["codex worker", "waiting for codex", "requires codex", "worker handoff"]):
+        return "worker_handoff"
+    if source_kind == "system audit" or category in {TASK_CATEGORIES["audit"], TASK_CATEGORIES["technical"]}:
+        return "system_audit"
+    if any(term in text for term in ["review", "qa", "check", "verify", "fit", "eligib", "decision"]):
+        return "review"
+    if category in {TASK_CATEGORIES["manager"], TASK_CATEGORIES["email"]}:
+        return "review"
+    return ""
 
 
 def thread_target_staff(row: dict[str, Any]) -> str:
@@ -2428,6 +4927,8 @@ def row_to_thread(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         "sourceStaffLabel": staff_label(data.get("source_staff") or data.get("responsible")),
         "actionStaff": thread_action_staff(data),
         "actionStaffLabel": staff_label(thread_action_staff(data)),
+        "threadReason": source.get("threadReason") or "",
+        "threadReasonLabel": source.get("threadReasonLabel") or THREAD_REASON_LABELS.get(str(source.get("threadReason") or ""), ""),
         "status": data.get("status"),
         "archived": bool(data.get("archived")),
         "createdAt": iso_like(created) if created else "",
@@ -2827,6 +5328,9 @@ def upsert_thread_for_task(row: dict[str, Any]) -> dict[str, Any] | None:
     task_id = row.get("taskId") or row.get("Task ID")
     if not task_id or not is_thread_task(row):
         return None
+    thread_reason = task_thread_reason(row)
+    if not thread_reason:
+        return None
     thread_id = row.get("threadId") or row.get("ThreadID") or thread_id_for_task(task_id)
     now = utc_ts()
     source_staff, target_staff, routing_note = routed_thread_parties(row)
@@ -2855,6 +5359,8 @@ def upsert_thread_for_task(row: dict[str, Any]) -> dict[str, Any] | None:
         "targetStaff": target_staff,
         "sourceStaff": source_staff,
         "routingNote": routing_note,
+        "threadReason": thread_reason,
+        "threadReasonLabel": THREAD_REASON_LABELS.get(thread_reason, thread_reason),
         "escalationLevel": row.get("escalationLevel") or row.get("Escalation Level") or "",
         "learningCandidateId": row.get("learningCandidateId") or row.get("Learning Candidate ID") or "",
         "subject": row.get("subject") or row.get("Subject") or "",
@@ -4683,6 +7189,124 @@ def skill_for_codex_staff(staff_id: str, text: str = "") -> str:
     return "swiss-planner-staff"
 
 
+def skill_catalog_lookup(fabric: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
+    scopes = ["platformSafetySkills", "departmentSkills", "staffTemplateSkills", "laneAdapterSkills"]
+    return {
+        scope: {
+            str(row.get("id")): row
+            for row in fabric.get(scope, []) or []
+            if isinstance(row, dict) and row.get("id")
+        }
+        for scope in scopes
+    }
+
+
+def approved_learning_rules_for_staff(staff_id: str) -> list[dict[str, Any]]:
+    init_db()
+    normalized = normalized_staff_id(staff_id, "AIstaff_Manager")
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT learning_id, staff_id, proposed_rule, reason, evidence, target_skill_file, applied_at
+            FROM skill_updates
+            WHERE status = 'Approved'
+              AND (staff_id = ? OR staff_id = 'AIstaff_Manager')
+            ORDER BY applied_at DESC, created_at DESC
+            LIMIT 20
+            """,
+            (normalized,),
+        ).fetchall()
+    return [
+        {
+            "id": row["learning_id"],
+            "label": "Approved Learning",
+            "scope": "approvedLearnedUpdates",
+            "summary": row["proposed_rule"],
+            "rules": [row["proposed_rule"]] if row["proposed_rule"] else [],
+            "reason": row["reason"],
+            "evidence": row["evidence"],
+            "targetSkillFile": row["target_skill_file"],
+            "workspaceEditable": False,
+            "locked": False,
+        }
+        for row in rows
+    ]
+
+
+def resolve_scoped_skills_for_staff(staff_id: str, fabric: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalized_staff_id(staff_id, "AIstaff_Manager")
+    catalogs = skill_catalog_lookup(fabric)
+    archetype_ids = [str(item) for item in (profile.get("archetypeIds") or []) if item]
+    if not archetype_ids and profile.get("primaryArchetypeId"):
+        archetype_ids = [str(profile.get("primaryArchetypeId"))]
+    relevant_lane_ids = {"lane_local_thread_tasks"}
+    if "archetype_email_sender" in archetype_ids:
+        relevant_lane_ids.add("lane_gmail_bridge")
+    if "archetype_crm_operator" in archetype_ids:
+        relevant_lane_ids.add("lane_local_sqlite")
+    bindings = sorted(
+        [row for row in fabric.get("skillBindings", []) or [] if isinstance(row, dict)],
+        key=lambda row: int(row.get("resolutionOrder") or 99),
+    )
+    resolved: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def binding_applies(binding: dict[str, Any]) -> bool:
+        binding_type = str(binding.get("bindingType") or "")
+        target = str(binding.get("targetId") or "")
+        if binding_type == "global":
+            return True
+        if binding_type == "department":
+            return target == "department_swiss_planner_applications"
+        if binding_type == "staff":
+            return target == normalized
+        if binding_type == "staffArchetype":
+            return target in archetype_ids
+        if binding_type == "lane":
+            return target in relevant_lane_ids
+        return False
+
+    for binding in bindings:
+        if not binding_applies(binding):
+            continue
+        scope = str(binding.get("skillScope") or "")
+        catalog = catalogs.get(scope) or {}
+        for skill_id in binding.get("skillIds", []) or []:
+            skill = catalog.get(str(skill_id))
+            if not skill or str(skill.get("id")) in seen:
+                continue
+            resolved.append({**json_clone(skill), "resolvedFromBinding": binding.get("id"), "resolutionOrder": binding.get("resolutionOrder")})
+            seen.add(str(skill.get("id")))
+
+    workspace_profile = fabric.get("workspaceBusinessProfile") or {}
+    user_preferences = [
+        {
+            "id": "workspace_preference_business_identity",
+            "label": "Workspace Business Identity",
+            "scope": "userPreferences",
+            "summary": "Workspace-level company facts and communication preferences inherited by installed departments.",
+            "rules": [
+                f"Company display name: {workspace_profile.get('companyDisplayName') or 'not set'}",
+                f"Default language: {workspace_profile.get('defaultLanguage') or 'not set'}",
+                f"Brand tone: {workspace_profile.get('approvedBrandTone') or 'not set'}",
+                f"Manager title: {workspace_profile.get('defaultManagerTitle') or 'not set'}",
+            ],
+            "workspaceEditable": True,
+            "locked": False,
+            "resolutionOrder": 6,
+        }
+    ]
+    learned = approved_learning_rules_for_staff(normalized)
+    return {
+        "resolutionOrder": (fabric.get("operatingModel") or {}).get("skillArchitecture", {}).get("resolutionOrder", []),
+        "appliedArchetypeIds": archetype_ids,
+        "appliedLaneIds": sorted(relevant_lane_ids),
+        "skills": resolved,
+        "userPreferences": user_preferences,
+        "approvedLearnedUpdates": learned,
+    }
+
+
 def codex_work_required(row: sqlite3.Row | dict[str, Any]) -> bool:
     source = source_payload_for_thread(row)
     staff = normalized_staff_id(row_value(row, "responsible") or source.get("assignedTo"), "AIstaff_Manager")
@@ -4751,6 +7375,141 @@ def codex_work_required(row: sqlite3.Row | dict[str, Any]) -> bool:
     return explicit and substantive
 
 
+def staff_operating_contract(staff_id: str) -> dict[str, Any]:
+    fabric = load_capability_fabric()
+    normalized = normalized_staff_id(staff_id, "AIstaff_Manager")
+    profiles = {
+        str(row.get("id")): row
+        for row in fabric.get("staffProfiles", []) or []
+        if isinstance(row, dict) and row.get("id")
+    }
+    archetypes = {
+        str(row.get("id")): row
+        for row in fabric.get("staffArchetypes", []) or []
+        if isinstance(row, dict) and row.get("id")
+    }
+    profile = profiles.get(normalized, {})
+    ids = [str(item) for item in (profile.get("archetypeIds") or []) if item]
+    if not ids and profile.get("primaryArchetypeId"):
+        ids = [str(profile.get("primaryArchetypeId"))]
+    inherited = [archetypes[item] for item in ids if item in archetypes]
+    operating_model = fabric.get("operatingModel") or {}
+    department_contract = operating_model.get("departmentContract") or {}
+    thread_policy = operating_model.get("threadPolicy") or {}
+    runtime_architecture = operating_model.get("automationRuntimeArchitecture") or {}
+    scoped_skills = resolve_scoped_skills_for_staff(normalized, fabric, profile)
+    return {
+        "staffId": normalized,
+        "staffLabel": staff_label(normalized),
+        "profileTitle": profile.get("profileTitle") or profile.get("label") or staff_label(normalized),
+        "contactPolicy": profile.get("contactPolicy") or "",
+        "communicationScope": profile.get("communicationScope") or "",
+        "reportsTo": profile.get("reportsTo") or profile.get("managerId") or "",
+        "canContactHuman": bool(profile.get("canContactHuman")),
+        "canCreateHumanFacingThreads": bool(profile.get("canCreateHumanFacingThreads")),
+        "toolOperatingMode": profile.get("toolOperatingMode") or "",
+        "departmentOperatingRules": {
+            "humanCommunicationRule": department_contract.get("humanCommunicationRule") or "",
+            "staffCommunicationRule": department_contract.get("staffCommunicationRule") or "",
+            "managerRole": department_contract.get("managerRole") or "",
+            "threadCreateReasons": thread_policy.get("createThreadsFor") or [],
+            "threadDoNotCreateFor": thread_policy.get("doNotCreateThreadsFor") or [],
+            "automationRuntime": {
+                "currentApproach": runtime_architecture.get("currentApproach") or "",
+                "runnerResponsibilities": runtime_architecture.get("runnerResponsibilities") or [],
+                "projectSchedulerPolicy": runtime_architecture.get("projectSchedulerPolicy") or {},
+                "externalWorkflowEnginePolicy": runtime_architecture.get("externalWorkflowEnginePolicy") or {},
+            },
+        },
+        "resolvedScopedSkills": scoped_skills,
+        "archetypeIds": ids,
+        "archetypes": [
+            {
+                "id": row.get("id"),
+                "label": row.get("label"),
+                "purpose": row.get("purpose"),
+                "preferredModel": row.get("preferredModel"),
+                "allowedPluginFamilies": row.get("allowedPluginFamilies") or [],
+                "requiresApprovalFor": row.get("requiresApprovalFor") or [],
+                "outputContract": row.get("outputContract") or [],
+                "stopConditions": row.get("stopConditions") or [],
+            }
+            for row in inherited
+        ],
+    }
+
+
+def format_staff_operating_contract(contract: dict[str, Any]) -> str:
+    lines = [
+        "Staff operating contract:",
+        f"- Staff profile: {contract.get('profileTitle') or contract.get('staffLabel')}",
+    ]
+    if contract.get("contactPolicy"):
+        lines.append(f"- Contact policy: {contract.get('contactPolicy')}")
+    if contract.get("communicationScope"):
+        lines.append(f"- Communication scope: {contract.get('communicationScope')}")
+    if contract.get("reportsTo"):
+        lines.append(f"- Reports to: {contract.get('reportsTo')}")
+    if not contract.get("canContactHuman") and contract.get("staffId") != "Human_Iman":
+        lines.append("- Human contact: do not ask the human directly; report blockers or questions to AIstaff_Manager.")
+    rules = contract.get("departmentOperatingRules") or {}
+    if rules.get("humanCommunicationRule"):
+        lines.append(f"- Department rule: {rules.get('humanCommunicationRule')}")
+    if rules.get("staffCommunicationRule"):
+        lines.append(f"- Staff routing rule: {rules.get('staffCommunicationRule')}")
+    if rules.get("threadCreateReasons"):
+        labels = [THREAD_REASON_LABELS.get(str(reason), str(reason)) for reason in rules.get("threadCreateReasons") or []]
+        lines.append(f"- Create/continue task threads only for: {', '.join(labels)}.")
+    if rules.get("threadDoNotCreateFor"):
+        lines.append(f"- Do not create thread noise for: {', '.join(rules.get('threadDoNotCreateFor') or [])}.")
+    runtime = rules.get("automationRuntime") or {}
+    if runtime.get("currentApproach"):
+        lines.append(f"- Runtime approach: {runtime.get('currentApproach')}")
+    if runtime.get("runnerResponsibilities"):
+        lines.append(f"- Worker responsibilities: {', '.join(runtime.get('runnerResponsibilities') or [])}.")
+    scheduler = runtime.get("projectSchedulerPolicy") or {}
+    if scheduler.get("progressRule"):
+        lines.append(f"- Progress rule: {scheduler.get('progressRule')}")
+    external_engine = runtime.get("externalWorkflowEnginePolicy") or {}
+    if external_engine.get("triggerDevDecision"):
+        lines.append(f"- Workflow engine policy: {external_engine.get('triggerDevDecision')} {external_engine.get('reason') or ''}".strip())
+    scoped = contract.get("resolvedScopedSkills") or {}
+    if scoped.get("resolutionOrder"):
+        lines.append(f"- Skill resolution order: {', '.join(scoped.get('resolutionOrder') or [])}.")
+    resolved_skills = scoped.get("skills") or []
+    if resolved_skills:
+        lines.append("- Resolved scoped skills:")
+        for skill in resolved_skills[:12]:
+            rules = "; ".join((skill.get("rules") or [])[:3])
+            lines.append(f"  - {skill.get('scope')}: {skill.get('label')} - {skill.get('summary') or rules}")
+    preferences = scoped.get("userPreferences") or []
+    if preferences:
+        pref_rules = []
+        for pref in preferences:
+            pref_rules.extend(pref.get("rules") or [])
+        lines.append(f"- User-editable workspace preferences: {'; '.join(pref_rules[:6])}.")
+    learned = scoped.get("approvedLearnedUpdates") or []
+    if learned:
+        lines.append("- Approved learned updates:")
+        for item in learned[:5]:
+            lines.append(f"  - {item.get('summary') or item.get('label')}")
+    if contract.get("toolOperatingMode"):
+        lines.append(f"- Tool mode: {contract.get('toolOperatingMode')}")
+    for archetype in contract.get("archetypes") or []:
+        lines.extend(
+            [
+                f"- Archetype: {archetype.get('label')} ({archetype.get('id')})",
+                f"  Purpose: {archetype.get('purpose')}",
+                f"  Preferred model: {archetype.get('preferredModel')}",
+                f"  Allowed plugin/tool families: {', '.join(archetype.get('allowedPluginFamilies') or []) or 'none'}",
+                f"  Requires approval for: {', '.join(archetype.get('requiresApprovalFor') or []) or 'none'}",
+                f"  Output contract: {', '.join(archetype.get('outputContract') or []) or 'concise task result'}",
+                f"  Stop conditions: {', '.join(archetype.get('stopConditions') or []) or 'unclear blocker'}",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def build_codex_work_prompt(thread: dict[str, Any], messages: list[dict[str, Any]], source: dict[str, Any]) -> tuple[str, str, str, dict[str, Any]]:
     assigned = normalized_staff_id(thread.get("responsible") or source.get("assignedTo"), "AIstaff_Manager")
     task_text = compact_join(
@@ -4762,6 +7521,7 @@ def build_codex_work_prompt(thread: dict[str, Any], messages: list[dict[str, Any
         ]
     )
     skill = skill_for_codex_staff(assigned, task_text)
+    operating_contract = staff_operating_contract(assigned)
     title_base = source.get("taskType") or source.get("taskCategory") or "Codex work"
     app_id = thread.get("applicationId") or source.get("relatedApplicationId") or source.get("applicationId") or ""
     opp_id = thread.get("opportunityId") or source.get("relatedOpportunityId") or source.get("opportunityId") or ""
@@ -4782,10 +7542,12 @@ def build_codex_work_prompt(thread: dict[str, Any], messages: list[dict[str, Any
         "opportunityId": opp_id,
         "sourceTask": source,
         "recentMessages": messages[-8:],
+        "staffOperatingContract": operating_contract,
     }
     prompt = (
         f"You are acting as {staff_label(assigned)} ({assigned}) in the Swiss Planner AI Staff system.\n\n"
         f"Required skill: {skill}\n\n"
+        f"{format_staff_operating_contract(operating_contract)}\n\n"
         "Task:\n"
         f"{task_text or title}\n\n"
         "Related IDs:\n"
@@ -4892,6 +7654,56 @@ def get_codex_work_item(work_item_id: str) -> dict[str, Any]:
     return {"ok": True, "workItem": row_to_codex_work_item(row)}
 
 
+def next_local_worker_item() -> dict[str, Any] | None:
+    init_db()
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM codex_work_items
+            WHERE status IN ('Queued', 'Ready')
+            ORDER BY
+              CASE priority
+                WHEN 'Critical' THEN 0
+                WHEN 'High' THEN 1
+                WHEN 'Medium' THEN 2
+                WHEN 'Low' THEN 3
+                ELSE 4
+              END,
+              created_at ASC
+            LIMIT 1
+            """
+        ).fetchone()
+    return row_to_codex_work_item(row) if row else None
+
+
+def prepare_codex_items_without_worker() -> dict[str, Any]:
+    now = utc_ts()
+    message = "Worker command not configured. Set AI_DEPARTMENT_WORKER_COMMAND to process Codex work items automatically."
+    with connect() as conn:
+        changed = conn.execute(
+            """
+            UPDATE codex_work_items
+            SET status = 'Ready',
+                updated_at = ?,
+                last_error = ?
+            WHERE status = 'Queued'
+            """,
+            (now, message),
+        ).rowcount
+    set_meta("local_worker_last_error", message)
+    set_meta(
+        "local_worker_last_run",
+        {
+            "runAt": iso_like(now),
+            "status": "Worker Missing",
+            "processed": 0,
+            "message": message,
+        },
+    )
+    return {"ok": True, "processed": 0, "changedToReady": int(changed or 0), "message": message}
+
+
 def mark_codex_work_item(payload: dict[str, Any]) -> dict[str, Any]:
     work_item_id = str(payload.get("workItemId") or "").strip()
     status = str(payload.get("status") or "").strip()
@@ -4963,7 +7775,107 @@ def submit_codex_work_result(payload: dict[str, Any]) -> dict[str, Any]:
                 "metadata": {"codex_work_item": work_item_id, "status": item.get("status")},
             }
         )
+    source_task_id = item.get("sourceTaskId") or ""
+    status = str(item.get("status") or "")
+    if source_task_id and status == "Done":
+        update_snapshot_task_status(source_task_id, "Done", result, payload.get("evidenceLink") or "")
+    elif source_task_id and status == "Blocked":
+        update_snapshot_task_status(
+            source_task_id,
+            "Blocked - Codex Worker Issue",
+            payload.get("lastError") or result,
+            payload.get("evidenceLink") or "",
+        )
     return marked
+
+
+def run_local_worker_once(force: bool = False) -> dict[str, Any]:
+    if not force and not local_worker_enabled():
+        return {"ok": True, "processed": 0, "state": "Paused", "message": "Local worker is paused."}
+    command = local_worker_command()
+    if not command:
+        return prepare_codex_items_without_worker()
+    if not LOCAL_WORKER_LOCK.acquire(blocking=False):
+        return {"ok": True, "processed": 0, "state": "Busy", "message": "Local worker is already running."}
+    try:
+        item = next_local_worker_item()
+        if not item:
+            run = {"runAt": iso_like(), "status": "Idle", "processed": 0, "message": "No queued Codex work items."}
+            set_meta("local_worker_last_run", run)
+            return {"ok": True, "processed": 0, "state": "Idle", "message": run["message"]}
+        work_item_id = str(item.get("workItemId") or "")
+        mark_codex_work_item({"workItemId": work_item_id, "status": "In Progress"})
+        started = get_codex_work_item(work_item_id).get("workItem") or item
+        timeout = max(30, int(os.environ.get("AI_DEPARTMENT_WORKER_TIMEOUT_SECONDS", "900") or "900"))
+        try:
+            completed = subprocess.run(
+                command,
+                input=json.dumps(started, default=str),
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                shell=True,
+            )
+        except subprocess.TimeoutExpired as exc:
+            error = f"Worker command timed out after {timeout} seconds."
+            submit_codex_work_result(
+                {
+                    "workItemId": work_item_id,
+                    "status": "Blocked",
+                    "resultSummary": error,
+                    "lastError": str(exc),
+                }
+            )
+            set_meta("local_worker_last_error", error)
+            return {"ok": False, "processed": 0, "state": "Timeout", "workItem": started, "error": error}
+        stdout = (completed.stdout or "").strip()
+        stderr = (completed.stderr or "").strip()
+        parsed: dict[str, Any] = {}
+        if stdout:
+            try:
+                parsed = json.loads(stdout)
+            except json.JSONDecodeError:
+                parsed = {}
+        if completed.returncode != 0:
+            error = stderr or stdout or f"Worker command exited with code {completed.returncode}."
+            result = submit_codex_work_result(
+                {
+                    "workItemId": work_item_id,
+                    "status": "Blocked",
+                    "resultSummary": error,
+                    "lastError": error,
+                }
+            )
+            set_meta("local_worker_last_error", error)
+            return {"ok": False, "processed": 0, "state": "Worker Error", "workItem": started, "result": result, "error": error}
+        status = str(parsed.get("status") or "Done").strip()
+        if status not in {"Done", "Blocked", "Ready"}:
+            status = "Done"
+        result_summary = str(parsed.get("resultSummary") or parsed.get("summary") or stdout or "Worker completed the item.").strip()
+        evidence_link = str(parsed.get("evidenceLink") or "").strip()
+        last_error = str(parsed.get("lastError") or "").strip()
+        result = submit_codex_work_result(
+            {
+                "workItemId": work_item_id,
+                "status": status,
+                "resultSummary": result_summary,
+                "evidenceLink": evidence_link,
+                "lastError": last_error,
+            }
+        )
+        run = {
+            "runAt": iso_like(),
+            "status": status,
+            "processed": 1,
+            "workItemId": work_item_id,
+            "title": started.get("title"),
+        }
+        set_meta("local_worker_last_run", run)
+        if status == "Done":
+            set_meta("local_worker_last_error", "")
+        return {"ok": result.get("ok", True), "processed": 1, "state": status, "workItem": started, "result": result}
+    finally:
+        LOCAL_WORKER_LOCK.release()
 
 
 def ensure_codex_work_items_for_open_threads(limit: int = 200) -> dict[str, Any]:
@@ -5658,6 +8570,12 @@ def local_task_from_payload(payload: dict, action_id: str) -> dict[str, Any]:
         "evidenceLink": payload.get("evidenceLink") or "",
         "threadId": payload.get("threadId") or "",
         "sourceTaskId": payload.get("sourceTaskId") or "",
+        "projectPlanId": payload.get("projectPlanId") or "",
+        "projectStepId": payload.get("projectStepId") or "",
+        "workflowStage": payload.get("workflowStage") or "",
+        "outputTemplateId": payload.get("outputTemplateId") or "",
+        "expectedOutput": payload.get("expectedOutput") or "",
+        "safetyGate": payload.get("safetyGate") or "",
         "resultNotes": payload.get("resultNotes") or routing_note or "Saved locally; will sync to Google Sheet when the task thread closes.",
     }
 
@@ -6244,6 +9162,10 @@ def evaluate_daily_kpi_state(snapshot: Dashboard | None, progress: dict[str, Any
     waiting_codex = max(summary_number(snapshot, "waitingCodexWorker"), open_codex_work_count())
     pending = local_status().get("pendingActions", 0)
     document_quality = document_quality_status()
+    blockers = automation_blockers(snapshot)
+    missing_files = int((blockers.get("counts") or {}).get("missingFiles") or 0)
+    email_approval = int((blockers.get("counts") or {}).get("externalEmailApproval") or 0)
+    worker = local_worker_status()
     checks = {
         "sheetSync": progress.get("sheetSyncs", 0) >= targets["sheetSyncs"],
         "crmHealth": progress.get("crmHealthChecks", 0) >= targets["crmHealthChecks"],
@@ -6257,18 +9179,28 @@ def evaluate_daily_kpi_state(snapshot: Dashboard | None, progress: dict[str, Any
     if local_runnable > 0:
         human_note = f" {human_review} human-facing item(s) are waiting separately." if human_review else ""
         return {
-            "state": "Active",
+            "state": "Running Internal Work",
             "reason": f"{local_runnable} internal staff item(s) can still run locally.{human_note}",
             "checks": checks | {"openEscalations": open_escalations, "internalDueTasks": internal_due_tasks, "staffWakeups": wakeups},
         }
     if int(document_quality.get("issueCount") or 0) > 0:
-        return {"state": "Active", "reason": f"{document_quality.get('issueCount')} package document-style issue(s) need QA tasks.", "checks": checks}
+        return {"state": "Running Internal Work", "reason": f"{document_quality.get('issueCount')} package document-style issue(s) need QA tasks.", "checks": checks}
     if waiting_codex > 0:
         human_note = f" {human_review} human-facing item(s) also need review." if human_review else ""
-        return {"state": "Waiting for Codex Worker", "reason": f"{waiting_codex} Codex work item(s) are queued for research/writing.{human_note}", "checks": checks}
+        if not worker.get("commandConfigured"):
+            return {
+                "state": "Waiting For Codex Worker",
+                "reason": f"{waiting_codex} Codex work item(s) are ready, but AI_DEPARTMENT_WORKER_COMMAND is not configured.{human_note}",
+                "checks": checks,
+            }
+        return {"state": "Waiting For Codex Worker", "reason": f"{waiting_codex} Codex work item(s) are queued for research/writing.{human_note}", "checks": checks}
+    if missing_files > 0:
+        return {"state": "Waiting For Missing Files", "reason": f"{missing_files} Lead item(s) are blocked by missing tender files.", "checks": checks}
+    if email_approval > 0:
+        return {"state": "Waiting For Human Approval", "reason": f"{email_approval} external outreach row(s) need Iman's approval.", "checks": checks}
     if human_review > 0:
-        return {"state": "Waiting for Human Review", "reason": f"{human_review} item(s) need Iman's decision.", "checks": checks}
-    return {"state": "Active", "reason": "Daily KPIs are not complete yet.", "checks": checks}
+        return {"state": "Waiting For Human Approval", "reason": f"{human_review} item(s) need Iman's decision.", "checks": checks}
+    return {"state": "Running Internal Work", "reason": "Daily KPIs are not complete yet.", "checks": checks}
 
 
 def run_autopilot_cycle(bridge_call: BridgeCall, force: bool = False) -> dict[str, Any]:
@@ -6322,6 +9254,12 @@ def run_autopilot_cycle(bridge_call: BridgeCall, force: bool = False) -> dict[st
             progress["tasksProcessed"] = int(progress.get("tasksProcessed", 0)) + processed
             sync_from_sheet(bridge_call, run_audit=False)
             snapshot = load_dashboard_snapshot()
+        elif open_codex_work_count() > 0:
+            action = "run_local_codex_worker"
+            result = run_local_worker_once(force=False)
+            processed = int(result.get("processed") or 0) if isinstance(result, dict) else 0
+            progress["tasksProcessed"] = int(progress.get("tasksProcessed", 0)) + processed
+            snapshot = load_dashboard_snapshot()
         elif not has_waiting_codex_task(snapshot) and open_codex_work_count() == 0 and int(progress.get("codexTasksQueued", 0)) < config["dailyTargets"]["codexTasksQueuedWhenIdle"]:
             action = "queue_codex_research_task"
             result = queue_daily_codex_research_task("Daily KPI flow was idle without a Codex work item.")
@@ -6363,7 +9301,7 @@ def run_autopilot_until_blocked(bridge_call: BridgeCall, max_steps: int = 8) -> 
     """Run several safe KPI steps in sequence for the manual Run KPI Cycle button."""
     steps: list[dict[str, Any]] = []
     max_steps = max(1, min(int(max_steps or 8), 12))
-    terminal_states = {"Completed", "Waiting for Human Review", "Waiting for Codex Worker", "Paused", "Error"}
+    terminal_states = {"Completed", "Waiting For Human Approval", "Waiting For Missing Files", "Waiting For Codex Worker", "Paused", "Error"}
     for index in range(max_steps):
         result = run_autopilot_cycle(bridge_call, force=(index == 0))
         steps.append(result)
@@ -6379,6 +9317,10 @@ def run_autopilot_until_blocked(bridge_call: BridgeCall, max_steps: int = 8) -> 
             nested = result.get("result") if isinstance(result.get("result"), dict) else {}
             processed = int((nested.get("result") or nested).get("processed") or 0) if isinstance(nested, dict) else 0
             if processed <= 0:
+                break
+        if action == "run_local_codex_worker":
+            nested = result.get("result") if isinstance(result.get("result"), dict) else {}
+            if int(nested.get("processed") or 0) <= 0:
                 break
     last = steps[-1] if steps else {"ok": True, "state": "No Action", "reason": "No KPI cycle step ran."}
     record_worker_run("Autopilot", str(last.get("state") or "Cycle"), "run_until_blocked", {"steps": steps}, str(last.get("reason") or ""))
@@ -6419,9 +9361,25 @@ def start_autopilot_loop(bridge_call: BridgeCall) -> None:
                 record_worker_run("Autopilot", "Error", "cycle", str(exc))
             progress = daily_progress()
             sleep_for = config["intervalSeconds"]
-            if progress.get("state") in ["Completed", "Waiting for Human Review", "Waiting for Codex Worker"]:
+            if progress.get("state") in ["Completed", "Waiting For Human Approval", "Waiting For Missing Files", "Waiting For Codex Worker"]:
                 sleep_for = max(sleep_for, 30 * 60)
             time.sleep(sleep_for)
 
     thread = threading.Thread(target=worker, name="SwissPlannerDailyAutopilot", daemon=True)
+    thread.start()
+
+
+def start_local_worker_loop(interval_seconds: int = 30) -> None:
+    def worker() -> None:
+        time.sleep(10)
+        while True:
+            try:
+                if local_worker_enabled() and local_worker_command() and open_codex_work_count() > 0:
+                    run_local_worker_once(force=False)
+            except Exception as exc:
+                set_meta("local_worker_last_error", str(exc))
+                record_worker_run("Local Worker", "Error", "cycle", str(exc))
+            time.sleep(max(10, int(interval_seconds or 30)))
+
+    thread = threading.Thread(target=worker, name="AIdepartmentLocalCodexWorker", daemon=True)
     thread.start()

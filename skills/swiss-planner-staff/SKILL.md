@@ -14,9 +14,16 @@ Use this skill when running or improving the AI Staff layer for GCC lab tender L
 - The local COF registry is `swiss_planner_command_center/capability_fabric.json`; use it before inventing routing, staff ownership, connector usage, or quality gates.
 - Core GCClab CRM tables are `Lead`, `Companies`, `Contacts`, `Tasks List`, `LeadMatchedSuppliers`, `LeadMatchedProducts`, `Products_Registered`, `LeadExtractedProducts_Request`, `LeadExtractedProducts_Result`, `Files Manager`, `Docs`, `LeadCosts`, `BusinessOpportunities`, and `Orders`.
 - AI staff are execution lanes/agents under capabilities. Do not treat a staff role as the business capability itself.
+- AI staff inherit reusable Staff Archetypes from the Capability Fabric. A staff member has a domain role, such as Supplier Outreach Specialist, plus a tool behavior such as Email Sender, Thinking Analyst, Report Maker, CRM Operator, Document Maker, or File QA.
+- Before using plugins/tools for a staff task, follow the staff member's inherited archetype rules: allowed plugin families, required approvals, output contract, and stop conditions.
 - Every request, blocker, audit issue, approval, staff question, and human decision is a `Task` with a `Thread`.
 - Live task threads stay local-first in the Windows Command Center; CRM sync is optional and should not block local operation.
 - `AIstaff_Manager` is the AI department manager, shown to Iman as Alex. Non-manager staff communicate through Alex; only Alex talks to `Human_Iman`.
+- The human-facing operating model is manager-first: Iman talks to Alex, Alex routes specialist AI Staff, and specialist staff report blockers/questions back to Alex instead of asking Iman directly.
+- Create or continue task threads for real decisions, blockers, approvals, missing inputs, reviews, escalations, worker handoffs, or audits. Do not create casual thread noise for routine internal progress.
+- Treat every solution as a reusable supervised AI Department: manager, staff, project plans, quality gates, outputs, connections/databases, and templates. Owner/admin views can inspect structure; sponsored participants see only their tasks, uploads, confirmations, approvals, and outputs.
+- Keep v1 automation on the local/platform DB queue plus cron/internal-runner model. Persist queued work, step state, progress, result summaries, last errors, retry state, and support-triage details; do not add Trigger.dev or another workflow engine until project scheduler state, approvals, visibility, and escalation rules are stable.
+- Consider a heavier workflow engine only when the platform needs step-level durable execution, long-running workflow heartbeats/cancellation, distributed locks, replay UI, concurrency controls, or deeper observability across many autonomous jobs.
 - The visible operating inbox is `Tasks`; follow-ups are self-owned scheduled checks, not conversations.
 
 ## Routing

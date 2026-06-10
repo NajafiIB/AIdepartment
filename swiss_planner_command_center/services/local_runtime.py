@@ -33,7 +33,9 @@ LOCAL_ACTIONS = {
     "validateEmailContentSafety",
     "verifyQueueAttachments",
     "verifyConfiguredQueueAttachments",
+    "previewEmailQueueRow",
     "processQueueRow",
+    "updateEmailQueueApproval",
     "syncSent",
     "syncInbound",
     "reconcileInboundReplies",
@@ -165,6 +167,152 @@ def content_safety(queue_id: str) -> dict[str, Any]:
     return {"ok": True, "queueId": queue_id, "message": "Local email content safety passed."}
 
 
+def message_completeness(queue_id: str, row: dict[str, Any] | None = None) -> dict[str, Any]:
+    row = row or queue_row(queue_id)
+    if not row:
+        return {"ok": False, "queueId": queue_id, "error": f"Queue ID not found locally: {queue_id}"}
+    missing = []
+    if not row_value(row, "to", "To", "recipientEmail"):
+        missing.append("recipient")
+    if not row_value(row, "subject", "Subject"):
+        missing.append("subject")
+    if not row_value(row, "body", "Body", "emailBody", "Email Body"):
+        missing.append("body")
+    if missing:
+        return {
+            "ok": False,
+            "queueId": queue_id,
+            "status": "Blocked - Message Incomplete",
+            "error": "Email preview is missing: " + ", ".join(missing),
+            "missing": missing,
+        }
+    return {"ok": True, "queueId": queue_id, "message": "Recipient, subject, and body are present."}
+
+
+def duplicate_guard(queue_id: str, row: dict[str, Any]) -> dict[str, Any]:
+    target_to = compact(row_value(row, "to", "To", "recipientEmail")).lower()
+    target_subject = compact(row_value(row, "subject", "Subject")).lower()
+    if not target_to or not target_subject:
+        return {"ok": True, "queueId": queue_id, "message": "Duplicate check skipped because recipient or subject is missing."}
+    snapshot = local_store.load_dashboard_snapshot() or {}
+    duplicates = []
+    for candidate in local_store.flatten_email_queue(snapshot.get("emailQueue")):
+        candidate_id = row_value(candidate, "queueId", "Queue ID", "sourceQueueId")
+        if candidate_id == queue_id:
+            continue
+        candidate_to = compact(row_value(candidate, "to", "To", "recipientEmail")).lower()
+        candidate_subject = compact(row_value(candidate, "subject", "Subject")).lower()
+        candidate_status = compact(row_value(candidate, "sendStatus", "Send Status")).lower()
+        if candidate_to == target_to and candidate_subject == target_subject and any(term in candidate_status for term in ["sent", "draft created", "approved"]):
+            duplicates.append({"queueId": candidate_id, "status": candidate_status})
+    if duplicates:
+        return {
+            "ok": False,
+            "queueId": queue_id,
+            "status": "Blocked - Duplicate Recipient",
+            "error": "Potential duplicate supplier outreach for the same recipient and subject.",
+            "duplicates": duplicates,
+        }
+    return {"ok": True, "queueId": queue_id, "message": "Duplicate-recipient check passed."}
+
+
+def email_queue_preview(queue_id: str) -> dict[str, Any]:
+    row = queue_row(queue_id)
+    if not row:
+        return {"ok": False, "queueId": queue_id, "error": f"Queue ID not found locally: {queue_id}"}
+    approval = row_value(row, "approvalStatus", "Approval Status")
+    approval_ok = approval.lower() == "approved"
+    completeness = message_completeness(queue_id, row)
+    quality = local_store.preflight_queue_document_quality(queue_id)
+    safety = content_safety(queue_id)
+    attachments = attachment_verification(queue_id)
+    duplicate = duplicate_guard(queue_id, row)
+    smtp = smtp_config()
+    send_mode = row_value(row, "sendMode", "Send Mode").upper() or "DRAFT"
+    draft_path = OUTBOX_DIR / f"{local_store.safe_task_part(queue_id)}.eml"
+    gates = [
+        {
+            "id": "approval",
+            "label": "Human approval",
+            "ok": approval_ok,
+            "status": "Approved" if approval_ok else "Needs Iman approval",
+            "message": "Iman approved this exact outreach row." if approval_ok else "External supplier email remains blocked until Iman approves it.",
+        },
+        {
+            "id": "messageCompleteness",
+            "label": "Message completeness",
+            "ok": bool(completeness.get("ok")),
+            "status": completeness.get("status") or ("Passed" if completeness.get("ok") else "Blocked"),
+            "message": completeness.get("error") or completeness.get("message") or "",
+        },
+        {
+            "id": "documentQuality",
+            "label": "Package/style QA",
+            "ok": bool(quality.get("ok")),
+            "status": quality.get("status") or ("Passed" if quality.get("ok") else "Blocked"),
+            "message": quality.get("error") or "No package/style blocker found for this row.",
+        },
+        {
+            "id": "contentSafety",
+            "label": "Content safety",
+            "ok": bool(safety.get("ok")),
+            "status": safety.get("status") or ("Passed" if safety.get("ok") else "Blocked"),
+            "message": safety.get("error") or safety.get("message") or "Content safety passed.",
+        },
+        {
+            "id": "attachments",
+            "label": "Attachment check",
+            "ok": bool(attachments.get("ok")),
+            "status": "Passed" if attachments.get("ok") else "Blocked",
+            "message": attachments.get("error") or attachments.get("message") or "",
+        },
+        {
+            "id": "duplicate",
+            "label": "Duplicate check",
+            "ok": bool(duplicate.get("ok")),
+            "status": duplicate.get("status") or ("Passed" if duplicate.get("ok") else "Blocked"),
+            "message": duplicate.get("error") or duplicate.get("message") or "",
+        },
+    ]
+    ready = all(gate["ok"] for gate in gates)
+    body = row_value(row, "body", "Body", "emailBody", "Email Body")
+    subject = row_value(row, "subject", "Subject")
+    return {
+        "ok": True,
+        "queueId": queue_id,
+        "readyToGenerate": ready,
+        "readyToSend": ready and send_mode == "SEND_NOW" and bool(smtp.get("configured")),
+        "sendMode": send_mode,
+        "providerLane": "smtp" if send_mode == "SEND_NOW" and smtp.get("configured") else "local_eml",
+        "smtpConfigured": bool(smtp.get("configured")),
+        "draftPath": str(draft_path),
+        "row": row,
+        "message": {
+            "from": smtp.get("sender") or "sender not configured",
+            "to": row_value(row, "to", "To", "recipientEmail"),
+            "cc": row_value(row, "cc", "CC"),
+            "bcc": row_value(row, "bcc", "BCC"),
+            "subject": subject,
+            "body": body,
+            "bodyPreview": local_store.thread_preview(body, 600),
+        },
+        "approval": {"status": approval or "Needs approval", "ok": approval_ok},
+        "gates": gates,
+        "checks": {
+            "documentQuality": quality,
+            "messageCompleteness": completeness,
+            "contentSafety": safety,
+            "attachments": attachments,
+            "duplicate": duplicate,
+        },
+        "nextAction": (
+            "Generate local .eml draft / send through SMTP if configured."
+            if ready
+            else "Resolve blocked gates before generating any supplier outreach."
+        ),
+    }
+
+
 def create_eml_draft(row: dict[str, Any], attachments: list[Path] | None = None) -> Path:
     OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
     queue_id = row_value(row, "queueId", "Queue ID", "sourceQueueId") or "email_" + local_store.safe_task_part(local_store.iso_like())
@@ -189,30 +337,46 @@ def process_queue_row(queue_id: str) -> dict[str, Any]:
     if not row:
         return {"ok": False, "queueId": queue_id, "error": f"Queue ID not found locally: {queue_id}"}
     approval = row_value(row, "approvalStatus", "Approval Status").lower()
-    if approval and approval != "approved":
+    if approval != "approved":
         result = {
             "ok": False,
             "queueId": queue_id,
             "status": "Blocked - Not Approved",
-            "error": "Queue row is not approved.",
+            "error": "Queue row is not explicitly approved by Iman.",
         }
         local_store.update_snapshot_queue_row(queue_id, {"sendStatus": result["status"], "Send Status": result["status"], "lastError": result["error"], "Last Error": result["error"]})
+        local_store.record_outbound_attempt(queue_id, row, result["status"], safety={"approval": result})
         return result
 
     quality = local_store.preflight_queue_document_quality(queue_id)
     if not quality.get("ok"):
         local_store.update_snapshot_queue_row(queue_id, {"sendStatus": quality.get("status") or "Blocked - Document Style QA", "Send Status": quality.get("status") or "Blocked - Document Style QA", "lastError": quality.get("error"), "Last Error": quality.get("error")})
+        local_store.record_outbound_attempt(queue_id, row, quality.get("status") or "Blocked - Document Style QA", safety={"documentQuality": quality})
         return quality
+
+    completeness = message_completeness(queue_id, row)
+    if not completeness.get("ok"):
+        local_store.update_snapshot_queue_row(queue_id, {"sendStatus": completeness.get("status") or "Blocked - Message Incomplete", "Send Status": completeness.get("status") or "Blocked - Message Incomplete", "lastError": completeness.get("error"), "Last Error": completeness.get("error")})
+        local_store.record_outbound_attempt(queue_id, row, completeness.get("status") or "Blocked - Message Incomplete", safety={"documentQuality": quality, "messageCompleteness": completeness})
+        return completeness
 
     safety = content_safety(queue_id)
     if not safety.get("ok"):
         local_store.update_snapshot_queue_row(queue_id, {"sendStatus": safety.get("status") or "Blocked - Content Safety", "Send Status": safety.get("status") or "Blocked - Content Safety", "lastError": safety.get("error"), "Last Error": safety.get("error")})
+        local_store.record_outbound_attempt(queue_id, row, safety.get("status") or "Blocked - Content Safety", safety={"contentSafety": safety})
         return safety
 
     attachments = attachment_verification(queue_id)
     if not attachments.get("ok"):
         local_store.update_snapshot_queue_row(queue_id, {"sendStatus": "Blocked - Attachment Verification Failed", "Send Status": "Blocked - Attachment Verification Failed", "lastError": attachments.get("error"), "Last Error": attachments.get("error")})
+        local_store.record_outbound_attempt(queue_id, row, "Blocked - Attachment Verification Failed", safety={"contentSafety": safety, "attachments": attachments})
         return attachments
+
+    duplicate = duplicate_guard(queue_id, row)
+    if not duplicate.get("ok"):
+        local_store.update_snapshot_queue_row(queue_id, {"sendStatus": duplicate.get("status") or "Blocked - Duplicate Recipient", "Send Status": duplicate.get("status") or "Blocked - Duplicate Recipient", "lastError": duplicate.get("error"), "Last Error": duplicate.get("error")})
+        local_store.record_outbound_attempt(queue_id, row, duplicate.get("status") or "Blocked - Duplicate Recipient", safety={"contentSafety": safety, "attachments": attachments, "duplicate": duplicate})
+        return duplicate
 
     paths = [Path(path) for path in attachments.get("attachments") or []]
     send_mode = row_value(row, "sendMode", "Send Mode").upper()
@@ -239,6 +403,14 @@ def process_queue_row(queue_id: str) -> dict[str, Any]:
                     "notes": "Sent locally through SMTP.",
                 },
             )
+        status = "Sent" if sent.get("ok") else "SMTP Error"
+        local_store.record_outbound_attempt(
+            queue_id,
+            row,
+            status,
+            safety={"contentSafety": safety, "attachments": attachments, "duplicate": duplicate},
+            provider_metadata={"provider": "smtp", "smtpConfigured": True, "response": sent},
+        )
         return sent | {"queueId": queue_id, "localEmail": True}
 
     draft_path = create_eml_draft(row, paths)
@@ -253,6 +425,14 @@ def process_queue_row(queue_id: str) -> dict[str, Any]:
             "notes": f"Local EML draft: {draft_path}",
             "Notes": f"Local EML draft: {draft_path}",
         },
+    )
+    local_store.record_outbound_attempt(
+        queue_id,
+        row,
+        status,
+        safety={"contentSafety": safety, "attachments": attachments, "duplicate": duplicate},
+        evidence_link=str(draft_path),
+        provider_metadata={"provider": "local_eml", "smtpConfigured": bool(smtp.get("configured")), "sendMode": send_mode or "DRAFT"},
     )
     return {
         "ok": send_mode != "SEND_NOW",
@@ -392,6 +572,8 @@ def local_bridge_call(action: str | None = None, payload: dict | None = None, me
         return {"ok": True, "result": snapshot}
     if action == "getEmailQueueStatus":
         return local_store.local_email_queue_status(int(payload.get("limit") or 80))
+    if action == "updateEmailQueueApproval":
+        return local_store.update_email_queue_approval(payload)
     if action in {
         "appendAiStaffTask",
         "appendAiStaffThread",
@@ -422,6 +604,8 @@ def local_bridge_call(action: str | None = None, payload: dict | None = None, me
         rows = local_store.flatten_email_queue((local_store.load_dashboard_snapshot() or {}).get("emailQueue"))
         checked = [attachment_verification(row_value(row, "queueId", "Queue ID")) for row in rows if row_value(row, "queueId", "Queue ID")]
         return {"ok": all(item.get("ok") for item in checked), "result": {"checked": len(checked), "items": checked}}
+    if action == "previewEmailQueueRow":
+        return email_queue_preview(str(payload.get("queueId") or payload.get("id") or ""))
     if action == "processQueueRow":
         return process_queue_row(str(payload.get("queueId") or payload.get("id") or ""))
     if action in {"syncSent", "syncInbound", "reconcileInboundReplies"}:
