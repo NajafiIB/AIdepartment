@@ -360,6 +360,97 @@ def init_db() -> None:
               metadata TEXT NOT NULL DEFAULT '{}',
               created_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS p4_installed_components (
+              component_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL,
+              component_type TEXT NOT NULL,
+              catalog_id TEXT NOT NULL,
+              version TEXT NOT NULL DEFAULT '1.0.0',
+              status TEXT NOT NULL DEFAULT 'Active',
+              source_payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS p4_staff_assignments (
+              assignment_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL,
+              staff_profile_id TEXT NOT NULL,
+              staff_blueprint_id TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'Active',
+              source_payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS p4_stage_assignments (
+              assignment_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL,
+              stage_template_id TEXT NOT NULL,
+              staff_profile_id TEXT NOT NULL DEFAULT '',
+              staff_blueprint_id TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'Active',
+              source_payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS p4_skill_assignments (
+              assignment_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL,
+              target_type TEXT NOT NULL,
+              target_id TEXT NOT NULL,
+              skill_pack_id TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'Active',
+              source_payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS p4_tool_data_contract_assignments (
+              assignment_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL,
+              target_type TEXT NOT NULL,
+              target_id TEXT NOT NULL,
+              contract_id TEXT NOT NULL,
+              lane_id TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'Active',
+              source_payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS p4_readiness_state (
+              readiness_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL,
+              scope_type TEXT NOT NULL,
+              scope_id TEXT NOT NULL,
+              state TEXT NOT NULL,
+              missing_requirements TEXT NOT NULL DEFAULT '[]',
+              next_action TEXT NOT NULL DEFAULT '',
+              checked_at REAL NOT NULL,
+              source_payload TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE TABLE IF NOT EXISTS p4_provisioning_snapshots (
+              snapshot_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL,
+              stage_template_id TEXT NOT NULL DEFAULT '',
+              staff_blueprint_id TEXT NOT NULL DEFAULT '',
+              project_step_id TEXT NOT NULL DEFAULT '',
+              thread_id TEXT NOT NULL DEFAULT '',
+              work_item_id TEXT NOT NULL DEFAULT '',
+              queue_id TEXT NOT NULL DEFAULT '',
+              readiness_state TEXT NOT NULL DEFAULT '',
+              payload TEXT NOT NULL,
+              created_at REAL NOT NULL,
+              created_by TEXT NOT NULL DEFAULT 'AIstaff_Manager'
+            );
+            CREATE TABLE IF NOT EXISTS p4_runtime_handlers (
+              handler_id TEXT PRIMARY KEY,
+              contract_id TEXT NOT NULL DEFAULT '',
+              stage_template_id TEXT NOT NULL DEFAULT '',
+              handler_type TEXT NOT NULL,
+              handler_key TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'Active',
+              source_payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS idx_task_threads_responsible
               ON task_threads (responsible, status, archived, last_message_at);
             CREATE INDEX IF NOT EXISTS idx_task_threads_task
@@ -390,6 +481,18 @@ def init_db() -> None:
               ON outbound_attempts (queue_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_communication_events_queue
               ON communication_events (queue_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_p4_components_department
+              ON p4_installed_components (department_id, component_type, status);
+            CREATE INDEX IF NOT EXISTS idx_p4_staff_assignments_department
+              ON p4_staff_assignments (department_id, status);
+            CREATE INDEX IF NOT EXISTS idx_p4_stage_assignments_department
+              ON p4_stage_assignments (department_id, status);
+            CREATE INDEX IF NOT EXISTS idx_p4_readiness_department
+              ON p4_readiness_state (department_id, state, checked_at);
+            CREATE INDEX IF NOT EXISTS idx_p4_snapshots_refs
+              ON p4_provisioning_snapshots (department_id, project_step_id, work_item_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_p4_handlers_status
+              ON p4_runtime_handlers (handler_type, status);
             """
         )
     if not get_meta("autopilot_enabled"):
@@ -862,6 +965,7 @@ def local_status() -> dict[str, Any]:
         "staffWakeups": staff_wakeup_summary(),
         "autopilot": autopilot_status(),
         "localWorker": local_worker_status(),
+        "p4Readiness": p4_readiness(),
         "automationBlockers": automation_blockers(snapshot_payload),
         "documentQuality": document_quality_status(),
     }
@@ -930,6 +1034,7 @@ def local_worker_status() -> dict[str, Any]:
         "counts": codex_work_counts(),
         "lastRun": parse_json_meta("local_worker_last_run", {}),
         "lastError": get_meta("local_worker_last_error", ""),
+        "p4Runtime": p4_runtime_handler_summary(),
     }
 
 
@@ -3056,6 +3161,7 @@ def platform_catalog_summary(fabric: dict[str, Any]) -> dict[str, int]:
 
 def platform_admin_catalogs() -> dict[str, Any]:
     fabric = load_capability_fabric()
+    p4 = p4_catalogs()
     catalogs = {
         "installedDepartments": [
             attach_field_access(
@@ -3102,10 +3208,13 @@ def platform_admin_catalogs() -> dict[str, Any]:
         "workflowTemplates": [attach_field_access(row, "AiWorkflowTemplate") for row in workflow_templates_from_fabric(fabric)],
         "senderIdentities": list_sender_identities(),
     }
+    p4_catalog_rows = p4.get("catalogs") or {}
     return {
         "ok": True,
         "catalogs": catalogs,
         "summary": {key: len(value) for key, value in catalogs.items()},
+        "p4Catalogs": p4_catalog_rows,
+        "p4Summary": p4.get("summary") or {},
         "fieldAccessLegend": fabric.get("fieldAccessLegend") or {},
         "validation": {"errors": fabric.get("errors") or [], "errorCount": len(fabric.get("errors") or [])},
         "exportReady": {
@@ -3265,9 +3374,562 @@ def create_department_from_template(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+P4_READY_STATES = {
+    "ready",
+    "missing_assignment",
+    "missing_tool",
+    "missing_dataset",
+    "inactive_connection",
+    "version_conflict",
+    "approval_required",
+    "blocked",
+}
+
+
+def p4_versioned(row: dict[str, Any], dto_type: str, defaults: dict[str, Any] | None = None) -> dict[str, Any]:
+    item = {**json_clone(defaults or {}), **json_clone(row or {})}
+    item["version"] = str(item.get("version") or "1.0.0")
+    item["status"] = str(item.get("status") or "Approved")
+    item["riskTier"] = str(item.get("riskTier") or ("High" if item.get("requiresApprovalFor") else "Medium"))
+    item["compatibilityRules"] = item.get("compatibilityRules") or ["local_alpha_compatible"]
+    item["updatedAt"] = item.get("updatedAt") or item.get("createdAt") or iso_like(CAPABILITY_FABRIC_PATH.stat().st_mtime) if CAPABILITY_FABRIC_PATH.exists() else iso_like()
+    item["updatedBy"] = item.get("updatedBy") or item.get("createdBy") or "Platform Admin"
+    return attach_field_access(item, dto_type)
+
+
+def p4_department_packages_from_fabric(fabric: dict[str, Any]) -> list[dict[str, Any]]:
+    departments = {str(row.get("templateId")): row for row in fabric.get("departments", []) or [] if isinstance(row, dict)}
+    packages: list[dict[str, Any]] = []
+    for template in fabric.get("departmentTemplates", []) or []:
+        if not isinstance(template, dict):
+            continue
+        department = departments.get(str(template.get("id"))) or {}
+        packages.append(
+            p4_versioned(
+                {
+                    **json_clone(template),
+                    "packageId": template.get("id"),
+                    "installedDepartmentId": department.get("id") or "",
+                    "runtimeStatus": department.get("status") or template.get("status") or "Approved",
+                    "staffBlueprintCount": len(template.get("staffProfiles", []) or []),
+                    "stageTemplateCount": len(template.get("capabilities", []) or []),
+                },
+                "AiDepartmentPackage",
+                {"status": template.get("status") or "Approved", "riskTier": "High"},
+            )
+        )
+    return packages
+
+
+def p4_staff_blueprints_from_fabric(fabric: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {**staff_template_dto(row, fabric), "dtoType": "AiStaffBlueprint", "blueprintId": row.get("id")}
+        for row in (fabric.get("staffArchetypes", []) or [])
+        if isinstance(row, dict)
+    ]
+
+
+def p4_skill_packs_from_fabric(fabric: dict[str, Any]) -> list[dict[str, Any]]:
+    packs: list[dict[str, Any]] = []
+    for row in scoped_skill_definitions(fabric):
+        scope = str(row.get("catalog") or row.get("scope") or "")
+        packs.append(
+            p4_versioned(
+                {
+                    **json_clone(row),
+                    "skillPackId": row.get("id"),
+                    "scope": row.get("scope"),
+                    "sourceCatalog": scope,
+                    "activationState": row.get("activationState") or row.get("status") or "Active",
+                    "compatibilityRules": row.get("compatibilityRules") or ["compatible_with_local_p4_resolver"],
+                },
+                "AiSkillPack",
+                {"status": row.get("status") or "Approved", "riskTier": "High" if row.get("locked") else "Medium"},
+            )
+        )
+    return packs
+
+
+def p4_tool_data_contracts_from_fabric(fabric: dict[str, Any]) -> list[dict[str, Any]]:
+    connections = {str(row.get("id")): row for row in fabric.get("connections", []) or [] if isinstance(row, dict)}
+    databases = {str(row.get("id")): row for row in fabric.get("databases", []) or [] if isinstance(row, dict)}
+    contracts: list[dict[str, Any]] = []
+    for lane in fabric.get("lanes", []) or []:
+        if not isinstance(lane, dict):
+            continue
+        connection_ids = [str(item) for item in lane.get("connections", []) or [] if item]
+        database_ids = [str(item) for item in lane.get("databases", []) or [] if item]
+        contracts.append(
+            p4_versioned(
+                {
+                    "id": f"contract_{lane.get('id')}",
+                    "contractId": f"contract_{lane.get('id')}",
+                    "label": f"{lane.get('label') or lane.get('id')} Contract",
+                    "laneId": lane.get("id"),
+                    "purpose": lane.get("summary") or lane.get("laneRule") or "Provider-agnostic tool/data contract.",
+                    "requiredConnections": connection_ids,
+                    "requiredDatabases": database_ids,
+                    "connectionLabels": [connections.get(item, {}).get("label") or item for item in connection_ids],
+                    "databaseLabels": [databases.get(item, {}).get("label") or item for item in database_ids],
+                    "providerResolutionRule": "Resolve through active workspace connection and lane adapter; do not hard-code provider in department package.",
+                    "fallbackBehavior": "Route to AI Manager/readiness blocker when a required provider or dataset is unavailable.",
+                    "status": lane.get("status") or "Approved",
+                    "locked": lane.get("locked", True),
+                    "workspaceEditable": False,
+                },
+                "AiToolDataContract",
+                {"riskTier": "High" if connection_ids else "Medium"},
+            )
+        )
+    return contracts
+
+
+def p4_stage_templates_from_fabric(fabric: dict[str, Any]) -> list[dict[str, Any]]:
+    capabilities = {str(row.get("id")): row for row in fabric.get("capabilities", []) or [] if isinstance(row, dict)}
+    stages: list[dict[str, Any]] = []
+    for recipe in fabric.get("recipes", []) or []:
+        if not isinstance(recipe, dict):
+            continue
+        capability = capabilities.get(str(recipe.get("capabilityId"))) or {}
+        recipe_owner = recipe.get("ownerStaff") or capability.get("ownerStaff") or "AIstaff_Manager"
+        for index, stage in enumerate(recipe.get("stages", []) or [], start=1):
+            if not isinstance(stage, dict):
+                continue
+            stage_id = str(stage.get("id") or f"stage_{index}")
+            stages.append(
+                p4_versioned(
+                    {
+                        **json_clone(stage),
+                        "id": f"stage_template_{recipe.get('id')}_{stage_id}",
+                        "stageTemplateId": f"stage_template_{recipe.get('id')}_{stage_id}",
+                        "label": stage.get("label") or stage_id,
+                        "recipeId": recipe.get("id"),
+                        "recipeLabel": recipe.get("label"),
+                        "capabilityId": recipe.get("capabilityId"),
+                        "capabilityLabel": capability.get("label"),
+                        "ownerStaff": recipe_owner,
+                        "sequence": index,
+                        "requiredLanes": stage.get("lanes") or [],
+                        "requiredQualityGates": stage.get("qualityGates") or [],
+                        "escalationPolicy": "AI Manager first; human only for approval, missing input, external action, or irreversible decision.",
+                        "status": stage.get("status") or recipe.get("status") or "Approved",
+                    },
+                    "AiStageTemplate",
+                    {"riskTier": "Medium"},
+                )
+            )
+    return stages
+
+
+def p4_lane_adapters_from_fabric(fabric: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        p4_versioned(
+            {
+                **json_clone(row),
+                "adapterId": row.get("id"),
+                "providerRulesOwnedBy": "platformAdmin",
+                "fieldAccessMode": "platform_locked_execution_rules",
+                "status": row.get("status") or "Approved",
+            },
+            "AiLaneAdapter",
+            {"riskTier": "High" if row.get("connections") else "Medium"},
+        )
+        for row in (fabric.get("lanes", []) or [])
+        if isinstance(row, dict)
+    ]
+
+
+def p4_catalogs() -> dict[str, Any]:
+    init_db()
+    fabric = load_capability_fabric()
+    catalogs = {
+        "departmentPackages": p4_department_packages_from_fabric(fabric),
+        "staffBlueprints": p4_staff_blueprints_from_fabric(fabric),
+        "skillPacks": p4_skill_packs_from_fabric(fabric),
+        "toolDataContracts": p4_tool_data_contracts_from_fabric(fabric),
+        "stageTemplates": p4_stage_templates_from_fabric(fabric),
+        "laneAdapters": p4_lane_adapters_from_fabric(fabric),
+    }
+    return {
+        "ok": True,
+        "catalogs": catalogs,
+        "summary": {key: len(value) for key, value in catalogs.items()},
+        "validation": {"errors": fabric.get("errors") or [], "errorCount": len(fabric.get("errors") or [])},
+        "fieldAccessLegend": fabric.get("fieldAccessLegend") or {},
+    }
+
+
+def p4_lookup(catalog_rows: list[dict[str, Any]], *ids: str) -> dict[str, Any]:
+    wanted = {str(item) for item in ids if item}
+    for row in catalog_rows:
+        row_ids = {str(row.get("id") or ""), str(row.get("stageTemplateId") or ""), str(row.get("blueprintId") or ""), str(row.get("contractId") or ""), str(row.get("packageId") or "")}
+        if wanted & row_ids:
+            return row
+    return {}
+
+
+def p4_staff_profile_for_blueprint(fabric: dict[str, Any], blueprint_id: str = "", staff_id: str = "") -> dict[str, Any]:
+    profiles = [row for row in fabric.get("staffProfiles", []) or [] if isinstance(row, dict)]
+    if staff_id:
+        found = next((row for row in profiles if str(row.get("id")) == staff_id), None)
+        if found:
+            return found
+    if blueprint_id:
+        found = next((row for row in profiles if blueprint_id in (row.get("archetypeIds") or []) or row.get("primaryArchetypeId") == blueprint_id), None)
+        if found:
+            return found
+    return next((row for row in profiles if row.get("id") == "AIstaff_Manager"), profiles[0] if profiles else {})
+
+
+def p4_connection_ready(connection: dict[str, Any], profile: dict[str, Any]) -> bool:
+    status = normalize_text(connection.get("status") or connection.get("lifecycleStatus") or "active")
+    if status in {"disabled", "inactive", "archived", "deprecated", "blocked"}:
+        return False
+    active = {normalize_text(item) for item in profile.get("activeConnections", []) or [] if item}
+    if not active:
+        return True
+    connection_id = normalize_text(connection.get("id"))
+    connection_label = normalize_text(connection.get("label"))
+    local_aliases = {
+        "local runtime": {"local command center", "codex worker", "google sheet crm", "apps script bridge"},
+        "local sqlite": {"local command center", "google sheet crm"},
+        "email queue": {"gmail bridge", "outlook bridge", "apps script bridge"},
+    }
+    satisfied_by_alias = any(connection_id in aliases for active_key, aliases in local_aliases.items() if active_key in active)
+    return connection_id in active or connection_label in active or satisfied_by_alias
+
+
+def p4_resolve_context(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    init_db()
+    payload = payload or {}
+    fabric = load_capability_fabric()
+    catalogs = p4_catalogs().get("catalogs") or {}
+    departments = [row for row in fabric.get("departments", []) or [] if isinstance(row, dict)]
+    department_id = str(payload.get("departmentId") or "").strip()
+    department = next((row for row in departments if str(row.get("id")) == department_id), None)
+    if not department:
+        department = next((row for row in departments if normalize_text(row.get("status") or "active") == "active"), departments[0] if departments else {})
+        department_id = str(department.get("id") or department_id)
+    package = p4_lookup(catalogs.get("departmentPackages") or [], str(department.get("templateId") or ""), str(payload.get("departmentPackageId") or ""))
+    stage_template = p4_lookup(catalogs.get("stageTemplates") or [], str(payload.get("stageTemplateId") or ""))
+    if not stage_template:
+        package_capabilities = set(str(item) for item in (package.get("capabilities") or []) if item)
+        stage_template = next((row for row in catalogs.get("stageTemplates") or [] if str(row.get("capabilityId")) in package_capabilities), (catalogs.get("stageTemplates") or [{}])[0])
+    owner_staff = normalized_staff_id(payload.get("staffProfileId") or stage_template.get("ownerStaff") or "AIstaff_Manager", "AIstaff_Manager")
+    staff_profile = p4_staff_profile_for_blueprint(fabric, staff_id=owner_staff)
+    blueprint_id = str(payload.get("staffBlueprintId") or staff_profile.get("primaryArchetypeId") or "")
+    staff_blueprint = p4_lookup(catalogs.get("staffBlueprints") or [], blueprint_id)
+    if not staff_blueprint:
+        staff_blueprint = p4_lookup(catalogs.get("staffBlueprints") or [], "archetype_manager_orchestrator")
+        blueprint_id = str(staff_blueprint.get("id") or "")
+    staff_profile = p4_staff_profile_for_blueprint(fabric, blueprint_id=blueprint_id, staff_id=owner_staff)
+    staff_id = str(staff_profile.get("id") or owner_staff or "AIstaff_Manager")
+
+    stage_lanes = [str(item) for item in (stage_template.get("requiredLanes") or stage_template.get("lanes") or []) if item]
+    tool_contracts = [row for row in catalogs.get("toolDataContracts") or [] if str(row.get("laneId")) in set(stage_lanes)]
+    lane_adapters = [row for row in catalogs.get("laneAdapters") or [] if str(row.get("id")) in set(stage_lanes)]
+    scoped = resolve_scoped_skills_for_staff(staff_id, fabric, staff_profile)
+    resolved_skills = scoped.get("resolvedSkills") or []
+    skill_packs = []
+    skill_pack_lookup = {str(row.get("id")): row for row in catalogs.get("skillPacks") or []}
+    for skill in resolved_skills:
+        skill_pack = skill_pack_lookup.get(str(skill.get("id")))
+        if skill_pack:
+            skill_packs.append(skill_pack)
+
+    missing: list[dict[str, Any]] = []
+    if not department:
+        missing.append({"type": "missing_assignment", "scope": "department", "id": department_id, "message": "Department is not installed."})
+    if not package:
+        missing.append({"type": "missing_assignment", "scope": "departmentPackage", "id": str(department.get("templateId") or ""), "message": "Department package/blueprint is missing."})
+    if not stage_template:
+        missing.append({"type": "missing_assignment", "scope": "stageTemplate", "id": str(payload.get("stageTemplateId") or ""), "message": "Stage template is missing."})
+    if not staff_blueprint:
+        missing.append({"type": "missing_assignment", "scope": "staffBlueprint", "id": blueprint_id, "message": "Staff blueprint is missing."})
+    if stage_lanes and len(tool_contracts) < len(stage_lanes):
+        missing.append({"type": "missing_tool", "scope": "toolDataContract", "id": ",".join(stage_lanes), "message": "One or more stage lanes do not have tool/data contracts."})
+    connections = {str(row.get("id")): row for row in fabric.get("connections", []) or [] if isinstance(row, dict)}
+    databases = {str(row.get("id")): row for row in fabric.get("databases", []) or [] if isinstance(row, dict)}
+    workspace_defaults = workspace_profile()
+    for contract in tool_contracts:
+        for connection_id in contract.get("requiredConnections") or []:
+            connection = connections.get(str(connection_id))
+            if not connection:
+                missing.append({"type": "missing_tool", "scope": "connection", "id": connection_id, "message": f"Missing connection {connection_id}."})
+            elif not p4_connection_ready(connection, workspace_defaults):
+                missing.append({"type": "inactive_connection", "scope": "connection", "id": connection_id, "message": f"Connection {connection.get('label') or connection_id} is not active for this workspace."})
+        for database_id in contract.get("requiredDatabases") or []:
+            if str(database_id) not in databases:
+                missing.append({"type": "missing_dataset", "scope": "database", "id": database_id, "message": f"Missing dataset/database {database_id}."})
+    human_approval = sorted(set(staff_blueprint.get("requiresApprovalFor") or []))
+    if any("external" in normalize_text(item) or "email" in normalize_text(item) for item in human_approval):
+        missing.append({"type": "approval_required", "scope": "policy", "id": "external_action_gate", "message": "External communication remains human-approved."})
+
+    blocking_missing = [item for item in missing if item.get("type") not in {"approval_required"}]
+    readiness_state = "ready" if not blocking_missing else str(blocking_missing[0].get("type") or "blocked")
+    effective = {
+        "department": attach_field_access(department, "AiDepartmentInstance") if department else {},
+        "departmentPackage": package,
+        "stageTemplate": stage_template,
+        "staffProfile": attach_field_access(staff_profile, "AiStaffProfile") if staff_profile else {},
+        "staffBlueprint": staff_blueprint,
+        "skillPacks": skill_packs,
+        "toolDataContracts": tool_contracts,
+        "laneAdapters": lane_adapters,
+        "workspaceProfile": workspace_defaults,
+        "managerEscalationPolicy": "Route blocked or ambiguous execution to AI Manager before human escalation.",
+        "humanApprovalRequirements": human_approval,
+        "skillResolutionOrder": scoped.get("resolutionOrder") or [
+            "platform safety",
+            "department skills",
+            "staff template skills",
+            "lane/tool skills",
+            "project context",
+            "workspace preferences",
+            "approved learned updates",
+        ],
+        "projectContext": payload.get("projectContext") if isinstance(payload.get("projectContext"), dict) else {},
+    }
+    return {
+        "ok": True,
+        "departmentId": department_id,
+        "readinessState": readiness_state if readiness_state in P4_READY_STATES else "blocked",
+        "missingRequirements": missing,
+        "nextAction": p4_next_action_for_missing(missing),
+        "effectiveContext": effective,
+    }
+
+
+def p4_next_action_for_missing(missing: list[dict[str, Any]]) -> str:
+    if not missing:
+        return "Ready to execute supervised local runtime."
+    first = missing[0]
+    kind = first.get("type")
+    if kind == "approval_required":
+        return "Ask AI Manager to request Iman approval before external or irreversible action."
+    if kind == "inactive_connection":
+        return "Activate or map the required workspace connection in Workspace Settings."
+    if kind == "missing_dataset":
+        return "Add or map the required dataset/database before running this stage."
+    if kind == "missing_tool":
+        return "Create the missing tool/data contract or lane adapter mapping."
+    return "Route to AI Manager for assignment or configuration repair."
+
+
+def p4_readiness(department_id: str = "") -> dict[str, Any]:
+    init_db()
+    catalogs = p4_catalogs().get("catalogs") or {}
+    fabric = load_capability_fabric()
+    departments = [row for row in fabric.get("departments", []) or [] if isinstance(row, dict)]
+    if not department_id:
+        active = next((row for row in departments if normalize_text(row.get("status") or "active") == "active"), departments[0] if departments else {})
+        department_id = str(active.get("id") or "")
+    department = next((row for row in departments if str(row.get("id")) == department_id), {})
+    package = p4_lookup(catalogs.get("departmentPackages") or [], str(department.get("templateId") or ""))
+    package_capabilities = set(str(item) for item in package.get("capabilities", []) or [])
+    stage_rows = [row for row in catalogs.get("stageTemplates") or [] if not package_capabilities or str(row.get("capabilityId")) in package_capabilities]
+    rows = []
+    for stage in stage_rows:
+        resolved = p4_resolve_context({"departmentId": department_id, "stageTemplateId": stage.get("id")})
+        context = resolved.get("effectiveContext") or {}
+        rows.append(
+            {
+                "scopeType": "stage",
+                "scopeId": stage.get("id"),
+                "label": stage.get("label"),
+                "state": resolved.get("readinessState"),
+                "assignedStaff": ((context.get("staffProfile") or {}).get("id") or ""),
+                "assignedStaffLabel": ((context.get("staffProfile") or {}).get("label") or staff_label(((context.get("staffProfile") or {}).get("id") or ""))),
+                "staffBlueprintId": ((context.get("staffBlueprint") or {}).get("id") or ""),
+                "skillPackIds": [row.get("id") for row in context.get("skillPacks") or []],
+                "toolDataContractIds": [row.get("id") for row in context.get("toolDataContracts") or []],
+                "laneAdapterIds": [row.get("id") for row in context.get("laneAdapters") or []],
+                "missingRequirements": resolved.get("missingRequirements") or [],
+                "nextAction": resolved.get("nextAction") or "",
+            }
+        )
+    counts: dict[str, int] = {state: 0 for state in P4_READY_STATES}
+    for row in rows:
+        counts[str(row.get("state") or "blocked")] = counts.get(str(row.get("state") or "blocked"), 0) + 1
+    checked_at = utc_ts()
+    with connect() as conn:
+        for row in rows:
+            readiness_id = "p4_ready_" + safe_task_part(f"{department_id}_{row.get('scopeId')}")
+            conn.execute(
+                """
+                INSERT INTO p4_readiness_state (
+                  readiness_id, department_id, scope_type, scope_id, state,
+                  missing_requirements, next_action, checked_at, source_payload
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(readiness_id) DO UPDATE SET
+                  state=excluded.state,
+                  missing_requirements=excluded.missing_requirements,
+                  next_action=excluded.next_action,
+                  checked_at=excluded.checked_at,
+                  source_payload=excluded.source_payload
+                """,
+                (
+                    readiness_id,
+                    department_id,
+                    "stage",
+                    str(row.get("scopeId") or ""),
+                    str(row.get("state") or "blocked"),
+                    json.dumps(row.get("missingRequirements") or [], default=str),
+                    str(row.get("nextAction") or ""),
+                    checked_at,
+                    json.dumps(row, default=str),
+                ),
+            )
+    return {
+        "ok": True,
+        "departmentId": department_id,
+        "departmentLabel": department.get("label") or department_id,
+        "summary": counts,
+        "rows": rows,
+        "checkedAt": iso_like(checked_at),
+    }
+
+
+def create_p4_provisioning_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    resolved = payload.get("resolvedContext") if isinstance(payload.get("resolvedContext"), dict) else {}
+    if not resolved:
+        resolved = p4_resolve_context(payload)
+    context = resolved.get("effectiveContext") or {}
+    stage = context.get("stageTemplate") or {}
+    staff_blueprint = context.get("staffBlueprint") or {}
+    department_id = str(payload.get("departmentId") or resolved.get("departmentId") or ((context.get("department") or {}).get("id") or ""))
+    snapshot_id = str(payload.get("snapshotId") or ("p4_snapshot_" + str(uuid.uuid4())))
+    now = utc_ts()
+    snapshot_payload = {
+        "resolved": resolved,
+        "versions": {
+            "departmentPackage": ((context.get("departmentPackage") or {}).get("version") or ""),
+            "stageTemplate": stage.get("version") or "",
+            "staffBlueprint": staff_blueprint.get("version") or "",
+            "skillPacks": [{"id": row.get("id"), "version": row.get("version")} for row in context.get("skillPacks") or []],
+            "toolDataContracts": [{"id": row.get("id"), "version": row.get("version")} for row in context.get("toolDataContracts") or []],
+            "laneAdapters": [{"id": row.get("id"), "version": row.get("version")} for row in context.get("laneAdapters") or []],
+        },
+        "workspaceProfile": context.get("workspaceProfile") or {},
+        "createdFor": {
+            "projectStepId": payload.get("projectStepId") or "",
+            "threadId": payload.get("threadId") or "",
+            "workItemId": payload.get("workItemId") or "",
+            "queueId": payload.get("queueId") or "",
+        },
+    }
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO p4_provisioning_snapshots (
+              snapshot_id, department_id, stage_template_id, staff_blueprint_id,
+              project_step_id, thread_id, work_item_id, queue_id, readiness_state,
+              payload, created_at, created_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                snapshot_id,
+                department_id,
+                str(stage.get("id") or payload.get("stageTemplateId") or ""),
+                str(staff_blueprint.get("id") or payload.get("staffBlueprintId") or ""),
+                str(payload.get("projectStepId") or ""),
+                str(payload.get("threadId") or ""),
+                str(payload.get("workItemId") or ""),
+                str(payload.get("queueId") or ""),
+                str(resolved.get("readinessState") or ""),
+                json.dumps(snapshot_payload, ensure_ascii=False, default=str),
+                now,
+                str(payload.get("createdBy") or "AIstaff_Manager"),
+            ),
+        )
+    return {"ok": True, "snapshotId": snapshot_id, "snapshot": snapshot_payload, "createdAt": iso_like(now)}
+
+
+def latest_p4_snapshot_for_ref(project_step_id: str = "", work_item_id: str = "", thread_id: str = "", queue_id: str = "") -> str:
+    clauses: list[str] = []
+    params: list[Any] = []
+    for column, value in [
+        ("project_step_id", project_step_id),
+        ("work_item_id", work_item_id),
+        ("thread_id", thread_id),
+        ("queue_id", queue_id),
+    ]:
+        if value:
+            clauses.append(f"{column} = ?")
+            params.append(value)
+    if not clauses:
+        return ""
+    with connect() as conn:
+        row = conn.execute(
+            f"SELECT snapshot_id FROM p4_provisioning_snapshots WHERE {' OR '.join(clauses)} ORDER BY created_at DESC LIMIT 1",
+            params,
+        ).fetchone()
+    return str(row["snapshot_id"]) if row else ""
+
+
+def p4_runtime_handler_summary() -> dict[str, Any]:
+    init_db()
+    recommended = [
+        {"handlerId": "handler_local_worker_command", "handlerType": "local_worker", "handlerKey": "AI_DEPARTMENT_WORKER_COMMAND", "status": "Active" if local_worker_command() else "Needs Configuration"},
+        {"handlerId": "handler_email_alpha", "handlerType": "email", "handlerKey": "email_preview_send_attempt", "status": "Supervised"},
+        {"handlerId": "handler_project_step_output", "handlerType": "project_step", "handlerKey": "project_step_output", "status": "Active"},
+        {"handlerId": "handler_thread_task", "handlerType": "thread_task", "handlerKey": "local_thread_task", "status": "Active"},
+        {"handlerId": "handler_local_snapshot", "handlerType": "crm_local", "handlerKey": "dashboard_snapshot", "status": "Active"},
+    ]
+    now = utc_ts()
+    with connect() as conn:
+        for row in recommended:
+            conn.execute(
+                """
+                INSERT INTO p4_runtime_handlers (
+                  handler_id, handler_type, handler_key, status, source_payload, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(handler_id) DO UPDATE SET
+                  handler_type=excluded.handler_type,
+                  handler_key=excluded.handler_key,
+                  status=excluded.status,
+                  source_payload=excluded.source_payload,
+                  updated_at=excluded.updated_at
+                """,
+                (
+                    row["handlerId"],
+                    row["handlerType"],
+                    row["handlerKey"],
+                    row["status"],
+                    json.dumps(row, default=str),
+                    now,
+                    now,
+                ),
+            )
+        rows = conn.execute("SELECT * FROM p4_runtime_handlers ORDER BY handler_type, handler_id").fetchall()
+    handlers = [
+        {
+            "handlerId": row["handler_id"],
+            "contractId": row["contract_id"],
+            "stageTemplateId": row["stage_template_id"],
+            "handlerType": row["handler_type"],
+            "handlerKey": row["handler_key"],
+            "status": row["status"],
+            "metadata": parse_json_text(row["source_payload"], {}),
+            "updatedAt": iso_like(row["updated_at"]),
+        }
+        for row in rows
+    ]
+    return {
+        "handlers": handlers,
+        "canExecuteResolvedContexts": bool(local_worker_command()),
+        "missingConfiguration": "" if local_worker_command() else "AI_DEPARTMENT_WORKER_COMMAND is not configured for local worker execution.",
+    }
+
+
 def platform_export_manifest() -> dict[str, Any]:
     catalogs = platform_admin_catalogs()
     fabric = load_capability_fabric()
+    p4 = p4_catalogs()
     manifest = {
         "manifestType": "AiDepartmentLocalAlphaExport",
         "generatedAt": iso_like(),
@@ -3279,6 +3941,8 @@ def platform_export_manifest() -> dict[str, Any]:
             "runtimeMode": get_meta("crm_sync_status", "local-runtime"),
         },
         "catalogs": catalogs.get("catalogs") or {},
+        "p4Catalogs": p4.get("catalogs") or {},
+        "p4Summary": p4.get("summary") or {},
         "workspaceProfile": workspace_profile(),
         "fieldAccessLegend": catalogs.get("fieldAccessLegend") or {},
         "validation": catalogs.get("validation") or {},
@@ -4189,6 +4853,10 @@ def row_to_project_plan(row: sqlite3.Row, steps: list[dict[str, Any]] | None = N
 def row_to_project_step(row: sqlite3.Row) -> dict[str, Any]:
     contract = project_step_contract(int(row["sequence"] or 1), row["blocker_type"] or "")
     output_summary = project_step_output_summary(row["step_id"], row["status"] or "", contract.get("actionLabel") or "")
+    try:
+        p4_context = p4_resolve_context({"staffProfileId": row["assigned_staff"], "projectContext": {"projectStepId": row["step_id"], "planId": row["plan_id"]}})
+    except Exception:
+        p4_context = {"readinessState": "blocked", "nextAction": "P4 resolver failed for this local step.", "missingRequirements": []}
     return {
         "stepId": row["step_id"],
         "planId": row["plan_id"],
@@ -4211,6 +4879,10 @@ def row_to_project_step(row: sqlite3.Row) -> dict[str, Any]:
         "notes": row["notes"],
         "createdAt": iso_like(row["created_at"]),
         "updatedAt": iso_like(row["updated_at"]),
+        "p4ReadinessState": p4_context.get("readinessState") or "",
+        "p4NextAction": p4_context.get("nextAction") or "",
+        "p4MissingRequirements": p4_context.get("missingRequirements") or [],
+        "p4ProvisioningSnapshotId": latest_p4_snapshot_for_ref(project_step_id=row["step_id"]),
     }
 
 
@@ -8103,8 +8775,47 @@ def run_local_worker_once(force: bool = False) -> dict[str, Any]:
             set_meta("local_worker_last_run", run)
             return {"ok": True, "processed": 0, "state": "Idle", "message": run["message"]}
         work_item_id = str(item.get("workItemId") or "")
+        resolved_context = p4_resolve_context(
+            {
+                "staffProfileId": item.get("assignedStaff") or "AIstaff_Manager",
+                "projectContext": {
+                    "workItemId": work_item_id,
+                    "threadId": item.get("threadId") or "",
+                    "sourceTaskId": item.get("sourceTaskId") or "",
+                },
+            }
+        )
+        snapshot = create_p4_provisioning_snapshot(
+            {
+                "resolvedContext": resolved_context,
+                "workItemId": work_item_id,
+                "threadId": item.get("threadId") or "",
+                "createdBy": "local_worker",
+            }
+        )
+        assigned_staff = normalized_staff_id(item.get("assignedStaff"), "AIstaff_Manager")
+        readiness_state = str(resolved_context.get("readinessState") or "")
+        if readiness_state != "ready" and assigned_staff in {"AIstaff_ApplicationPackSender"}:
+            message = (
+                f"P4 readiness blocked worker execution before external-action staff ran: {readiness_state}. "
+                f"Next action: {resolved_context.get('nextAction') or 'Route to AI Manager.'}"
+            )
+            result = submit_codex_work_result(
+                {
+                    "workItemId": work_item_id,
+                    "status": "Blocked",
+                    "resultSummary": message,
+                    "lastError": message,
+                    "evidenceLink": snapshot.get("snapshotId") or "",
+                }
+            )
+            set_meta("local_worker_last_error", message)
+            return {"ok": True, "processed": 0, "state": "P4 Readiness Blocked", "workItem": item, "result": result, "snapshot": snapshot}
         mark_codex_work_item({"workItemId": work_item_id, "status": "In Progress"})
         started = get_codex_work_item(work_item_id).get("workItem") or item
+        started["p4ProvisioningSnapshotId"] = snapshot.get("snapshotId") or ""
+        started["p4ReadinessState"] = readiness_state
+        started["p4ResolvedContext"] = resolved_context
         timeout = max(30, int(os.environ.get("AI_DEPARTMENT_WORKER_TIMEOUT_SECONDS", "900") or "900"))
         try:
             completed = subprocess.run(

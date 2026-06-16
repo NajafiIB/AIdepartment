@@ -337,6 +337,28 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
             json_response(self, local_store.platform_export_manifest())
             return
 
+        if path == "/api/p4/catalogs":
+            json_response(self, local_store.p4_catalogs())
+            return
+
+        if path == "/api/p4/resolve-context":
+            json_response(
+                self,
+                local_store.p4_resolve_context(
+                    {
+                        "departmentId": params.get("departmentId", ""),
+                        "stageTemplateId": params.get("stageTemplateId", ""),
+                        "staffBlueprintId": params.get("staffBlueprintId", ""),
+                        "staffProfileId": params.get("staffProfileId", ""),
+                    }
+                ),
+            )
+            return
+
+        if path == "/api/p4/readiness":
+            json_response(self, local_store.p4_readiness(params.get("departmentId", "")))
+            return
+
         if path == "/api/workspace-profile":
             json_response(self, {"ok": True, "workspaceProfile": local_store.workspace_profile()})
             return
@@ -611,6 +633,10 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
 
         if path == "/api/platform-admin/create-department":
             json_response(self, local_store.create_department_from_template(body))
+            return
+
+        if path == "/api/p4/provisioning-snapshot":
+            json_response(self, local_store.create_p4_provisioning_snapshot(body))
             return
 
         if path == "/api/project-step/action":

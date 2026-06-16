@@ -2038,15 +2038,25 @@ function PlatformAdminView({ dashboard }) {
     senderIdentities: [],
   };
   const catalogs = (payload.catalogs && payload.catalogs.catalogs) || fallbackCatalogs;
+  const p4Catalogs = (payload.catalogs && payload.catalogs.p4Catalogs) || {
+    departmentPackages: catalogs.departmentBlueprints || [],
+    staffBlueprints: catalogs.staffTemplates || [],
+    skillPacks: catalogs.scopedSkills || [],
+    toolDataContracts: [],
+    stageTemplates: catalogs.workflowTemplates || [],
+    laneAdapters: catalogs.laneAdapters || [],
+  };
   const summary = (payload.catalogs && payload.catalogs.summary) || Object.fromEntries(Object.entries(catalogs).map(([key, rows]) => [key, (rows || []).length]));
+  const p4Summary = (payload.catalogs && payload.catalogs.p4Summary) || Object.fromEntries(Object.entries(p4Catalogs).map(([key, rows]) => [key, (rows || []).length]));
   const validation = (payload.catalogs && payload.catalogs.validation) || { errors: fabric.errors || [], errorCount: (fabric.errors || []).length };
   const tabs = [
     ["installedDepartments", "Installed Departments"],
-    ["staffTemplates", "Staff Templates"],
+    ["staffTemplates", "AI Staff Blueprints"],
+    ["skillPacks", "Skill Packs"],
+    ["toolDataContracts", "Tool/Data Contracts"],
+    ["stageTemplates", "Stage Templates"],
+    ["departmentPackages", "Department Packages"],
     ["laneAdapters", "Lane Adapters"],
-    ["scopedSkills", "Skill Catalog"],
-    ["workflowTemplates", "Workflow Templates"],
-    ["departmentBlueprints", "Department Blueprints"],
     ["senderIdentities", "Sender Identities"],
     ["exportManifest", "Export Manifests"],
   ];
@@ -2083,16 +2093,16 @@ function PlatformAdminView({ dashboard }) {
         payload.error ? h("div", { className: "form-error" }, payload.error) : null,
         h("div", { className: "designer-summary-strip" },
           h("span", null, h("strong", null, summary.installedDepartments || 0), "Installed"),
-          h("span", null, h("strong", null, summary.departmentBlueprints || 0), "Blueprints"),
-          h("span", null, h("strong", null, summary.staffTemplates || 0), "Staff templates"),
-          h("span", null, h("strong", null, summary.laneAdapters || 0), "Lane adapters"),
-          h("span", null, h("strong", null, summary.scopedSkills || 0), "Scoped skills"),
-          h("span", null, h("strong", null, summary.workflowTemplates || 0), "Workflows")
+          h("span", null, h("strong", null, p4Summary.departmentPackages || summary.departmentBlueprints || 0), "Packages"),
+          h("span", null, h("strong", null, p4Summary.staffBlueprints || summary.staffTemplates || 0), "Staff blueprints"),
+          h("span", null, h("strong", null, p4Summary.skillPacks || summary.scopedSkills || 0), "Skill packs"),
+          h("span", null, h("strong", null, p4Summary.toolDataContracts || 0), "Tool/data contracts"),
+          h("span", null, h("strong", null, p4Summary.stageTemplates || summary.workflowTemplates || 0), "Stage templates")
         ),
         h("div", { className: "settings-tabs", role: "tablist", "aria-label": "Platform Admin catalogs" }, tabs.map(([key, label]) =>
           h("button", { key, type: "button", role: "tab", "aria-selected": tab === key, className: cn("settings-tab", tab === key && "active"), onClick: () => setTab(key) },
             h("span", null, label),
-            key !== "exportManifest" ? h("small", null, summary[key] || 0) : null
+            key !== "exportManifest" ? h("small", null, p4Summary[key] || summary[key] || 0) : null
           )
         ))
       )
@@ -2101,7 +2111,11 @@ function PlatformAdminView({ dashboard }) {
     tab === "exportManifest"
       ? h(PlatformExportManifestPanel, { manifest: payload.manifest })
       : tab === "staffTemplates"
-        ? h(PlatformStaffTemplatesPanel, { rows: catalogs.staffTemplates || [], catalogs, loading: payload.loading, onRefresh: loadPlatformAdmin })
+        ? h(PlatformStaffTemplatesPanel, { rows: p4Catalogs.staffBlueprints || catalogs.staffTemplates || [], catalogs: { ...catalogs, p4Catalogs }, loading: payload.loading, onRefresh: loadPlatformAdmin })
+      : ["skillPacks", "toolDataContracts", "stageTemplates", "departmentPackages"].includes(tab)
+        ? h(PlatformP4LibraryPanel, { rows: p4Catalogs[tab] || [], catalogKey: tab, loading: payload.loading })
+      : tab === "laneAdapters"
+        ? h(PlatformP4LibraryPanel, { rows: p4Catalogs.laneAdapters || catalogs.laneAdapters || [], catalogKey: "laneAdapters", loading: payload.loading })
       : h(PlatformCatalogPanel, { rows: catalogs[tab] || [], catalogKey: tab, loading: payload.loading })
   );
 }
@@ -2484,6 +2498,100 @@ function StaffInfoPanel({ title, items }) {
   return h("article", { className: "staff-info-panel" },
     h("h4", null, title),
     values.length ? h("ul", null, values.map(item => h("li", { key: item }, item))) : h("p", { className: "muted" }, "None configured.")
+  );
+}
+
+function PlatformP4LibraryPanel({ rows, catalogKey, loading }) {
+  const titles = {
+    departmentPackages: ["AiDepartmentPackage", "Department Packages"],
+    skillPacks: ["AiSkillPack", "Skill Packs"],
+    toolDataContracts: ["AiToolDataContract", "Tool/Data Contracts"],
+    stageTemplates: ["AiStageTemplate", "Stage Templates"],
+    laneAdapters: ["AiLaneAdapter", "Lane Adapters"],
+  };
+  const [dtoType, title] = titles[catalogKey] || ["AiP4CatalogObject", catalogKey];
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [detailTab, setDetailTab] = useState("overview");
+  const filtered = (rows || []).filter(row => {
+    const blob = [row.id, row.label, row.status, row.riskTier, row.scope, row.recipeLabel, row.capabilityLabel, ...(row.compatibilityRules || [])].join(" ").toLowerCase();
+    return !query.trim() || blob.includes(query.trim().toLowerCase());
+  });
+  const selected = (rows || []).find(row => row.id === selectedId) || filtered[0] || rows[0] || null;
+  useEffect(() => {
+    if (selected && selected.id !== selectedId) setSelectedId(selected.id);
+  }, [selected && selected.id]);
+  const tabs = [["overview", "Overview"], ["contracts", "Contracts"], ["usage", "Used By"], ["validation", "Validation"], ["json", "JSON"]];
+  return h(Card, { className: "designer-section-card p4-library-panel" },
+    h(CardHeader, {
+      eyebrow: dtoType,
+      title,
+      description: "P4 library objects are reusable platform/admin assets. Departments install and resolve them at runtime rather than owning execution logic directly.",
+      action: h(Badge, { tone: "neutral" }, `${(rows || []).length} object(s)`)
+    }),
+    h(CardContent, null,
+      loading ? h("p", { className: "muted" }, "Loading P4 library...") : null,
+      h("div", { className: "p4-library-layout" },
+        h("aside", { className: "p4-library-list" },
+          h(Field, { label: "Search library" }, h(Input, { value: query, onChange: event => setQuery(event.target.value), placeholder: "Search name, status, contract, stage..." })),
+          h("div", { className: "p4-library-cards" }, filtered.map(row =>
+            h("button", { key: row.id || row.label, type: "button", className: cn("p4-library-card", selected && selected.id === row.id && "active"), onClick: () => { setSelectedId(row.id); setDetailTab("overview"); } },
+              h("span", { className: "staff-card-topline" },
+                h("strong", null, row.label || row.name || row.id),
+                h(Badge, { tone: row.status === "Deprecated" ? "danger" : row.status === "Draft" ? "warn" : "success" }, row.status || "Approved")
+              ),
+              h("small", null, row.id || row.contractId || row.stageTemplateId),
+              h("span", { className: "staff-card-footer" },
+                h("span", null, `v${row.version || "1.0.0"}`),
+                h("span", null, `${row.riskTier || "Medium"} risk`)
+              )
+            )
+          ))
+        ),
+        selected ? h("section", { className: "p4-library-detail" },
+          h("div", { className: "staff-detail-head" },
+            h("div", null,
+              h("p", { className: "eyebrow" }, selected.dtoType || dtoType),
+              h("h3", null, selected.label || selected.name || selected.id),
+              h("p", null, selected.purpose || selected.summary || selected.providerResolutionRule || selected.escalationPolicy || "")
+            ),
+            h("div", { className: "staff-detail-badges" },
+              h(AccessBadge, { value: selected.accessSummary || (selected.locked ? "platform_locked" : "department_editable") }),
+              h(Badge, null, selected.status || "Approved"),
+              h(Badge, { tone: (selected.riskTier || "").toLowerCase() === "high" ? "warn" : "neutral" }, `${selected.riskTier || "Medium"} risk`)
+            )
+          ),
+          h("div", { className: "staff-detail-tabs", role: "tablist", "aria-label": `${title} detail tabs` }, tabs.map(([key, label]) =>
+            h("button", { key, type: "button", role: "tab", className: cn("staff-detail-tab", detailTab === key && "active"), "aria-selected": detailTab === key, onClick: () => setDetailTab(key) }, label)
+          )),
+          detailTab === "overview" ? h("div", { className: "staff-info-grid" },
+            h(StaffInfoPanel, { title: "Compatibility Rules", items: selected.compatibilityRules }),
+            h(StaffInfoPanel, { title: "Required Lanes", items: selected.requiredLanes || selected.requiredConnections }),
+            h(StaffInfoPanel, { title: "Required Datasets", items: selected.requiredDatabases || selected.databaseLabels }),
+            h("article", { className: "staff-info-panel" }, h("h4", null, "Version & Status"), h(DetailList, { rows: [
+              { label: "Version", value: selected.version },
+              { label: "Status", value: selected.status },
+              { label: "Updated", value: fmtDate(selected.updatedAt) || selected.updatedAt },
+              { label: "Updated by", value: selected.updatedBy },
+            ] }))
+          ) : null,
+          detailTab === "contracts" ? h("div", { className: "staff-table-list" },
+            h("article", { className: "staff-impact-panel" }, h("h4", null, "Provider Resolution"), h("p", null, selected.providerResolutionRule || "Resolve through active workspace connection and lane adapter.")),
+            h("article", { className: "staff-impact-panel" }, h("h4", null, "Fallback"), h("p", null, selected.fallbackBehavior || selected.escalationPolicy || "Route to AI Manager when blocked."))
+          ) : null,
+          detailTab === "usage" ? h("div", { className: "staff-table-list" },
+            h("article", { className: "staff-impact-panel" }, h("h4", null, "Used By / Impact"), h("p", null, selected.recipeLabel || selected.capabilityLabel || selected.installedDepartmentId || selected.sourceCatalog || "Usage is resolved by the P4 composition resolver.")),
+            h(StaffInfoPanel, { title: "Staff Profiles", items: selected.staffProfiles }),
+            h(StaffInfoPanel, { title: "Capabilities", items: selected.capabilities || [selected.capabilityId] })
+          ) : null,
+          detailTab === "validation" ? h("div", { className: "staff-info-grid" },
+            h("article", { className: "staff-info-panel" }, h("h4", null, "Readiness"), h("p", null, "Readiness is evaluated per installed department/stage by /api/p4/readiness.")),
+            h("article", { className: "staff-info-panel" }, h("h4", null, "Publish Flow"), h("p", null, "Draft -> Review -> Approved -> Active. Deprecated objects remain inspectable."))
+          ) : null,
+          detailTab === "json" ? h("pre", { className: "manifest-preview compact" }, jsonPretty(selected).slice(0, 9000)) : null
+        ) : h(EmptyState, { title: "No library object selected", body: "Select an object from the left list." })
+      )
+    )
   );
 }
 
@@ -4515,20 +4623,42 @@ function DepartmentExplorerView({ dashboard, runOne, openTaskDialog, setView, se
   const staffIds = departmentStaffIds(dashboard);
   const [explorerTab, setExplorerTab] = useState("org");
   const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [p4State, setP4State] = useState({ loading: true, readiness: null, context: null, error: "" });
+  const activeDepartment = (fabric.departments || []).find(row => normalizedText(row.status || "active") === "active") || (fabric.departments || [])[0] || {};
   useEffect(() => {
     if (!selectedStaffRequest) return;
     setExplorerTab("org");
     setSelectedStaffId(selectedStaffRequest);
   }, [selectedStaffRequest]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadP4() {
+      setP4State(current => ({ ...current, loading: true, error: "" }));
+      try {
+        const departmentId = activeDepartment.id || "";
+        const [readiness, context] = await Promise.all([
+          api(`/api/p4/readiness?departmentId=${encodeURIComponent(departmentId)}`),
+          api(`/api/p4/resolve-context?departmentId=${encodeURIComponent(departmentId)}`),
+        ]);
+        if (!cancelled) setP4State({ loading: false, readiness, context, error: "" });
+      } catch (error) {
+        if (!cancelled) setP4State({ loading: false, readiness: null, context: null, error: error.message || String(error) });
+      }
+    }
+    loadP4();
+    return () => { cancelled = true; };
+  }, [activeDepartment.id]);
   return h(Fragment, null,
     h("section", { className: "department-explorer-shell" },
       h("div", { className: "department-main-tabs", role: "tablist", "aria-label": "Department Explorer sections" },
         h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "org", className: cn("department-main-tab", explorerTab === "org" && "active"), onClick: () => setExplorerTab("org") }, icon("user"), "Organization Chart"),
         h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "model", className: cn("department-main-tab", explorerTab === "model" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("model"); } }, icon("chart"), "Operating Model"),
+        h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "readiness", className: cn("department-main-tab", explorerTab === "readiness" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("readiness"); } }, icon("shield"), "P4 Readiness"),
         h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "settings", className: cn("department-main-tab", explorerTab === "settings" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("settings"); } }, icon("shield"), "Department Settings")
       ),
       explorerTab === "settings" ? h(DepartmentSettingsView, { dashboard, fabric }) : null,
       explorerTab === "model" ? h(OperatingModelPanel, { dashboard, fabric }) : null,
+      explorerTab === "readiness" ? h(P4DepartmentReadinessPanel, { p4State, department: activeDepartment }) : null,
       explorerTab === "org" && !selectedStaffId ? h(Card, { className: "department-chart-card chart-enter" },
         h(CardHeader, {
           eyebrow: "Department Explorer",
@@ -4545,6 +4675,67 @@ function DepartmentExplorerView({ dashboard, runOne, openTaskDialog, setView, se
         ),
         h(StaffProfilePanel, { dashboard, fabric, staffId: selectedStaffId, runOne, openTaskDialog, setSelectedStaffId })
       ) : null
+    )
+  );
+}
+
+function P4DepartmentReadinessPanel({ p4State, department }) {
+  const readiness = p4State.readiness || {};
+  const context = p4State.context || {};
+  const rows = readiness.rows || [];
+  const summary = readiness.summary || {};
+  const effective = context.effectiveContext || {};
+  return h("section", { className: "p4-readiness-panel chart-enter" },
+    h(Card, null,
+      h(CardHeader, {
+        eyebrow: "P4 Composition Resolver",
+        title: "Readiness By Staff & Stage",
+        description: "Shows whether this installed department can resolve each stage into staff, skills, tool/data contracts, lane adapters, and manager escalation policy.",
+        action: h(Badge, { tone: p4State.error ? "danger" : (summary.ready || 0) === rows.length ? "success" : "warn" }, p4State.loading ? "Loading" : p4State.error ? "Resolver error" : `${summary.ready || 0}/${rows.length || 0} ready`)
+      }),
+      h(CardContent, null,
+        p4State.error ? h("div", { className: "form-error" }, p4State.error) : null,
+        h("div", { className: "designer-summary-strip" },
+          h("span", null, h("strong", null, rows.length || 0), "Stages checked"),
+          h("span", null, h("strong", null, summary.ready || 0), "Ready"),
+          h("span", null, h("strong", null, summary.missing_tool || 0), "Missing tool"),
+          h("span", null, h("strong", null, summary.missing_dataset || 0), "Missing data"),
+          h("span", null, h("strong", null, summary.inactive_connection || 0), "Inactive connection")
+        ),
+        rows.length ? h("div", { className: "p4-readiness-list" }, rows.map(row =>
+          h("article", { className: cn("p4-readiness-row", row.state !== "ready" && "needs-attention"), key: row.scopeId },
+            h("div", null,
+              h("strong", null, row.label || row.scopeId),
+              h("small", null, `${row.assignedStaffLabel || row.assignedStaff || "AI Staff"} | ${row.staffBlueprintId || "blueprint not resolved"}`)
+            ),
+            h(Badge, { tone: row.state === "ready" ? "success" : row.state === "approval_required" ? "warn" : "danger" }, row.state || "blocked"),
+            h("p", null, row.nextAction || "No next action recorded."),
+            (row.missingRequirements || []).length ? h("div", { className: "overview-meta-row" }, row.missingRequirements.slice(0, 4).map(item =>
+              h("span", { key: `${row.scopeId}-${item.scope}-${item.id}` }, `${item.scope}: ${item.message || item.id}`)
+            )) : null
+          )
+        )) : h(EmptyState, { title: "No stage readiness rows", body: "The active department has no stage templates resolved yet." })
+      )
+    ),
+    h(Card, null,
+      h(CardHeader, { title: "Effective Context Preview", description: "Preview of the executable model the runtime will snapshot before work starts." }),
+      h(CardContent, null,
+        h(DetailList, { rows: [
+          { label: "Department", value: (effective.department || {}).label || (department || {}).label },
+          { label: "Package", value: (effective.departmentPackage || {}).label },
+          { label: "Stage", value: (effective.stageTemplate || {}).label },
+          { label: "Staff", value: (effective.staffProfile || {}).label || (effective.staffProfile || {}).id },
+          { label: "Staff blueprint", value: (effective.staffBlueprint || {}).label },
+          { label: "Readiness", value: context.readinessState },
+          { label: "Next action", value: context.nextAction, length: 260 },
+        ] }),
+        h("div", { className: "runtime-section-grid" },
+          h("article", { className: "runtime-section-card" }, h("strong", null, "Skill packs"), h("p", null, (effective.skillPacks || []).map(row => row.label || row.id).slice(0, 8).join(", ") || "None resolved")),
+          h("article", { className: "runtime-section-card" }, h("strong", null, "Tool/data contracts"), h("p", null, (effective.toolDataContracts || []).map(row => row.label || row.id).slice(0, 8).join(", ") || "None resolved")),
+          h("article", { className: "runtime-section-card" }, h("strong", null, "Lane adapters"), h("p", null, (effective.laneAdapters || []).map(row => row.label || row.id).slice(0, 8).join(", ") || "None resolved")),
+          h("article", { className: "runtime-section-card" }, h("strong", null, "Escalation"), h("p", null, effective.managerEscalationPolicy || "AI Manager first."))
+        )
+      )
     )
   );
 }

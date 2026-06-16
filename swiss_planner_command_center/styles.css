@@ -831,19 +831,30 @@ button.text-btn:hover {
   align-items: start;
 }
 
+.p4-library-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
 .staff-template-list,
-.staff-template-detail {
+.staff-template-detail,
+.p4-library-list,
+.p4-library-detail {
   min-width: 0;
 }
 
-.staff-template-list {
+.staff-template-list,
+.p4-library-list {
   display: grid;
   gap: 12px;
   position: sticky;
   top: 12px;
 }
 
-.staff-template-cards {
+.staff-template-cards,
+.p4-library-cards {
   display: grid;
   gap: 8px;
   max-height: 720px;
@@ -851,7 +862,8 @@ button.text-btn:hover {
   padding-right: 2px;
 }
 
-.staff-template-card {
+.staff-template-card,
+.p4-library-card {
   display: grid;
   gap: 7px;
   width: 100%;
@@ -864,7 +876,8 @@ button.text-btn:hover {
   cursor: pointer;
 }
 
-.staff-template-card.active {
+.staff-template-card.active,
+.p4-library-card.active {
   border-color: var(--primary);
   background: var(--primary-container);
   color: var(--on-primary-container);
@@ -887,6 +900,7 @@ button.text-btn:hover {
 }
 
 .staff-template-card small,
+.p4-library-card small,
 .staff-card-meta,
 .staff-card-footer {
   color: var(--muted);
@@ -894,12 +908,15 @@ button.text-btn:hover {
 }
 
 .staff-template-card.active small,
+.p4-library-card.active small,
 .staff-template-card.active .staff-card-meta,
+.p4-library-card.active .staff-card-meta,
 .staff-template-card.active .staff-card-footer {
   color: color-mix(in srgb, var(--on-primary-container) 72%, transparent);
 }
 
-.staff-template-detail {
+.staff-template-detail,
+.p4-library-detail {
   display: grid;
   gap: 12px;
   padding: 14px;
@@ -1039,6 +1056,55 @@ button.text-btn:hover {
   margin-top: 0;
 }
 
+.p4-readiness-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.p4-readiness-list {
+  display: grid;
+  gap: 10px;
+}
+
+.p4-readiness-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 8px 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container-lowest);
+}
+
+.p4-readiness-row.needs-attention {
+  border-color: var(--md-sys-color-warning);
+  background: var(--md-sys-color-warning-container);
+  color: var(--md-sys-color-on-warning-container);
+}
+
+.p4-readiness-row strong,
+.p4-readiness-row small {
+  display: block;
+}
+
+.p4-readiness-row small,
+.p4-readiness-row p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.p4-readiness-row.needs-attention small,
+.p4-readiness-row.needs-attention p {
+  color: color-mix(in srgb, var(--md-sys-color-on-warning-container) 72%, transparent);
+}
+
+.p4-readiness-row p,
+.p4-readiness-row .overview-meta-row {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .manifest-preview {
   max-height: 520px;
   overflow: auto;
@@ -1055,15 +1121,18 @@ button.text-btn:hover {
 }
 
 @media (max-width: 980px) {
-  .staff-template-layout {
+  .staff-template-layout,
+  .p4-library-layout {
     grid-template-columns: 1fr;
   }
 
-  .staff-template-list {
+  .staff-template-list,
+  .p4-library-list {
     position: static;
   }
 
-  .staff-template-cards {
+  .staff-template-cards,
+  .p4-library-cards {
     max-height: none;
   }
 
