@@ -601,6 +601,11 @@ function icon(name) {
     ],
     play: [h("polygon", { key: 1, points: "6 3 20 12 6 21 6 3" })],
     plus: [h("path", { key: 1, d: "M5 12h14" }), h("path", { key: 2, d: "M12 5v14" })],
+    save: [
+      h("path", { key: 1, d: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" }),
+      h("polyline", { key: 2, points: "17 21 17 13 7 13 7 21" }),
+      h("polyline", { key: 3, points: "7 3 7 8 15 8" }),
+    ],
     mail: [
       h("rect", { key: 1, width: "20", height: "16", x: "2", y: "4", rx: "2" }),
       h("path", { key: 2, d: "m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" }),
@@ -2020,10 +2025,11 @@ function LoadingView() {
 }
 
 function PlatformAdminView({ dashboard }) {
-  const [tab, setTab] = useState("staffTemplates");
+  const [tab, setTab] = useState("installedDepartments");
   const [payload, setPayload] = useState({ loading: true, error: "", catalogs: null, manifest: null });
   const fabric = fabricOrFallback(dashboard);
   const fallbackCatalogs = {
+    installedDepartments: fabric.departments || [],
     departmentBlueprints: fabric.departmentTemplates || [],
     staffTemplates: fabric.staffArchetypes || [],
     laneAdapters: fabric.lanes || [],
@@ -2035,6 +2041,7 @@ function PlatformAdminView({ dashboard }) {
   const summary = (payload.catalogs && payload.catalogs.summary) || Object.fromEntries(Object.entries(catalogs).map(([key, rows]) => [key, (rows || []).length]));
   const validation = (payload.catalogs && payload.catalogs.validation) || { errors: fabric.errors || [], errorCount: (fabric.errors || []).length };
   const tabs = [
+    ["installedDepartments", "Installed Departments"],
     ["staffTemplates", "Staff Templates"],
     ["laneAdapters", "Lane Adapters"],
     ["scopedSkills", "Skill Catalog"],
@@ -2075,6 +2082,7 @@ function PlatformAdminView({ dashboard }) {
       h(CardContent, null,
         payload.error ? h("div", { className: "form-error" }, payload.error) : null,
         h("div", { className: "designer-summary-strip" },
+          h("span", null, h("strong", null, summary.installedDepartments || 0), "Installed"),
           h("span", null, h("strong", null, summary.departmentBlueprints || 0), "Blueprints"),
           h("span", null, h("strong", null, summary.staffTemplates || 0), "Staff templates"),
           h("span", null, h("strong", null, summary.laneAdapters || 0), "Lane adapters"),
@@ -2089,14 +2097,399 @@ function PlatformAdminView({ dashboard }) {
         ))
       )
     ),
+    h(CreateDepartmentPanel, { catalogs, onCreated: loadPlatformAdmin }),
     tab === "exportManifest"
       ? h(PlatformExportManifestPanel, { manifest: payload.manifest })
+      : tab === "staffTemplates"
+        ? h(PlatformStaffTemplatesPanel, { rows: catalogs.staffTemplates || [], catalogs, loading: payload.loading, onRefresh: loadPlatformAdmin })
       : h(PlatformCatalogPanel, { rows: catalogs[tab] || [], catalogKey: tab, loading: payload.loading })
+  );
+}
+
+function CreateDepartmentPanel({ catalogs, onCreated }) {
+  const blueprints = catalogs.departmentBlueprints || [];
+  const installed = catalogs.installedDepartments || [];
+  const defaultBlueprint = (blueprints.find(row => row.id === "template_sales_research_department_sample") || blueprints[0] || {}).id || "";
+  const [form, setForm] = useState({
+    sourceTemplateId: defaultBlueprint,
+    departmentLabel: "",
+    departmentPurpose: "",
+    projectTypes: "",
+    aiManagerAlias: "Alex",
+  });
+  const [state, setState] = useState({ busy: false, error: "", message: "", created: null });
+
+  useEffect(() => {
+    if (!form.sourceTemplateId && defaultBlueprint) {
+      setForm(current => ({ ...current, sourceTemplateId: defaultBlueprint }));
+    }
+  }, [defaultBlueprint]);
+
+  function update(key, value) {
+    setForm(current => ({ ...current, [key]: value }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setState({ busy: true, error: "", message: "", created: null });
+    try {
+      const result = await api("/api/platform-admin/create-department", {
+        method: "POST",
+        body: JSON.stringify(form),
+      });
+      setState({
+        busy: false,
+        error: "",
+        message: result.alreadyExists ? "This department already exists in the local fabric." : "Department installed locally.",
+        created: result.department || null,
+      });
+      if (!result.alreadyExists) {
+        setForm(current => ({ ...current, departmentLabel: "", departmentPurpose: "", projectTypes: "" }));
+      }
+      await onCreated();
+    } catch (error) {
+      setState({ busy: false, error: error.message || String(error), message: "", created: null });
+    }
+  }
+
+  return h(Card, { className: "designer-section-card create-department-panel" },
+    h(CardHeader, {
+      eyebrow: "Create / Clone Department",
+      title: "Install A New Local AI Department",
+      description: "Clone a governed blueprint into a workspace department instance. Staff templates, lane adapters, and locked safety skills remain governed by Platform Admin.",
+      action: h(Badge, { tone: "neutral" }, `${installed.length || 0} installed`)
+    }),
+    h(CardContent, null,
+      h("form", { className: "create-department-form", onSubmit: submit },
+        h(Field, { label: "Source blueprint" },
+          h(Select, { value: form.sourceTemplateId, onChange: event => update("sourceTemplateId", event.target.value) },
+            blueprints.map(row => h("option", { key: row.id, value: row.id }, row.label || row.id))
+          )
+        ),
+        h(Field, { label: "Department name" },
+          h(Input, {
+            value: form.departmentLabel,
+            onChange: event => update("departmentLabel", event.target.value),
+            placeholder: "Example: Vendor Compliance AI Department",
+            required: true,
+          })
+        ),
+        h(Field, { label: "AI manager alias" },
+          h(Input, {
+            value: form.aiManagerAlias,
+            onChange: event => update("aiManagerAlias", event.target.value),
+            placeholder: "Alex",
+          })
+        ),
+        h(Field, { label: "Project types" },
+          h(Input, {
+            value: form.projectTypes,
+            onChange: event => update("projectTypes", event.target.value),
+            placeholder: "Lead review, supplier qualification, compliance package",
+          })
+        ),
+        h(Field, { label: "Purpose", className: "create-department-wide" },
+          h(Textarea, {
+            value: form.departmentPurpose,
+            onChange: event => update("departmentPurpose", event.target.value),
+            rows: 4,
+            placeholder: "What work should this AI Department manage?",
+          })
+        ),
+        h("div", { className: "create-department-actions create-department-wide" },
+          h(Button, { type: "submit", pending: state.busy, pendingLabel: "Creating..." }, icon("plus"), "Create department"),
+          state.message ? h(Badge, { tone: "success" }, state.message) : null,
+          state.error ? h("span", { className: "form-error" }, state.error) : null
+        )
+      ),
+      state.created ? h("div", { className: "designer-status" },
+        `${state.created.label || state.created.id} is installed. ID: ${state.created.id}`
+      ) : null,
+      installed.length ? h("div", { className: "installed-department-list" }, installed.slice(0, 6).map(row =>
+        h("article", { key: row.id, className: "installed-department-row" },
+          h("div", null,
+            h("strong", null, row.label || row.id),
+            h("small", null, `${row.status || "Active"} | Blueprint: ${row.blueprintId || row.templateId || "not set"}`)
+          ),
+          h(AccessBadge, { value: row.accessSummary || "workspace_editable" })
+        )
+      )) : null
+    )
+  );
+}
+
+function PlatformStaffTemplatesPanel({ rows, catalogs, loading, onRefresh }) {
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [detailTab, setDetailTab] = useState("overview");
+  const [draft, setDraft] = useState(null);
+  const [saveState, setSaveState] = useState({ busy: false, error: "", message: "" });
+  const filteredRows = (rows || []).filter(row => {
+    const blob = [row.label, row.id, row.roleType, ...(row.defaultDepartmentFamilies || []), row.status, row.riskTier].join(" ").toLowerCase();
+    return !query.trim() || blob.includes(query.trim().toLowerCase());
+  });
+  const selected = (rows || []).find(row => row.id === selectedId) || filteredRows[0] || rows[0] || null;
+  const tabs = [
+    ["overview", "Overview"],
+    ["capabilities", "Capabilities"],
+    ["tools", "Tools & Connections"],
+    ["datasets", "Datasets"],
+    ["instructions", "Instructions"],
+    ["input", "Input Contract"],
+    ["output", "Output Contract"],
+    ["qa", "QA & Guardrails"],
+    ["retry", "Retry & Errors"],
+    ["usage", "Workflow Usage"],
+    ["versions", "Versioning"],
+  ];
+
+  useEffect(() => {
+    if (selected && selected.id !== selectedId) setSelectedId(selected.id);
+  }, [selected && selected.id]);
+
+  useEffect(() => {
+    setDraft(selected ? jsonCloneForUi(selected) : null);
+    setSaveState({ busy: false, error: "", message: "" });
+  }, [selectedId, rows.length]);
+
+  function updateDraft(key, value) {
+    setDraft(current => ({ ...(current || selected || {}), [key]: value }));
+  }
+
+  function updateDraftList(key, value) {
+    updateDraft(key, String(value || "").split(/[,;\n]+/).map(item => item.trim()).filter(Boolean));
+  }
+
+  function cleanStaffTemplateForSave(value) {
+    const allowed = [
+      "id", "label", "purpose", "preferredModel", "allowedPluginFamilies", "requiresApprovalFor", "outputContract", "stopConditions", "adminNotes",
+      "workspaceEditable", "status", "version", "roleType", "defaultDepartmentFamilies", "riskTier", "whenToUse",
+      "defaultStageResponsibility", "supportedWorkflowStages", "capabilitiesAllowed", "capabilitiesNotAllowed", "supportedTaskTypes",
+      "requiredLanesTools", "requiredDatasets", "optionalDatasets", "workspaceProvidedDatasets", "missingDataBehavior",
+      "instructionLayers", "inputContract", "outputContractDetail", "qaGuardrails", "retryPolicy", "versionLog", "validationState"
+    ];
+    return Object.fromEntries(allowed.filter(key => value && value[key] !== undefined).map(key => [key, value[key]]));
+  }
+
+  async function saveDraft() {
+    if (!draft || !draft.id) return;
+    setSaveState({ busy: true, error: "", message: "" });
+    try {
+      await api("/api/fabric-object", {
+        method: "POST",
+        body: JSON.stringify({
+          collection: "staffArchetypes",
+          item: cleanStaffTemplateForSave(draft),
+          reason: "Updated from Platform Admin staff template designer.",
+          updatedBy: "Platform Admin",
+        }),
+      });
+      setSaveState({ busy: false, error: "", message: "Saved as staff template draft." });
+      await onRefresh();
+    } catch (error) {
+      setSaveState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
+  if (loading && !rows.length) {
+    return h(Card, { className: "designer-section-card" }, h(CardContent, null, h("p", { className: "muted" }, "Loading staff templates...")));
+  }
+  if (!selected || !draft) {
+    return h(Card, { className: "designer-section-card" }, h(CardContent, null, h(EmptyState, { title: "No staff templates", body: "Create staff archetypes in the capability fabric to manage reusable AI Staff roles." })));
+  }
+
+  const usageCount = (selected.workflowUsage || []).length;
+  const validation = selected.validationState || {};
+  const missingCount = ["missingTools", "missingDatasets", "missingSchemas", "missingGuardrails"].reduce((total, key) => total + ((validation[key] || []).length || 0), 0);
+
+  return h(Card, { className: "designer-section-card staff-template-admin" },
+    h(CardHeader, {
+      eyebrow: "/platform-admin/ai-staff-templates",
+      title: "AI Staff Templates",
+      description: "Admin-governed reusable staff roles. Workspace users later inherit only the safe runtime preferences exposed by each template.",
+      action: h("div", { className: "panel-actions" },
+        h(Badge, { tone: missingCount ? "warn" : "success" }, missingCount ? `${missingCount} validation note(s)` : "Template valid"),
+        h(Button, { variant: "secondary", onClick: saveDraft, pending: saveState.busy, pendingLabel: "Saving..." }, icon("save"), "Save admin draft")
+      )
+    }),
+    h(CardContent, null,
+      saveState.error ? h("div", { className: "form-error" }, saveState.error) : null,
+      saveState.message ? h("div", { className: "designer-status" }, saveState.message) : null,
+      h("div", { className: "staff-template-layout" },
+        h("aside", { className: "staff-template-list" },
+          h(Field, { label: "Search templates" }, h(Input, { value: query, onChange: event => setQuery(event.target.value), placeholder: "Outreach, QA, CRM, analyst..." })),
+          h("div", { className: "staff-template-cards" }, filteredRows.map(row =>
+            h("button", { key: row.id, type: "button", className: cn("staff-template-card", row.id === selected.id && "active"), onClick: () => { setSelectedId(row.id); setDetailTab("overview"); } },
+              h("span", { className: "staff-card-topline" },
+                h("strong", null, row.label || row.id),
+                h(Badge, { tone: row.status === "Deprecated" ? "danger" : row.status === "Draft" ? "warn" : "success" }, row.status || "Draft")
+              ),
+              h("small", null, row.roleType || "Staff"),
+              h("span", { className: "staff-card-meta" }, (row.defaultDepartmentFamilies || []).slice(0, 3).join(", ") || "Operations"),
+              h("span", { className: "staff-card-footer" },
+                h("span", null, `v${row.version || "1.0.0"}`),
+                h("span", null, `${row.riskTier || "Medium"} risk`)
+              )
+            )
+          ))
+        ),
+        h("section", { className: "staff-template-detail" },
+          h("div", { className: "staff-detail-head" },
+            h("div", null,
+              h("p", { className: "eyebrow" }, selected.id),
+              h("h3", null, draft.label || selected.label),
+              h("p", null, draft.purpose || selected.purpose)
+            ),
+            h("div", { className: "staff-detail-badges" },
+              h(AccessBadge, { value: selected.accessSummary || "platform_locked" }),
+              h(Badge, null, selected.roleType || "Staff"),
+              h(Badge, { tone: (selected.riskTier || "").toLowerCase() === "high" ? "warn" : "neutral" }, `${selected.riskTier || "Medium"} risk`),
+              h(Badge, { tone: usageCount ? "ok" : "neutral" }, `Used by ${usageCount}`)
+            )
+          ),
+          h("div", { className: "staff-detail-tabs", role: "tablist", "aria-label": "Staff template detail tabs" }, tabs.map(([key, label]) =>
+            h("button", { key, type: "button", role: "tab", className: cn("staff-detail-tab", detailTab === key && "active"), "aria-selected": detailTab === key, onClick: () => setDetailTab(key) }, label)
+          )),
+          h("div", { className: "staff-detail-body" },
+            detailTab === "overview" ? h(StaffTemplateOverviewTab, { draft, updateDraft, updateDraftList }) : null,
+            detailTab === "capabilities" ? h(StaffTemplateCapabilitiesTab, { draft }) : null,
+            detailTab === "tools" ? h(StaffTemplateToolsTab, { draft }) : null,
+            detailTab === "datasets" ? h(StaffTemplateDatasetsTab, { draft }) : null,
+            detailTab === "instructions" ? h(StaffTemplateInstructionsTab, { draft }) : null,
+            detailTab === "input" ? h(StaffTemplateContractTab, { title: "Input Contract", contract: draft.inputContract }) : null,
+            detailTab === "output" ? h(StaffTemplateContractTab, { title: "Output Contract", contract: draft.outputContractDetail || { requiredSections: draft.outputContract } }) : null,
+            detailTab === "qa" ? h(StaffTemplateContractTab, { title: "QA & Guardrails", contract: draft.qaGuardrails }) : null,
+            detailTab === "retry" ? h(StaffTemplateContractTab, { title: "Retry & Error Handling", contract: draft.retryPolicy }) : null,
+            detailTab === "usage" ? h(StaffTemplateUsageTab, { draft, catalogs }) : null,
+            detailTab === "versions" ? h(StaffTemplateVersionTab, { draft }) : null
+          )
+        )
+      )
+    )
+  );
+}
+
+function jsonCloneForUi(value) {
+  try {
+    return JSON.parse(JSON.stringify(value || {}));
+  } catch (error) {
+    return { ...(value || {}) };
+  }
+}
+
+function listForUi(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : String(value || "").split(/[,;\n]+/).map(item => item.trim()).filter(Boolean);
+}
+
+function StaffTemplateOverviewTab({ draft, updateDraft, updateDraftList }) {
+  return h("div", { className: "staff-tab-grid" },
+    h(Field, { label: "Staff name" }, h(Input, { value: draft.label || "", onChange: event => updateDraft("label", event.target.value) })),
+    h(Field, { label: "Role type" }, h(Select, { value: draft.roleType || "Staff", onChange: event => updateDraft("roleType", event.target.value) },
+      ["Manager", "Staff", "QA", "Tool Operator"].map(value => h("option", { key: value, value }, value))
+    )),
+    h(Field, { label: "Status" }, h(Select, { value: draft.status || "Draft", onChange: event => updateDraft("status", event.target.value) },
+      ["Draft", "Review", "Approved", "Active", "Deprecated"].map(value => h("option", { key: value, value }, value))
+    )),
+    h(Field, { label: "Version" }, h(Input, { value: draft.version || "", onChange: event => updateDraft("version", event.target.value), placeholder: "1.0.0" })),
+    h(Field, { label: "Risk tier" }, h(Select, { value: draft.riskTier || "Medium", onChange: event => updateDraft("riskTier", event.target.value) },
+      ["Low", "Medium", "High"].map(value => h("option", { key: value, value }, value))
+    )),
+    h(Field, { label: "Default department families" }, h(Input, { value: listForUi(draft.defaultDepartmentFamilies).join(", "), onChange: event => updateDraftList("defaultDepartmentFamilies", event.target.value), placeholder: "Origination, Supplier Development" })),
+    h(Field, { label: "Description", className: "staff-wide" }, h(Textarea, { value: draft.purpose || "", rows: 3, onChange: event => updateDraft("purpose", event.target.value) })),
+    h(Field, { label: "When to use this staff", className: "staff-wide" }, h(Textarea, { value: draft.whenToUse || "", rows: 3, onChange: event => updateDraft("whenToUse", event.target.value) })),
+    h(Field, { label: "Default stage responsibility", className: "staff-wide" }, h(Textarea, { value: draft.defaultStageResponsibility || "", rows: 3, onChange: event => updateDraft("defaultStageResponsibility", event.target.value) })),
+    h(Field, { label: "Supported workflow stages", className: "staff-wide" }, h(Input, { value: listForUi(draft.supportedWorkflowStages).join(", "), onChange: event => updateDraftList("supportedWorkflowStages", event.target.value) })),
+    h(Field, { label: "Owner/admin notes", className: "staff-wide" }, h(Textarea, { value: draft.adminNotes || "", rows: 3, onChange: event => updateDraft("adminNotes", event.target.value), placeholder: "Internal notes for platform admins." }))
+  );
+}
+
+function StaffTemplateCapabilitiesTab({ draft }) {
+  return h("div", { className: "staff-info-grid" },
+    h(StaffInfoPanel, { title: "Allowed Capabilities", items: draft.capabilitiesAllowed || draft.outputContract }),
+    h(StaffInfoPanel, { title: "Not Allowed / Stop Conditions", items: draft.capabilitiesNotAllowed || draft.stopConditions }),
+    h(StaffInfoPanel, { title: "Supported Task Types", items: draft.supportedTaskTypes || draft.outputContract }),
+    h(StaffInfoPanel, { title: "Approval Required For", items: draft.requiresApprovalFor })
+  );
+}
+
+function StaffTemplateToolsTab({ draft }) {
+  const tools = draft.requiredLanesTools || [];
+  return h("div", { className: "staff-table-list" },
+    tools.length ? tools.map((tool, index) => h("article", { key: `${tool.family || index}`, className: "staff-tool-row" },
+      h("div", null, h("strong", null, tool.family || "Tool family"), h("small", null, tool.providerResolutionRule || "Provider resolved by active workspace connection.")),
+      h(Badge, { tone: tool.requirement === "required" ? "warn" : "neutral" }, tool.requirement || "optional"),
+      h(Badge, { tone: String(tool.status || "").startsWith("active") ? "success" : "neutral" }, tool.status || "inactive"),
+      h("p", null, tool.fallbackBehavior || "Fallback to manager routing.")
+    )) : h(EmptyState, { title: "No tools configured", body: "Add allowed tool families to define lane adapter requirements." })
+  );
+}
+
+function StaffTemplateDatasetsTab({ draft }) {
+  return h("div", { className: "staff-info-grid" },
+    h(StaffInfoPanel, { title: "Required Datasets", items: draft.requiredDatasets }),
+    h(StaffInfoPanel, { title: "Optional Datasets", items: draft.optionalDatasets }),
+    h(StaffInfoPanel, { title: "Workspace-Provided Datasets", items: draft.workspaceProvidedDatasets }),
+    h("article", { className: "staff-info-panel" }, h("h4", null, "Missing-Data Behavior"), h("p", null, draft.missingDataBehavior || "Ask AI Manager to request missing input."))
+  );
+}
+
+function StaffTemplateInstructionsTab({ draft }) {
+  return h("div", { className: "staff-table-list" }, (draft.instructionLayers || []).map(layer =>
+    h("article", { key: layer.layer, className: "instruction-layer-row" },
+      h("div", null, h("strong", null, layer.layer), h("p", null, layer.summary)),
+      h(AccessBadge, { value: layer.access })
+    )
+  ));
+}
+
+function StaffTemplateContractTab({ title, contract }) {
+  return h("div", { className: "staff-contract-panel" },
+    h("h4", null, title),
+    h("pre", { className: "manifest-preview compact" }, jsonPretty(contract || {}).slice(0, 7000))
+  );
+}
+
+function StaffTemplateUsageTab({ draft }) {
+  const usage = draft.workflowUsage || [];
+  return h("div", { className: "staff-table-list" },
+    h("article", { className: "staff-impact-panel" },
+      h("h4", null, "Used By Impact"),
+      h("p", null, usage.length ? "Review these dependencies before changing the template." : "No current department blueprint usage found."),
+      h(Badge, { tone: usage.length ? "warn" : "neutral" }, `${usage.length} dependency row(s)`)
+    ),
+    usage.map(row => h("article", { key: `${row.blueprintId}-${(row.staffProfiles || []).join("-")}`, className: "staff-tool-row" },
+      h("div", null, h("strong", null, row.blueprintLabel || row.blueprintId), h("small", null, row.blueprintId)),
+      h("p", null, `Staff profiles: ${(row.staffProfiles || []).join(", ")}`),
+      h(Badge, null, row.usage || "Assigned")
+    ))
+  );
+}
+
+function StaffTemplateVersionTab({ draft }) {
+  return h("div", { className: "staff-table-list" },
+    (draft.versionLog || []).map((row, index) => h("article", { key: `${row.version}-${index}`, className: "staff-tool-row" },
+      h("div", null, h("strong", null, `Version ${row.version || draft.version || "1.0.0"}`), h("small", null, row.changedBy || "Platform Admin")),
+      h(Badge, { tone: row.status === "Deprecated" ? "danger" : row.status === "Draft" ? "warn" : "success" }, row.status || draft.status || "Draft"),
+      h("p", null, row.summary || "No migration notes.")
+    )),
+    h("article", { className: "staff-impact-panel" },
+      h("h4", null, "Publish Workflow"),
+      h("p", null, "Draft -> Review -> Approved -> Active. Deprecated versions remain inspectable for departments still using them.")
+    )
+  );
+}
+
+function StaffInfoPanel({ title, items }) {
+  const values = listForUi(items);
+  return h("article", { className: "staff-info-panel" },
+    h("h4", null, title),
+    values.length ? h("ul", null, values.map(item => h("li", { key: item }, item))) : h("p", { className: "muted" }, "None configured.")
   );
 }
 
 function PlatformCatalogPanel({ rows, catalogKey, loading }) {
   const titles = {
+    installedDepartments: ["AiDepartmentInstance", "Installed Departments"],
     departmentBlueprints: ["AiDepartmentBlueprint", "Department Blueprints"],
     staffTemplates: ["AiStaffTemplate", "Staff Templates"],
     laneAdapters: ["AiLaneAdapter", "Lane / Tool Adapters"],

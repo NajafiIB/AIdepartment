@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "architecture": "Capability Orchestration Fabric",
   "status": "Active",
-  "lastReviewed": "2026-06-03",
+  "lastReviewed": "2026-06-10",
   "solutionModules": [
     {
       "id": "solution_swiss_planner_apply_department",
@@ -1584,6 +1584,16 @@
       ],
       "status": "Active",
       "workspaceEditable": true
+    },
+    {
+      "id": "workspace_iman_swiss_planner",
+      "label": "GCC lab Workspace",
+      "owner": "Human_Iman",
+      "members": [
+        "Human_Iman"
+      ],
+      "status": "Active",
+      "workspaceEditable": true
     }
   ],
   "departments": [
@@ -1596,6 +1606,69 @@
       "aiManager": "AIstaff_Manager",
       "status": "Active",
       "workspaceEditable": true
+    },
+    {
+      "id": "department_swiss_planner_applications",
+      "label": "GCC lab AI department",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "templateId": "template_swiss_planner_application_department",
+      "ownershipMode": "ownedDepartment",
+      "humanFacingSurface": "AI Manager project threads",
+      "sponsoredParticipantsSee": [
+        "tasks",
+        "uploads",
+        "confirmations",
+        "approvals",
+        "outputs"
+      ],
+      "humanManager": "Human_Iman",
+      "aiManager": "AIstaff_Manager",
+      "status": "Active",
+      "workspaceEditable": true
+    },
+    {
+      "id": "department_sample_sales_research_ai_department_20260610182900",
+      "label": "Sample Sales Research AI Department",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "templateId": "template_sample_sales_research_ai_department_20260610182900",
+      "ownershipMode": "ownedDepartment",
+      "humanFacingSurface": "AI Manager project threads",
+      "sponsoredParticipantsSee": [
+        "tasks",
+        "uploads",
+        "confirmations",
+        "approvals",
+        "outputs"
+      ],
+      "humanManager": "Human_Iman",
+      "aiManager": "AIstaff_Manager",
+      "purpose": "Research companies, qualify leads, prepare outreach plans, and track follow-ups.",
+      "status": "Active",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-10T18:29:00Z",
+      "createdBy": "Human_Iman"
+    },
+    {
+      "id": "department_seo_optimizer_of_worldbc_co_20260610183912",
+      "label": "SEO optimizer of Worldbc.co",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "templateId": "template_seo_optimizer_of_worldbc_co_20260610183912",
+      "ownershipMode": "ownedDepartment",
+      "humanFacingSurface": "AI Manager project threads",
+      "sponsoredParticipantsSee": [
+        "tasks",
+        "uploads",
+        "confirmations",
+        "approvals",
+        "outputs"
+      ],
+      "humanManager": "Human_Iman",
+      "aiManager": "AIstaff_Manager",
+      "purpose": "Checks the Google Analytics, Prepares the Content  and Save in Wordpress site",
+      "status": "Active",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-10T18:39:12Z",
+      "createdBy": "Human_Iman"
     }
   ],
   "departmentTemplates": [
@@ -1629,6 +1702,178 @@
       "status": "Active",
       "locked": true,
       "workspaceEditable": false
+    },
+    {
+      "id": "template_swiss_planner_application_department",
+      "label": "GCC lab AI department",
+      "purpose": "Review tender Leads, read documents, match suppliers or partners, request quotations, prepare tender packages, and follow up.",
+      "solutionModuleId": "solution_swiss_planner_apply_department",
+      "ownershipModes": [
+        "ownedDepartment",
+        "sponsoredAssignment"
+      ],
+      "projectTypes": [
+        "Tender Lead",
+        "Supplier Quote Request",
+        "Tender Package",
+        "Missing File Review"
+      ],
+      "communicationModel": "Human talks to AI Manager; specialist AI Staff report through AI Manager.",
+      "capabilities": [
+        "opportunity_discovery",
+        "fit_assessment",
+        "professor_research_intelligence",
+        "application_package_generation",
+        "outreach_email",
+        "reply_followup",
+        "crm_sync_activation",
+        "workflow_automation",
+        "ai_reasoning"
+      ],
+      "staffProfiles": [
+        "Human_Iman",
+        "AIstaff_Manager",
+        "AIstaff_OpportunityHunter",
+        "AIstaff_FitAnalyst",
+        "AIstaff_ProfessorResearchAnalyst",
+        "AIstaff_ApplicationPackMaker",
+        "AIstaff_ApplicationPackSender",
+        "AIstaff_FollowUpController",
+        "AIstaff_CRMController"
+      ],
+      "templateFamilies": [
+        "Department Templates",
+        "Staff Models",
+        "Skill Packs",
+        "Toolsets",
+        "Workflow Plans"
+      ],
+      "status": "Active",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "template_sales_research_department_sample",
+      "label": "Sample Sales Research Department",
+      "purpose": "Sample reusable department template proving the platform is not tied to one department.",
+      "solutionModuleId": "solution_sample_sales_research_department",
+      "ownershipModes": [
+        "ownedDepartment",
+        "sponsoredAssignment"
+      ],
+      "projectTypes": [
+        "Lead Discovery",
+        "Fit Review",
+        "CRM Follow-up"
+      ],
+      "communicationModel": "Human talks to AI Manager; specialist AI Staff report through AI Manager.",
+      "capabilities": [
+        "opportunity_discovery",
+        "fit_assessment",
+        "workflow_automation"
+      ],
+      "staffProfiles": [
+        "Human_Iman",
+        "AIstaff_Manager",
+        "AIstaff_OpportunityHunter",
+        "AIstaff_FitAnalyst",
+        "AIstaff_CRMController"
+      ],
+      "templateFamilies": [
+        "Department Templates",
+        "Staff Models",
+        "Skill Packs",
+        "Toolsets",
+        "Workflow Plans"
+      ],
+      "status": "Sample",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "template_sample_sales_research_ai_department_20260610182900",
+      "label": "Sample Sales Research AI Department Blueprint",
+      "purpose": "Research companies, qualify leads, prepare outreach plans, and track follow-ups.",
+      "solutionModuleId": "solution_sample_sales_research_department",
+      "ownershipModes": [
+        "ownedDepartment",
+        "sponsoredAssignment"
+      ],
+      "projectTypes": [
+        "Lead Research",
+        "Account Qualification",
+        "Outreach Plan"
+      ],
+      "communicationModel": "Human talks to AI Manager; specialist AI Staff report through AI Manager.",
+      "capabilities": [
+        "opportunity_discovery",
+        "fit_assessment",
+        "workflow_automation"
+      ],
+      "staffProfiles": [
+        "Human_Iman",
+        "AIstaff_Manager",
+        "AIstaff_OpportunityHunter",
+        "AIstaff_FitAnalyst",
+        "AIstaff_CRMController"
+      ],
+      "templateFamilies": [
+        "Department Templates",
+        "Staff Models",
+        "Skill Packs",
+        "Toolsets",
+        "Workflow Plans"
+      ],
+      "status": "Draft",
+      "locked": false,
+      "workspaceEditable": false,
+      "sourceTemplateId": "template_sales_research_department_sample",
+      "createdAt": "2026-06-10T18:29:00Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-10T18:29:00Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "template_seo_optimizer_of_worldbc_co_20260610183912",
+      "label": "SEO optimizer of Worldbc.co Blueprint",
+      "purpose": "Checks the Google Analytics, Prepares the Content  and Save in Wordpress site",
+      "solutionModuleId": "solution_sample_sales_research_department",
+      "ownershipModes": [
+        "ownedDepartment",
+        "sponsoredAssignment"
+      ],
+      "projectTypes": [
+        "Checks the Google Analytics",
+        "Prepares the Content  and Save in Wordpress site"
+      ],
+      "communicationModel": "Human talks to AI Manager; specialist AI Staff report through AI Manager.",
+      "capabilities": [
+        "opportunity_discovery",
+        "fit_assessment",
+        "workflow_automation"
+      ],
+      "staffProfiles": [
+        "Human_Iman",
+        "AIstaff_Manager",
+        "AIstaff_OpportunityHunter",
+        "AIstaff_FitAnalyst",
+        "AIstaff_CRMController"
+      ],
+      "templateFamilies": [
+        "Department Templates",
+        "Staff Models",
+        "Skill Packs",
+        "Toolsets",
+        "Workflow Plans"
+      ],
+      "status": "Draft",
+      "locked": false,
+      "workspaceEditable": false,
+      "sourceTemplateId": "template_sales_research_department_sample",
+      "createdAt": "2026-06-10T18:39:12Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-10T18:39:12Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "workspaceOverrides": [
@@ -1641,6 +1886,40 @@
       "defaultLanguage": "English/Arabic business tender language accepted",
       "status": "Active",
       "workspaceEditable": true
+    },
+    {
+      "id": "override_iman_swiss_planner",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "departmentId": "department_swiss_planner_applications",
+      "humanManager": "Human_Iman",
+      "aiManagerAlias": "Alex",
+      "defaultLanguage": "English/Persian mixed accepted",
+      "status": "Active",
+      "workspaceEditable": true
+    },
+    {
+      "id": "override_sample_sales_research_ai_department_20260610182900",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "departmentId": "department_sample_sales_research_ai_department_20260610182900",
+      "humanManager": "Human_Iman",
+      "aiManagerAlias": "Alex",
+      "defaultLanguage": "English/Persian mixed accepted",
+      "status": "Active",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-10T18:29:00Z",
+      "createdBy": "Human_Iman"
+    },
+    {
+      "id": "override_seo_optimizer_of_worldbc_co_20260610183912",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "departmentId": "department_seo_optimizer_of_worldbc_co_20260610183912",
+      "humanManager": "Human_Iman",
+      "aiManagerAlias": "Stephan",
+      "defaultLanguage": "English/Persian mixed accepted",
+      "status": "Active",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-10T18:39:12Z",
+      "createdBy": "Human_Iman"
     }
   ],
   "staffProfiles": [
@@ -1654,7 +1933,12 @@
       "contactPolicy": "Human gives instructions only to AI Manager.",
       "avatarKind": "human-owner",
       "workspaceEditable": false,
-      "locked": true
+      "locked": true,
+      "communicationScope": "human_to_manager",
+      "canContactHuman": true,
+      "canCreateHumanFacingThreads": true,
+      "reportsTo": "",
+      "visibilityMode": "ownedDepartment"
     },
     {
       "id": "AIstaff_Manager",
@@ -1667,7 +1951,18 @@
       "contactPolicy": "Only AI Manager communicates directly with the human manager and routes Lead cases to the specialist staff.",
       "avatarKind": "human-ai",
       "workspaceEditable": true,
-      "locked": false
+      "locked": false,
+      "archetypeIds": [
+        "archetype_manager_orchestrator",
+        "archetype_report_maker"
+      ],
+      "primaryArchetypeId": "archetype_manager_orchestrator",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules before taking tool or worker action.",
+      "communicationScope": "manager_human_and_staff",
+      "canContactHuman": true,
+      "canCreateHumanFacingThreads": true,
+      "reportsTo": "Human_Iman",
+      "visibilityMode": "ownedDepartment"
     },
     {
       "id": "AIstaff_OpportunityHunter",
@@ -1680,7 +1975,18 @@
       "contactPolicy": "Reviews transferred Lead records, tender PDFs, scope, source, deadlines, eligibility clauses, and required documents.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
-      "locked": false
+      "locked": false,
+      "archetypeIds": [
+        "archetype_thinking_analyst",
+        "archetype_file_qa"
+      ],
+      "primaryArchetypeId": "archetype_thinking_analyst",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules before taking tool or worker action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_Manager",
+      "visibilityMode": "ownedDepartment"
     },
     {
       "id": "AIstaff_FitAnalyst",
@@ -1693,7 +1999,18 @@
       "contactPolicy": "Checks GCC lab fit, compliance, Companies, Contacts, Products_Registered, LeadMatchedSuppliers, and vendor lists.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
-      "locked": false
+      "locked": false,
+      "archetypeIds": [
+        "archetype_thinking_analyst",
+        "archetype_crm_operator"
+      ],
+      "primaryArchetypeId": "archetype_thinking_analyst",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules before taking tool or worker action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_Manager",
+      "visibilityMode": "ownedDepartment"
     },
     {
       "id": "AIstaff_ProfessorResearchAnalyst",
@@ -1706,7 +2023,17 @@
       "contactPolicy": "Finds ideal suppliers only when existing supplier/partner data is insufficient.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
-      "locked": false
+      "locked": false,
+      "archetypeIds": [
+        "archetype_thinking_analyst"
+      ],
+      "primaryArchetypeId": "archetype_thinking_analyst",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules before taking tool or worker action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_Manager",
+      "visibilityMode": "ownedDepartment"
     },
     {
       "id": "AIstaff_ApplicationPackMaker",
@@ -1719,7 +2046,18 @@
       "contactPolicy": "Prepares compliance matrices, forms, technical response, commercial summaries, supplier quote evidence, and package checklist.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
-      "locked": false
+      "locked": false,
+      "archetypeIds": [
+        "archetype_document_maker",
+        "archetype_file_qa"
+      ],
+      "primaryArchetypeId": "archetype_document_maker",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules before taking tool or worker action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_Manager",
+      "visibilityMode": "ownedDepartment"
     },
     {
       "id": "AIstaff_ApplicationPackSender",
@@ -1732,7 +2070,17 @@
       "contactPolicy": "Handles approved outreach to selected suppliers; a future separate new-supplier outreach agent can be added later.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
-      "locked": false
+      "locked": false,
+      "archetypeIds": [
+        "archetype_email_sender"
+      ],
+      "primaryArchetypeId": "archetype_email_sender",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules before taking tool or worker action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_Manager",
+      "visibilityMode": "ownedDepartment"
     },
     {
       "id": "AIstaff_FollowUpController",
@@ -1745,7 +2093,18 @@
       "contactPolicy": "Tracks supplier replies, quote deadlines, Q&A deadlines, and post-submission responses.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
-      "locked": false
+      "locked": false,
+      "archetypeIds": [
+        "archetype_email_sender",
+        "archetype_report_maker"
+      ],
+      "primaryArchetypeId": "archetype_email_sender",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules before taking tool or worker action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_Manager",
+      "visibilityMode": "ownedDepartment"
     },
     {
       "id": "AIstaff_CRMController",
@@ -1758,7 +2117,18 @@
       "contactPolicy": "Maintains Lead, Companies, Contacts, Tasks List, LeadMatchedSuppliers, and local task-thread integrity.",
       "avatarKind": "abstract-ai",
       "workspaceEditable": true,
-      "locked": false
+      "locked": false,
+      "archetypeIds": [
+        "archetype_crm_operator",
+        "archetype_report_maker"
+      ],
+      "primaryArchetypeId": "archetype_crm_operator",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules before taking tool or worker action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_Manager",
+      "visibilityMode": "ownedDepartment"
     }
   ],
   "outputTemplates": [
@@ -1890,6 +2260,81 @@
         "gate_no_hidden_blocker"
       ],
       "workspaceEditable": true
+    },
+    {
+      "id": "output_verified_opportunity",
+      "label": "Lead Case Brief",
+      "ownerStaff": "AIstaff_OpportunityHunter",
+      "requiredSections": [
+        "Lead record",
+        "Tender source",
+        "Files reviewed",
+        "Deadlines",
+        "Missing blockers"
+      ],
+      "storage": "Lead, Files Manager, Docs, tender portal/source evidence",
+      "qualityGates": [
+        "gate_official_evidence",
+        "gate_no_duplicate_opportunity"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "output_application_package",
+      "label": "Tender Submission Package",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "requiredSections": [
+        "Compliance matrix",
+        "Technical response",
+        "Commercial summary",
+        "Supplier quote evidence",
+        "Submission checklist"
+      ],
+      "storage": "Tender package folder, Lead files, Docs, Files Manager rows",
+      "qualityGates": [
+        "gate_document_template_style",
+        "gate_professor_specificity",
+        "gate_package_folder_registered"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "output_supervisor_email",
+      "label": "Supplier Quotation Outreach",
+      "ownerStaff": "AIstaff_ApplicationPackSender",
+      "requiredSections": [
+        "Supplier/contact",
+        "Tender scope",
+        "Quotation request",
+        "Verified attachments",
+        "Safety result"
+      ],
+      "storage": "Email Send Queue and task/thread evidence",
+      "qualityGates": [
+        "gate_content_safety",
+        "gate_package_completeness",
+        "gate_attachment_access",
+        "gate_duplicate_recipient"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "output_operating_report",
+      "label": "Manager Operating Report",
+      "ownerStaff": "AIstaff_Manager",
+      "requiredSections": [
+        "Do first",
+        "KPI progress",
+        "Leads",
+        "AI staff",
+        "System health"
+      ],
+      "storage": "Reports page and AI Staff Reports",
+      "qualityGates": [
+        "gate_kpi_progress",
+        "gate_no_hidden_blocker"
+      ],
+      "workspaceEditable": true
     }
   ],
   "kpis": [
@@ -1920,6 +2365,36 @@
       "targetUnit": "Percent",
       "targetCount": 100,
       "minimumEvidenceLevel": "No waiting supplier/client action without due follow-up",
+      "ownerStaff": "AIstaff_FollowUpController",
+      "workspaceEditable": true
+    },
+    {
+      "id": "kpi_weekly_verified_opportunities",
+      "label": "Tender Leads Reviewed",
+      "periodType": "Weekly",
+      "targetUnit": "Leads",
+      "targetCount": 10,
+      "minimumEvidenceLevel": "Lead record + tender source/file evidence required",
+      "ownerStaff": "AIstaff_OpportunityHunter",
+      "workspaceEditable": true
+    },
+    {
+      "id": "kpi_weekly_application_packages",
+      "label": "Tender Packages Ready",
+      "periodType": "Weekly",
+      "targetUnit": "Tender packages",
+      "targetCount": 2,
+      "minimumEvidenceLevel": "Compliance matrix + quote evidence + QA gates passed",
+      "ownerStaff": "AIstaff_ApplicationPackMaker",
+      "workspaceEditable": true
+    },
+    {
+      "id": "kpi_followup_compliance",
+      "label": "Follow-up Compliance",
+      "periodType": "Weekly",
+      "targetUnit": "Percent",
+      "targetCount": 100,
+      "minimumEvidenceLevel": "No active AI-owned entity without due follow-up",
       "ownerStaff": "AIstaff_FollowUpController",
       "workspaceEditable": true
     }
@@ -1999,5 +2474,912 @@
     "viewer": [
       "view"
     ]
+  },
+  "staffArchetypes": [
+    {
+      "id": "archetype_manager_orchestrator",
+      "label": "Manager / Orchestrator",
+      "purpose": "Receive human intent, select the right specialist, create or route tasks, and keep the department moving without bypassing safety gates.",
+      "preferredModel": "fast reasoning model for routing; higher reasoning only for complex strategy",
+      "allowedPluginFamilies": [
+        "local_tasks",
+        "crm_read",
+        "reporting",
+        "codex_worker_queue"
+      ],
+      "requiresApprovalFor": [
+        "external_email",
+        "portal_submission",
+        "deleting_records",
+        "applying_learning",
+        "closing_incomplete_leads"
+      ],
+      "outputContract": [
+        "decision",
+        "next_owner",
+        "task_or_thread_update",
+        "blocker_if_any"
+      ],
+      "stopConditions": [
+        "missing human policy",
+        "destructive action",
+        "external communication",
+        "credentials or billing change"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "archetype_thinking_analyst",
+      "label": "Thinking / Analysis Model",
+      "purpose": "Read evidence, reason over fit and risk, produce structured recommendations, and cite sources before routing downstream.",
+      "preferredModel": "reasoning model with medium effort",
+      "allowedPluginFamilies": [
+        "crm_read",
+        "files_read",
+        "official_web_sources",
+        "local_tasks"
+      ],
+      "requiresApprovalFor": [
+        "external_email",
+        "crm_write_except_task_notes",
+        "final_bid_no_bid_decision"
+      ],
+      "outputContract": [
+        "finding_summary",
+        "evidence_links",
+        "confidence",
+        "recommended_next_action"
+      ],
+      "stopConditions": [
+        "missing tender files",
+        "unverified source",
+        "low confidence",
+        "human bid/no-bid decision needed"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "archetype_email_sender",
+      "label": "Email Sender / Outreach Operator",
+      "purpose": "Prepare, safety-check, queue, and process approved outbound emails through configured mail plugins or local SMTP draft mode.",
+      "preferredModel": "low-cost model for safety checks; no creative rewriting after approval without review",
+      "allowedPluginFamilies": [
+        "email_queue",
+        "gmail_or_outlook",
+        "smtp_draft",
+        "attachment_verification",
+        "local_tasks"
+      ],
+      "requiresApprovalFor": [
+        "first_contact_email",
+        "supplier_quote_request",
+        "resending_to_duplicate_recipient",
+        "attachments_to_external_party"
+      ],
+      "outputContract": [
+        "recipient",
+        "subject",
+        "approval_status",
+        "safety_status",
+        "send_or_draft_result"
+      ],
+      "stopConditions": [
+        "approval missing",
+        "unsafe wording",
+        "missing attachments",
+        "duplicate recipient unresolved"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "archetype_document_maker",
+      "label": "Document / Package Maker",
+      "purpose": "Create structured document packages from approved templates, evidence, and task requirements.",
+      "preferredModel": "higher reasoning/writing model for final packages",
+      "allowedPluginFamilies": [
+        "documents",
+        "files_read",
+        "local_packages",
+        "crm_read",
+        "local_tasks"
+      ],
+      "requiresApprovalFor": [
+        "external_send",
+        "final_submission",
+        "template_policy_change"
+      ],
+      "outputContract": [
+        "package_path",
+        "content_summary",
+        "missing_inputs",
+        "style_qa_status"
+      ],
+      "stopConditions": [
+        "missing source files",
+        "template unavailable",
+        "style QA failed",
+        "commercial data missing"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "archetype_report_maker",
+      "label": "Report Maker",
+      "purpose": "Summarize department health, KPIs, blockers, staff workload, and next actions for human review.",
+      "preferredModel": "fast summarization model with deterministic structure",
+      "allowedPluginFamilies": [
+        "local_dashboard",
+        "crm_read",
+        "spreadsheets",
+        "documents",
+        "charts"
+      ],
+      "requiresApprovalFor": [
+        "publishing_report_external",
+        "changing_kpi_targets",
+        "closing_blockers"
+      ],
+      "outputContract": [
+        "executive_summary",
+        "kpis",
+        "blockers",
+        "next_actions"
+      ],
+      "stopConditions": [
+        "data unavailable",
+        "conflicting counts",
+        "missing reporting period"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "archetype_crm_operator",
+      "label": "CRM / Data Operator",
+      "purpose": "Read and update CRM/local records according to schema-aware rules and preserve an event trail.",
+      "preferredModel": "low-cost deterministic model for schema routing and validation",
+      "allowedPluginFamilies": [
+        "appsheet_crm",
+        "local_sqlite",
+        "spreadsheets",
+        "task_threads"
+      ],
+      "requiresApprovalFor": [
+        "deleting_records",
+        "bulk_updates",
+        "status_to_submitted_or_won",
+        "schema_change"
+      ],
+      "outputContract": [
+        "record_id",
+        "table",
+        "field_changes",
+        "event_log"
+      ],
+      "stopConditions": [
+        "unknown table",
+        "missing required key",
+        "ambiguous record match",
+        "write permission missing"
+      ],
+      "workspaceEditable": true
+    },
+    {
+      "id": "archetype_file_qa",
+      "label": "File / Upload QA",
+      "purpose": "Check uploaded files, tender PDFs, screenshots, imports, and mapping evidence before other staff rely on them.",
+      "preferredModel": "vision/document-capable model when files are visual or scanned",
+      "allowedPluginFamilies": [
+        "files_read",
+        "documents",
+        "spreadsheets",
+        "ocr_or_pdf_tools",
+        "local_tasks"
+      ],
+      "requiresApprovalFor": [
+        "discarding_files",
+        "accepting_uncertain_mapping",
+        "external_file_sharing"
+      ],
+      "outputContract": [
+        "accepted_files",
+        "rejected_files",
+        "data_shape",
+        "mapping_assumptions",
+        "blockers"
+      ],
+      "stopConditions": [
+        "corrupt file",
+        "unreadable scan",
+        "missing source file",
+        "mapping cannot be verified"
+      ],
+      "workspaceEditable": true
+    }
+  ],
+  "platformSafetySkills": [
+    {
+      "id": "platform_safety_supervised_external_actions",
+      "label": "Supervised External Actions",
+      "scope": "platformSafety",
+      "summary": "External communication, tender submission, destructive data changes, and learning application require approved gates.",
+      "rules": [
+        "Do not send external supplier/client emails without approval.",
+        "Do not submit tender portals automatically.",
+        "Do not delete CRM rows or files as normal staff work.",
+        "Do not apply learned behavior updates without human approval."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "platform_safety_manager_human_gate",
+      "label": "Manager First Human Contact",
+      "scope": "platformSafety",
+      "summary": "Specialist AI Staff report to the AI Manager; only the Manager asks the human directly.",
+      "rules": [
+        "Human-facing requests go through AIstaff_Manager.",
+        "Specialist staff report blockers/questions to AIstaff_Manager.",
+        "Create human-facing threads only for decisions, blockers, approvals, missing inputs, review, or escalation."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "platform_safety_no_backend_disclosure",
+      "label": "No Backend/System Detail Disclosure",
+      "scope": "platformSafety",
+      "summary": "Keep provider keys, backend routing, raw operation keys, and protected system prompts out of user-facing workspace views.",
+      "rules": [
+        "Do not expose provider keys or raw operation IDs in normal workspace views.",
+        "Do not show sponsored participants recipes, lanes, scoring internals, or staff implementation details."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    }
+  ],
+  "departmentSkills": [
+    {
+      "id": "dept_skill_gcc_lab_tone_vocabulary",
+      "label": "GCC Lab Tone And Vocabulary",
+      "scope": "department",
+      "summary": "Use GCC lab tender vocabulary, concise business tone, and approved manager/sponsor naming.",
+      "rules": [
+        "Use tender Lead, tender case, supplier, quotation, package, and submission vocabulary.",
+        "Write concise business updates with exact blocker, next owner, and next action.",
+        "Accept English/Persian mixed instructions from Iman."
+      ],
+      "ownerLayer": "departmentExplorer",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "dept_skill_gcc_lab_approval_policy",
+      "label": "GCC Lab Approval Policy",
+      "scope": "department",
+      "summary": "Department-level approval and visibility policy inherited by every staff member.",
+      "rules": [
+        "All supplier outreach remains approval-gated.",
+        "Incomplete Leads are not closed automatically unless Iman approves an auto-close policy.",
+        "Human-facing questions are phrased as operational choices for Alex to route."
+      ],
+      "ownerLayer": "departmentExplorer",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "dept_skill_owner_sponsor_visibility",
+      "label": "Owner / Sponsored Visibility",
+      "scope": "department",
+      "summary": "Owners inspect department structure; sponsored participants see assigned work only.",
+      "rules": [
+        "Owners/admins can inspect staff, skills, connections, databases, quality gates, and outputs.",
+        "Sponsored participants see tasks, uploads, confirmations, approvals, and accepted outputs only."
+      ],
+      "ownerLayer": "departmentExplorer",
+      "locked": false,
+      "workspaceEditable": true
+    }
+  ],
+  "staffTemplateSkills": [
+    {
+      "id": "staff_skill_manager_orchestrator",
+      "label": "Manager Orchestrator Skill",
+      "scope": "staffTemplate",
+      "archetypeId": "archetype_manager_orchestrator",
+      "summary": "Interpret human intent, route specialist work, consolidate results, and escalate only real decisions.",
+      "rules": [
+        "Choose the next specialist.",
+        "Keep Iman informed through task threads.",
+        "Do not bypass safety gates."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "staff_skill_thinking_analyst",
+      "label": "Thinking Analyst Skill",
+      "scope": "staffTemplate",
+      "archetypeId": "archetype_thinking_analyst",
+      "summary": "Read evidence, reason over fit/risk, and produce structured recommendations with sources.",
+      "rules": [
+        "Cite evidence.",
+        "Separate facts from assumptions.",
+        "Escalate low-confidence decisions to Manager."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "staff_skill_outreach_operator",
+      "label": "Outreach Operator Skill",
+      "scope": "staffTemplate",
+      "archetypeId": "archetype_email_sender",
+      "summary": "Prepare professional business outreach, summarize replies, and keep send actions approval-gated.",
+      "rules": [
+        "Draft concise supplier messages.",
+        "Detect objections or sensitive claims.",
+        "Ask Manager before sending or changing approved text."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "staff_skill_document_maker",
+      "label": "Document Maker Skill",
+      "scope": "staffTemplate",
+      "archetypeId": "archetype_document_maker",
+      "summary": "Create tender packages from templates, evidence, compliance requirements, and approved inputs.",
+      "rules": [
+        "Use approved templates.",
+        "List missing inputs.",
+        "Keep package QA explicit before external send."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "staff_skill_report_maker",
+      "label": "Report Maker Skill",
+      "scope": "staffTemplate",
+      "archetypeId": "archetype_report_maker",
+      "summary": "Summarize department health, KPIs, blockers, workload, and next actions.",
+      "rules": [
+        "Lead with blockers.",
+        "Show next action and owner.",
+        "Avoid hiding failed or waiting work."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "staff_skill_crm_operator",
+      "label": "CRM Operator Skill",
+      "scope": "staffTemplate",
+      "archetypeId": "archetype_crm_operator",
+      "summary": "Use schema-aware CRM/local data operations with event trails and guarded writes.",
+      "rules": [
+        "Validate table names and keys.",
+        "Avoid ambiguous writes.",
+        "Leave event-log evidence."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "staff_skill_file_qa",
+      "label": "File QA Skill",
+      "scope": "staffTemplate",
+      "archetypeId": "archetype_file_qa",
+      "summary": "Validate tender files, uploads, screenshots, imports, and mapping evidence before downstream work uses them.",
+      "rules": [
+        "Reject corrupt or unreadable files.",
+        "Record mapping assumptions.",
+        "Escalate missing files to Manager."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    }
+  ],
+  "laneAdapterSkills": [
+    {
+      "id": "lane_skill_email_queue_safety",
+      "label": "Email Queue Safety Lane",
+      "scope": "laneAdapter",
+      "laneId": "lane_gmail_bridge",
+      "summary": "Queue, preflight, and process approved outreach without bypassing content/attachment/duplicate checks.",
+      "rules": [
+        "Draft before send when approval is required.",
+        "Verify attachments.",
+        "Log queue row and result."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "lane_skill_gmail_adapter",
+      "label": "Gmail Adapter Skill",
+      "scope": "laneAdapter",
+      "laneId": "lane_gmail_adapter",
+      "summary": "Gmail-specific execution rules for drafts/sends, thread IDs, message IDs, and errors.",
+      "rules": [
+        "Preserve Gmail thread ID.",
+        "Log sent message ID.",
+        "Handle Gmail API/MCP errors without retry storms."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "lane_skill_outlook_adapter",
+      "label": "Outlook Adapter Skill",
+      "scope": "laneAdapter",
+      "laneId": "lane_outlook_adapter",
+      "summary": "Outlook/Microsoft Graph-specific rules for conversation IDs, attachments, sent item IDs, and errors.",
+      "rules": [
+        "Preserve Outlook conversation ID.",
+        "Verify attachments before send.",
+        "Log sent item ID."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "lane_skill_local_crm_adapter",
+      "label": "Local CRM Adapter Skill",
+      "scope": "laneAdapter",
+      "laneId": "lane_local_thread_tasks",
+      "summary": "Local task/thread/SQLite execution rules before optional CRM sync.",
+      "rules": [
+        "Persist task/thread state locally.",
+        "Queue CRM sync actions instead of blocking local work.",
+        "Keep last error and evidence link."
+      ],
+      "ownerLayer": "platformAdmin",
+      "locked": true,
+      "workspaceEditable": false
+    }
+  ],
+  "skillBindings": [
+    {
+      "id": "binding_platform_safety_global",
+      "bindingType": "global",
+      "targetId": "*",
+      "skillScope": "platformSafetySkills",
+      "skillIds": [
+        "platform_safety_supervised_external_actions",
+        "platform_safety_manager_human_gate",
+        "platform_safety_no_backend_disclosure"
+      ],
+      "resolutionOrder": 1,
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "binding_department_gcc_lab",
+      "bindingType": "department",
+      "targetId": "department_swiss_planner_applications",
+      "skillScope": "departmentSkills",
+      "skillIds": [
+        "dept_skill_gcc_lab_tone_vocabulary",
+        "dept_skill_gcc_lab_approval_policy",
+        "dept_skill_owner_sponsor_visibility"
+      ],
+      "resolutionOrder": 2,
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "binding_archetype_manager",
+      "bindingType": "staffArchetype",
+      "targetId": "archetype_manager_orchestrator",
+      "skillScope": "staffTemplateSkills",
+      "skillIds": [
+        "staff_skill_manager_orchestrator",
+        "staff_skill_report_maker"
+      ],
+      "resolutionOrder": 3,
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "binding_archetype_thinking",
+      "bindingType": "staffArchetype",
+      "targetId": "archetype_thinking_analyst",
+      "skillScope": "staffTemplateSkills",
+      "skillIds": [
+        "staff_skill_thinking_analyst"
+      ],
+      "resolutionOrder": 3,
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "binding_archetype_outreach",
+      "bindingType": "staffArchetype",
+      "targetId": "archetype_email_sender",
+      "skillScope": "staffTemplateSkills",
+      "skillIds": [
+        "staff_skill_outreach_operator"
+      ],
+      "resolutionOrder": 3,
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "binding_archetype_document",
+      "bindingType": "staffArchetype",
+      "targetId": "archetype_document_maker",
+      "skillScope": "staffTemplateSkills",
+      "skillIds": [
+        "staff_skill_document_maker"
+      ],
+      "resolutionOrder": 3,
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "binding_archetype_crm",
+      "bindingType": "staffArchetype",
+      "targetId": "archetype_crm_operator",
+      "skillScope": "staffTemplateSkills",
+      "skillIds": [
+        "staff_skill_crm_operator"
+      ],
+      "resolutionOrder": 3,
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "binding_archetype_file_qa",
+      "bindingType": "staffArchetype",
+      "targetId": "archetype_file_qa",
+      "skillScope": "staffTemplateSkills",
+      "skillIds": [
+        "staff_skill_file_qa"
+      ],
+      "resolutionOrder": 3,
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "binding_email_lane_adapter",
+      "bindingType": "lane",
+      "targetId": "lane_gmail_bridge",
+      "skillScope": "laneAdapterSkills",
+      "skillIds": [
+        "lane_skill_email_queue_safety",
+        "lane_skill_gmail_adapter",
+        "lane_skill_outlook_adapter"
+      ],
+      "resolutionOrder": 4,
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "binding_local_thread_lane_adapter",
+      "bindingType": "lane",
+      "targetId": "lane_local_thread_tasks",
+      "skillScope": "laneAdapterSkills",
+      "skillIds": [
+        "lane_skill_local_crm_adapter"
+      ],
+      "resolutionOrder": 4,
+      "locked": true,
+      "workspaceEditable": false
+    },
+    {
+      "id": "binding_department_sample_sales_research_ai_department_20260610182900",
+      "bindingType": "department",
+      "targetId": "department_sample_sales_research_ai_department_20260610182900",
+      "skillScope": "departmentSkills",
+      "skillIds": [
+        "dept_skill_gcc_lab_tone_vocabulary",
+        "dept_skill_gcc_lab_approval_policy",
+        "dept_skill_owner_sponsor_visibility"
+      ],
+      "resolutionOrder": 2,
+      "locked": false,
+      "workspaceEditable": true,
+      "createdAt": "2026-06-10T18:29:00Z",
+      "createdBy": "Human_Iman"
+    },
+    {
+      "id": "binding_department_seo_optimizer_of_worldbc_co_20260610183912",
+      "bindingType": "department",
+      "targetId": "department_seo_optimizer_of_worldbc_co_20260610183912",
+      "skillScope": "departmentSkills",
+      "skillIds": [
+        "dept_skill_gcc_lab_tone_vocabulary",
+        "dept_skill_gcc_lab_approval_policy",
+        "dept_skill_owner_sponsor_visibility"
+      ],
+      "resolutionOrder": 2,
+      "locked": false,
+      "workspaceEditable": true,
+      "createdAt": "2026-06-10T18:39:12Z",
+      "createdBy": "Human_Iman"
+    }
+  ],
+  "operatingModel": {
+    "id": "platform_ai_department_operating_model_v1",
+    "label": "Reusable Supervised AI Department Operating Model",
+    "terminologyAliases": {
+      "Musahama": "platform",
+      "Solution": "AI Department",
+      "Project": "Department case",
+      "Task Thread": "Human / AI Manager work record"
+    },
+    "departmentContract": {
+      "goal": "Each solution becomes a reusable supervised AI Department with an AI Manager, specialist AI Staff, project plans, quality gates, outputs, connections, databases, and reusable templates.",
+      "humanCommunicationRule": "The human talks to the AI Manager. Specialist AI Staff work underneath the Manager.",
+      "staffCommunicationRule": "Specialist AI Staff report to the AI Manager and do not ask the human directly unless the Manager routes the request.",
+      "managerRole": "Interpret human intent, route specialist work, consolidate results, and escalate only real decisions or blockers.",
+      "safetyBoundary": "External supplier emails, tender submissions, learning updates, destructive CRM changes, and incomplete-case closures remain supervised."
+    },
+    "threadPolicy": {
+      "createThreadsFor": [
+        "human_message",
+        "approval",
+        "missing_input",
+        "blocker",
+        "review",
+        "escalation",
+        "worker_handoff",
+        "system_audit"
+      ],
+      "doNotCreateThreadsFor": [
+        "casual_internal_progress",
+        "duplicate_status_noise",
+        "routine_completed_work_without_decision"
+      ],
+      "closedThreadLearning": "Closed threads may create skill-update candidates, but applying learnings requires human approval."
+    },
+    "skillArchitecture": {
+      "model": "Scoped skills with explicit bindings, not one giant skill table.",
+      "resolutionOrder": [
+        "platformSafetySkills",
+        "departmentSkills",
+        "staffTemplateSkills",
+        "laneAdapterSkills",
+        "projectContext",
+        "userPreferences",
+        "approvedLearnedUpdates"
+      ],
+      "overrideRule": "User-editable preferences and learned updates must never override locked platform safety, department policy, or lane/tool execution rules.",
+      "controlSplit": {
+        "platformAdmin": [
+          "department blueprints",
+          "staff templates",
+          "lane/tool adapters",
+          "workflow templates",
+          "locked safety skills",
+          "locked lane execution skills"
+        ],
+        "workspaceSettings": [
+          "company identity",
+          "business registration",
+          "tax/VAT IDs",
+          "approved sender identities",
+          "brand tone",
+          "active integrations",
+          "approved databases"
+        ],
+        "departmentExplorer": [
+          "installed department preferences",
+          "manager aliases",
+          "staff aliases",
+          "vocabulary",
+          "escalation contacts",
+          "allowed quality-gate thresholds"
+        ],
+        "projectWorkspace": [
+          "plans",
+          "tasks",
+          "threads",
+          "approvals",
+          "outputs",
+          "evidence"
+        ]
+      }
+    },
+    "automationRuntimeArchitecture": {
+      "currentApproach": "Use the platform database, explicit queue/state tables, cron triggers, and the internal runner before adding an external workflow engine.",
+      "persistentState": [
+        "department project plans",
+        "project plan steps",
+        "task threads",
+        "thread messages",
+        "task assignments",
+        "skill-update candidates",
+        "worker runs",
+        "codex work items"
+      ],
+      "runnerResponsibilities": [
+        "pick queued work",
+        "record run status",
+        "record current step and progress",
+        "persist result summary",
+        "persist last error",
+        "retry recoverable failures",
+        "stop at approval, missing input, or safety gates"
+      ],
+      "projectSchedulerPolicy": {
+        "goal": "Every AI Department project should have durable scheduler state and a plan whose steps are owned by the AI Manager or specialist AI Staff.",
+        "stepStates": [
+          "Queued",
+          "Ready",
+          "In Progress",
+          "Blocked",
+          "Needs Approval",
+          "Done",
+          "Failed Requires Attention"
+        ],
+        "ownerRule": "Plan steps are assigned to AI Manager or specialist AI Staff; human-facing work is routed through Manager threads.",
+        "progressRule": "Async work must write partial progress so operators can replay, triage, or resume without trusting in-process memory."
+      },
+      "retryPolicy": {
+        "maxAttempts": 3,
+        "afterExhaustion": "failed_requires_attention",
+        "operatorExpectation": "Failures should leave enough state, last error, and next action for support triage."
+      },
+      "externalWorkflowEnginePolicy": {
+        "triggerDevDecision": "Do not add Trigger.dev in v1.",
+        "reason": "The current database plus cron/internal-runner approach is enough while the product model still needs stronger plan, state, approval, visibility, and escalation discipline.",
+        "reconsiderWhen": [
+          "step-level durable execution is needed across many autonomous jobs",
+          "long-running workflows need built-in heartbeats or cancellation",
+          "concurrency control is difficult to maintain locally",
+          "workflow replay UI becomes a product/support requirement",
+          "distributed locks are needed across multiple runners",
+          "deep observability is required across many departments"
+        ]
+      }
+    },
+    "visibilityModes": {
+      "ownedDepartment": {
+        "label": "AI Departments I Own",
+        "visible": [
+          "overview",
+          "projects",
+          "AI Manager",
+          "AI Staff",
+          "skills",
+          "connections",
+          "databases",
+          "quality gates",
+          "outputs",
+          "settings"
+        ],
+        "hidden": [
+          "provider secrets",
+          "raw operation keys"
+        ]
+      },
+      "sponsoredAssignment": {
+        "label": "Sponsored Work Assigned To Me",
+        "visible": [
+          "sponsor",
+          "assignment",
+          "next task",
+          "project thread",
+          "uploads",
+          "confirmations",
+          "approvals",
+          "outputs"
+        ],
+        "hidden": [
+          "internal recipes",
+          "lanes",
+          "provider routing",
+          "scoring internals",
+          "staff implementation details"
+        ]
+      }
+    },
+    "templateFamilies": [
+      "Department Templates",
+      "Staff Models",
+      "Skill Packs",
+      "Toolsets",
+      "Workflow Plans"
+    ],
+    "supportInventoryPattern": {
+      "columns": [
+        "Must Have",
+        "Nice To Have"
+      ],
+      "groups": [
+        "Connections",
+        "Databases"
+      ],
+      "defaultRowFields": [
+        "status",
+        "name",
+        "reason",
+        "action"
+      ]
+    },
+    "internalPlatformTeam": [
+      {
+        "id": "platform_designer_agent",
+        "label": "Designer Agent",
+        "purpose": "Turn UI requests into approved patterns and acceptance checks before implementation.",
+        "laneRule": "Design review happens before code edits for UI changes."
+      },
+      {
+        "id": "platform_upload_qa_agent",
+        "label": "Upload QA Agent",
+        "purpose": "Check screenshots, document references, imports, and mapping evidence before implementation relies on them.",
+        "laneRule": "Upload evidence is verified before downstream implementation."
+      },
+      {
+        "id": "platform_codex_developer",
+        "label": "Codex Developer",
+        "purpose": "Own code edits, validation, PR body, versioning, and final handoff.",
+        "laneRule": "One actor owns one code branch or implementation lane at a time."
+      },
+      {
+        "id": "platform_deployment_watcher",
+        "label": "Deployment Watcher",
+        "purpose": "Verify merged changes are actually live in the deployed runtime.",
+        "laneRule": "Deployment verification is separate from implementation."
+      },
+      {
+        "id": "platform_ux_auditor",
+        "label": "M3 UX Auditor",
+        "purpose": "Check Material 3, house style, and page-pattern drift.",
+        "laneRule": "UX drift is reported as review evidence, not hidden inside implementation notes."
+      },
+      {
+        "id": "platform_review_resolver",
+        "label": "Review Resolver",
+        "purpose": "Check unresolved AI and human PR comments and route fixes.",
+        "laneRule": "Review comments are resolved before final handoff."
+      }
+    ],
+    "workspaceEditable": false
+  },
+  "workspaceBusinessProfile": {
+    "id": "workspace_business_profile_gcc_lab",
+    "workspaceId": "workspace_iman_swiss_planner",
+    "companyDisplayName": "GCC lab",
+    "legalCompanyName": "",
+    "vatOrTaxId": "",
+    "commercialRegistrationNumber": "",
+    "registeredAddress": "",
+    "industrySector": "Testing, calibration, inspection, and tender services",
+    "defaultLanguage": "English/Persian mixed accepted",
+    "approvedBrandTone": "Concise, professional, evidence-based business communication",
+    "defaultManagerTitle": "Iman / Human Manager",
+    "approvedEmailSignature": "",
+    "approvedSenderIdentities": [],
+    "activeConnections": [
+      "local_runtime",
+      "local_sqlite",
+      "email_queue"
+    ],
+    "approvedDatabases": [
+      "Lead",
+      "Companies",
+      "Contacts",
+      "Tasks List",
+      "LeadMatchedSuppliers",
+      "Files Manager",
+      "Docs"
+    ],
+    "workspaceEditable": true
   }
 }

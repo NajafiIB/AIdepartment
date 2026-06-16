@@ -1135,6 +1135,12 @@ def json_clone(value: Any) -> Any:
     return json.loads(json.dumps(value, default=str))
 
 
+def fabric_slug(value: Any, fallback: str = "department") -> str:
+    text = str(value or "").strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    return slug or fallback
+
+
 def default_staff_profiles() -> list[dict[str, Any]]:
     titles = {
         "AIstaff_Manager": "Department Manager",
@@ -2896,6 +2902,147 @@ def scoped_skill_definitions(fabric: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def staff_template_dto(row: dict[str, Any], fabric: dict[str, Any]) -> dict[str, Any]:
+    item = json_clone(row)
+    archetype_id = str(item.get("id") or "")
+    role_type = "Manager" if "manager" in archetype_id else "QA" if "qa" in archetype_id else "Tool Operator" if any(term in archetype_id for term in ["email", "crm", "document"]) else "Staff"
+    plugin_families = [str(value) for value in item.get("allowedPluginFamilies", []) or [] if value]
+    family_lookup = {
+        "email_queue": "Origination",
+        "gmail_or_outlook": "Origination",
+        "official_web_sources": "Origination",
+        "crm_read": "Supplier Development",
+        "appsheet_crm": "Supplier Development",
+        "local_sqlite": "Supplier Development",
+        "documents": "Strategy",
+        "reporting": "Strategy",
+        "charts": "Strategy",
+        "files_read": "Strategy",
+    }
+    default_families = sorted({family_lookup.get(family, "Operations") for family in plugin_families}) or ["Operations"]
+    risk_tier = "High" if item.get("requiresApprovalFor") else "Medium" if role_type in {"Tool Operator", "QA"} else "Low"
+    required_tools = [
+        {
+            "family": family.replace("_", " "),
+            "requirement": "required" if index < 2 else "optional",
+            "status": "active" if family in {"local_tasks", "local_dashboard", "task_threads", "local_sqlite"} else "inactive until workspace connects provider",
+            "fallbackBehavior": "Route to local task/thread lane and ask AI Manager when unavailable.",
+            "providerResolutionRule": "Resolve by active workspace connection; Gmail/Outlook/API provider stays in lane adapter.",
+        }
+        for index, family in enumerate(plugin_families)
+    ]
+    required_datasets = []
+    if any(family in plugin_families for family in ["crm_read", "appsheet_crm", "local_sqlite"]):
+        required_datasets.extend(["CRM Lead or project record", "Company profile"])
+    if any(family in plugin_families for family in ["email_queue", "gmail_or_outlook"]):
+        required_datasets.extend(["Recipient/contact record", "Previous communication history"])
+    if any(family in plugin_families for family in ["files_read", "documents", "spreadsheets"]):
+        required_datasets.extend(["Source files", "Evidence package"])
+    required_datasets = list(dict.fromkeys(required_datasets)) or ["Task brief"]
+    bindings = [
+        binding for binding in fabric.get("skillBindings", []) or []
+        if isinstance(binding, dict) and binding.get("bindingType") == "staffArchetype" and binding.get("targetId") == archetype_id
+    ]
+    staff_skill_ids: list[str] = []
+    for binding in bindings:
+        staff_skill_ids.extend(str(skill_id) for skill_id in binding.get("skillIds", []) or [] if skill_id)
+    skill_lookup = {
+        str(skill.get("id")): skill
+        for skill in fabric.get("staffTemplateSkills", []) or []
+        if isinstance(skill, dict) and skill.get("id")
+    }
+    workflow_usage = []
+    staff_profiles = [
+        profile for profile in fabric.get("staffProfiles", []) or []
+        if isinstance(profile, dict) and archetype_id in (profile.get("archetypeIds") or [])
+    ]
+    staff_ids = {profile.get("id") for profile in staff_profiles}
+    for template in fabric.get("departmentTemplates", []) or []:
+        if not isinstance(template, dict):
+            continue
+        overlap = [staff_id for staff_id in template.get("staffProfiles", []) or [] if staff_id in staff_ids]
+        if overlap:
+            workflow_usage.append(
+                {
+                    "blueprintId": template.get("id"),
+                    "blueprintLabel": template.get("label"),
+                    "staffProfiles": overlap,
+                    "usage": "Assigned through staff profile archetype binding.",
+                }
+            )
+    item.update(
+        {
+            "roleType": item.get("roleType") or role_type,
+            "defaultDepartmentFamilies": item.get("defaultDepartmentFamilies") or default_families,
+            "status": item.get("status") or "Approved",
+            "version": item.get("version") or "1.0.0",
+            "requiredLanesTools": item.get("requiredLanesTools") or required_tools,
+            "requiredDatasets": item.get("requiredDatasets") or required_datasets,
+            "optionalDatasets": item.get("optionalDatasets") or ["Workspace preferences", "Approved learned improvements"],
+            "workspaceProvidedDatasets": item.get("workspaceProvidedDatasets") or ["Active CRM/source databases", "Approved contacts and sender identities"],
+            "missingDataBehavior": item.get("missingDataBehavior") or "Ask AI Manager to create a human-facing missing-input thread; do not contact the human directly.",
+            "lastUpdated": item.get("updatedAt") or item.get("createdAt") or fabric.get("lastReviewed"),
+            "riskTier": item.get("riskTier") or risk_tier,
+            "whenToUse": item.get("whenToUse") or item.get("purpose") or "",
+            "defaultStageResponsibility": item.get("defaultStageResponsibility") or "Execute assigned workflow stages under the AI Manager and return structured evidence.",
+            "supportedWorkflowStages": item.get("supportedWorkflowStages") or ["Intake", "Analysis", "Draft", "Review", "Follow-up", "Blocker escalation"],
+            "capabilitiesAllowed": item.get("capabilitiesAllowed") or item.get("outputContract") or [],
+            "capabilitiesNotAllowed": item.get("capabilitiesNotAllowed") or item.get("stopConditions") or [],
+            "supportedTaskTypes": item.get("supportedTaskTypes") or item.get("outputContract") or [],
+            "instructionLayers": item.get("instructionLayers") or [
+                {"layer": "Fixed instructions", "access": "platform_locked", "summary": "Platform safety, manager-facing routing, and protected execution rules."},
+                {"layer": "Department instructions", "access": "department_editable", "summary": "Department vocabulary, approval policy, and output preferences within policy."},
+                {"layer": "Staff instructions", "access": "platform_locked", "summary": "Reusable job-description defaults for this staff template."},
+                {"layer": "Workspace preferences", "access": "workspace_editable", "summary": "Safe tone, sender, identity, dataset, and naming preferences."},
+                {"layer": "Learned improvements", "access": "runtime_context", "summary": "Proposed from closed threads and activated only after approval."},
+            ],
+            "inputContract": item.get("inputContract") or {
+                "required": ["task objective", "project or lead context", "success criteria"],
+                "optional": ["tone preference", "sample output", "deadline"],
+                "acceptedTypes": ["text", "JSON", "CRM record", "document/file reference"],
+                "validationRules": ["Required context must be present", "External actions require approval metadata"],
+                "missingInputAction": "Ask AI Manager to request the missing input.",
+            },
+            "outputContractDetail": item.get("outputContractDetail") or {
+                "format": "structured text or JSON",
+                "requiredSections": item.get("outputContract") or [],
+                "approvalRequirement": "Manager review; human approval for external or irreversible action.",
+            },
+            "qaGuardrails": item.get("qaGuardrails") or {
+                "requiredChecks": ["policy compliance", "tone check", "missing data check", "evidence or source check"],
+                "humanApprovalRules": item.get("requiresApprovalFor") or [],
+                "forbiddenBehavior": ["do not expose backend/tool details", "do not bypass AI Manager", "do not execute external sends without approval"],
+            },
+            "retryPolicy": item.get("retryPolicy") or {
+                "maxRetries": 3,
+                "retryDelay": "exponential backoff",
+                "retryableErrors": ["provider timeout", "temporary local worker failure", "rate limit"],
+                "nonRetryableErrors": ["missing required input", "human approval missing", "duplicate-send risk", "policy violation"],
+                "fallbackStaffOrTool": "AIstaff_Manager",
+                "askManagerWhen": "confidence is low, provider unavailable, or task should be rerouted",
+                "askHumanWhen": "required business input or approval is missing",
+                "stopStageWhen": "guardrail fails or non-retryable blocker is detected",
+                "createThreadWhen": "approval, missing input, review, escalation, or real blocker exists",
+                "markWorkflowBlockedWhen": "no safe internal action remains",
+            },
+            "workflowUsage": item.get("workflowUsage") or workflow_usage,
+            "versionLog": item.get("versionLog") or [{"version": item.get("version") or "1.0.0", "status": item.get("status") or "Approved", "changedBy": "Platform Admin", "summary": "Default local alpha staff template."}],
+            "validationState": item.get("validationState") or {
+                "missingTools": [],
+                "missingDatasets": [],
+                "missingSchemas": [],
+                "missingGuardrails": [] if item.get("requiresApprovalFor") else ["Add approval rules for external/irreversible actions when applicable."],
+            },
+            "boundStaffProfiles": staff_profiles,
+            "boundSkillIds": staff_skill_ids,
+            "boundSkills": [skill_lookup.get(skill_id) for skill_id in staff_skill_ids if skill_lookup.get(skill_id)],
+            "capabilityBased": True,
+            "providerSpecificBehavior": "lane_adapter",
+        }
+    )
+    return attach_field_access(item, "AiStaffTemplate")
+
+
 def platform_catalog_summary(fabric: dict[str, Any]) -> dict[str, int]:
     return {
         "departmentBlueprints": len(fabric.get("departmentTemplates", []) or []),
@@ -2910,6 +3057,18 @@ def platform_catalog_summary(fabric: dict[str, Any]) -> dict[str, int]:
 def platform_admin_catalogs() -> dict[str, Any]:
     fabric = load_capability_fabric()
     catalogs = {
+        "installedDepartments": [
+            attach_field_access(
+                {
+                    **json_clone(row),
+                    "blueprintId": row.get("templateId"),
+                    "managerSurface": row.get("humanFacingSurface") or "AI Manager project threads",
+                },
+                "AiDepartmentInstance",
+            )
+            for row in (fabric.get("departments", []) or [])
+            if isinstance(row, dict)
+        ],
         "departmentBlueprints": [
             attach_field_access(
                 {
@@ -2923,14 +3082,7 @@ def platform_admin_catalogs() -> dict[str, Any]:
             if isinstance(row, dict)
         ],
         "staffTemplates": [
-            attach_field_access(
-                {
-                    **json_clone(row),
-                    "capabilityBased": True,
-                    "providerSpecificBehavior": "lane_adapter",
-                },
-                "AiStaffTemplate",
-            )
+            staff_template_dto(row, fabric)
             for row in (fabric.get("staffArchetypes", []) or [])
             if isinstance(row, dict)
         ],
@@ -2957,12 +3109,159 @@ def platform_admin_catalogs() -> dict[str, Any]:
         "fieldAccessLegend": fabric.get("fieldAccessLegend") or {},
         "validation": {"errors": fabric.get("errors") or [], "errorCount": len(fabric.get("errors") or [])},
         "exportReady": {
+            "installedDepartments": [row.get("id") for row in catalogs["installedDepartments"]],
             "departmentBlueprints": [row.get("id") for row in catalogs["departmentBlueprints"]],
             "staffTemplates": [row.get("id") for row in catalogs["staffTemplates"]],
             "laneAdapters": [row.get("id") for row in catalogs["laneAdapters"]],
             "scopedSkills": [row.get("id") for row in catalogs["scopedSkills"]],
             "workflowTemplates": [row.get("id") for row in catalogs["workflowTemplates"]],
         },
+    }
+
+
+def create_department_from_template(payload: dict[str, Any]) -> dict[str, Any]:
+    department_label = str(payload.get("departmentLabel") or payload.get("label") or "").strip()
+    if not department_label:
+        return {"ok": False, "error": "Department name is required."}
+    source_template_id = str(payload.get("sourceTemplateId") or "template_swiss_planner_application_department").strip()
+    purpose = str(payload.get("departmentPurpose") or payload.get("purpose") or "").strip()
+    ai_manager_alias = str(payload.get("aiManagerAlias") or DEFAULT_STAFF_ALIASES["AIstaff_Manager"]).strip()
+    human_manager = str(payload.get("humanManager") or "Human_Iman").strip()
+    workspace_id = str(payload.get("workspaceId") or "workspace_iman_swiss_planner").strip()
+    raw_project_types = payload.get("projectTypes")
+    if isinstance(raw_project_types, str):
+        project_types = [item.strip() for item in re.split(r"[,;\n]+", raw_project_types) if item.strip()]
+    elif isinstance(raw_project_types, list):
+        project_types = [str(item).strip() for item in raw_project_types if str(item).strip()]
+    else:
+        project_types = []
+    try:
+        fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+
+    normalized_label = department_label.casefold()
+    existing_department = next(
+        (
+            row
+            for row in fabric.get("departments", []) or []
+            if isinstance(row, dict)
+            and str(row.get("label") or "").strip().casefold() == normalized_label
+            and str(row.get("status") or "").strip().casefold() != "archived"
+        ),
+        None,
+    )
+    if existing_department:
+        return {
+            "ok": True,
+            "alreadyExists": True,
+            "department": attach_field_access(existing_department, "AiDepartmentInstance"),
+            "message": "A department with this name already exists.",
+            "catalogs": platform_admin_catalogs(),
+        }
+
+    templates = [row for row in fabric.get("departmentTemplates", []) or [] if isinstance(row, dict)]
+    source_template = next((row for row in templates if str(row.get("id")) == source_template_id), None)
+    if not source_template:
+        return {"ok": False, "error": f"Source department blueprint not found: {source_template_id}"}
+
+    stamp = time.strftime("%Y%m%d%H%M%S", time.gmtime())
+    slug = fabric_slug(department_label)
+    department_id = str(payload.get("departmentId") or f"department_{slug}_{stamp}").strip()
+    template_id = str(payload.get("templateId") or f"template_{slug}_{stamp}").strip()
+    override_id = f"override_{slug}_{stamp}"
+    binding_id = f"binding_department_{slug}_{stamp}"
+    department_skills = [row.get("id") for row in fabric.get("departmentSkills", []) or [] if isinstance(row, dict) and row.get("id")]
+
+    created_template = {
+        **json_clone(source_template),
+        "id": template_id,
+        "label": f"{department_label} Blueprint",
+        "purpose": purpose or source_template.get("purpose") or "",
+        "projectTypes": project_types or json_clone(source_template.get("projectTypes") or []),
+        "sourceTemplateId": source_template.get("id"),
+        "status": "Draft",
+        "locked": False,
+        "workspaceEditable": False,
+        "createdAt": iso_like(),
+        "createdBy": str(payload.get("createdBy") or "Human_Iman"),
+        "updatedAt": iso_like(),
+        "updatedBy": str(payload.get("createdBy") or "Human_Iman"),
+    }
+    created_department = {
+        "id": department_id,
+        "label": department_label,
+        "workspaceId": workspace_id,
+        "templateId": template_id,
+        "ownershipMode": str(payload.get("ownershipMode") or "ownedDepartment"),
+        "humanFacingSurface": "AI Manager project threads",
+        "sponsoredParticipantsSee": ["tasks", "uploads", "confirmations", "approvals", "outputs"],
+        "humanManager": human_manager,
+        "aiManager": "AIstaff_Manager",
+        "purpose": purpose or source_template.get("purpose") or "",
+        "status": "Active",
+        "workspaceEditable": True,
+        "createdAt": iso_like(),
+        "createdBy": str(payload.get("createdBy") or "Human_Iman"),
+    }
+    workspace_override = {
+        "id": override_id,
+        "workspaceId": workspace_id,
+        "departmentId": department_id,
+        "humanManager": human_manager,
+        "aiManagerAlias": ai_manager_alias,
+        "defaultLanguage": (workspace_profile().get("defaultLanguage") or "English"),
+        "status": "Active",
+        "workspaceEditable": True,
+        "createdAt": iso_like(),
+        "createdBy": str(payload.get("createdBy") or "Human_Iman"),
+    }
+    skill_binding = {
+        "id": binding_id,
+        "bindingType": "department",
+        "targetId": department_id,
+        "skillScope": "departmentSkills",
+        "skillIds": department_skills,
+        "resolutionOrder": 2,
+        "locked": False,
+        "workspaceEditable": True,
+        "createdAt": iso_like(),
+        "createdBy": str(payload.get("createdBy") or "Human_Iman"),
+    }
+
+    fabric.setdefault("departmentTemplates", []).append(created_template)
+    fabric.setdefault("departments", []).append(created_department)
+    fabric.setdefault("workspaceOverrides", []).append(workspace_override)
+    fabric.setdefault("skillBindings", []).append(skill_binding)
+
+    backup = create_config_backup({"reason": f"Before creating department: {department_label}", "notes": "Automatic pre-create backup."})
+    result = write_capability_fabric(fabric)
+    if not result.get("ok"):
+        return result
+    version = record_department_version(
+        object_type="departments",
+        object_id=department_id,
+        action="Create department from blueprint",
+        before_payload={},
+        after_payload={
+            "department": created_department,
+            "departmentTemplate": created_template,
+            "workspaceOverride": workspace_override,
+            "skillBinding": skill_binding,
+        },
+        created_by=str(payload.get("createdBy") or "Human_Iman"),
+        reason=str(payload.get("reason") or f"Created local AI Department from {source_template_id}."),
+    )
+    return {
+        "ok": True,
+        "alreadyExists": False,
+        "department": attach_field_access(created_department, "AiDepartmentInstance"),
+        "departmentTemplate": attach_field_access(created_template, "AiDepartmentBlueprint"),
+        "workspaceOverride": attach_field_access(workspace_override, "WorkspaceOverride"),
+        "skillBinding": attach_field_access(skill_binding, "AiScopedSkillBinding"),
+        "version": version,
+        "backup": backup,
+        "catalogs": platform_admin_catalogs(),
     }
 
 

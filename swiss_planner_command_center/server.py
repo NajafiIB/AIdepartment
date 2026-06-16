@@ -609,6 +609,10 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
             json_response(self, local_store.update_workspace_profile(body))
             return
 
+        if path == "/api/platform-admin/create-department":
+            json_response(self, local_store.create_department_from_template(body))
+            return
+
         if path == "/api/project-step/action":
             json_response(self, local_store.create_project_step_action(body))
             return
