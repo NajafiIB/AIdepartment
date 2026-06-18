@@ -89,7 +89,19 @@ const DEFAULT_STAFF_ALIASES = {
   AIstaff_ApplicationPackSender: "Omar",
   AIstaff_FollowUpController: "Lina",
   AIstaff_CRMController: "Noah",
+  AIstaff_SEOManager: "Sofia",
+  AIstaff_SEOSourceAnalyst: "Tess",
   AIstaff_SEOExpert: "Nora",
+  AIstaff_CaseStudyMapper: "Cora",
+  AIstaff_SEOContentWriter: "Hermes",
+  AIstaff_InternalLinkBuilder: "Iris",
+  AIstaff_SEOQAAnalyst: "Vera",
+  AIstaff_WordPressPublisher: "Priya",
+};
+
+const SEO_DEPARTMENT_CONTACT = {
+  company: "WorldBusiness Council",
+  address: "WorldBusiness Council SEO workspace",
 };
 
 const APPLICATION_STAGES = [
@@ -5122,6 +5134,7 @@ function departmentStaffProfileRows(fabric = {}, department = {}) {
       "AIstaff_SEOSourceAnalyst",
       "AIstaff_SEOExpert",
       "AIstaff_CaseStudyMapper",
+      "AIstaff_SEOContentWriter",
       "AIstaff_InternalLinkBuilder",
       "AIstaff_SEOQAAnalyst",
       "AIstaff_WordPressPublisher",
@@ -6779,9 +6792,11 @@ function StaffIdentityPreview({ staffId, dashboard, onClose, onViewProfile }) {
   const openThreads = staffOpenThreadCount(dashboard, staffId);
   const openTasks = staffOpenTasks(dashboard, staffId).length;
   const wakeups = staffWakeupCount(dashboard, staffId);
-  const contactRule = staffId === "AIstaff_Manager"
-    ? "Alex is the human contact point for this department."
-    : "Specialist staff communicate through Alex, not directly with Iman.";
+  const managerId = staffReportsTo(staffId) === "AIstaff_SEOManager" || staffId === "AIstaff_SEOManager" ? "AIstaff_SEOManager" : "AIstaff_Manager";
+  const managerLabel = staffProfile(managerId).label;
+  const contactRule = staffId === managerId
+    ? `${managerLabel} is the human contact point for this department.`
+    : `Specialist staff communicate through ${managerLabel}, not directly with Iman.`;
   return h("div", { className: "staff-identity-preview", role: "region", "aria-label": `${profile.label} details` },
     h("div", { className: "contact-info-head" },
       h(Button, { variant: "ghost", size: "icon", onClick: onClose, title: "Close contact info" }, icon("x")),
@@ -7927,6 +7942,7 @@ function staffJobTitle(staffId) {
 
 function staffContactInfo(staffId) {
   const profile = staffProfile(staffId);
+  const registry = registryStaffProfile(staffId) || {};
   if (isHumanResponsible(staffId)) {
     return {
       email: "iman.najafi86@gmail.com",
@@ -7935,6 +7951,20 @@ function staffContactInfo(staffId) {
       company: APP_NAME,
       jobTitle: "Department Owner / Human Manager",
       address: "Krakow, Poland",
+    };
+  }
+  if (staffReportsTo(staffId) === "AIstaff_SEOManager" || staffId === "AIstaff_SEOManager") {
+    const seoAlias = String(registry.alias || defaultStaffAlias(staffId) || profile.label || "staff")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ".")
+      .replace(/(^\.|\.$)/g, "");
+    return {
+      email: registry.contactEmail || `${seoAlias || "staff"}@local.worldbc-seo.ai`,
+      chat: registry.chatHandle || (staffId === "AIstaff_SEOManager" ? "SEO Manager project thread" : "Internal SEO task thread through Sofia"),
+      mobile: "Not applicable",
+      company: registry.company || SEO_DEPARTMENT_CONTACT.company,
+      jobTitle: staffJobTitle(staffId),
+      address: registry.businessAddress || SEO_DEPARTMENT_CONTACT.address,
     };
   }
   const alias = profile.label.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/(^\.|\.$)/g, "");

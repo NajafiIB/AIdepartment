@@ -2879,7 +2879,7 @@
     },
     {
       "id": "department_seo_demand_engine",
-      "label": "SEO Demand Engine Department",
+      "label": "WorldBC SEO Demand Engine Department",
       "workspaceId": "workspace_iman_swiss_planner",
       "templateId": "template_seo_demand_engine_department",
       "ownershipMode": "ownedDepartment",
@@ -3178,7 +3178,7 @@
         "managerTitle": "Human Manager",
         "registeredAddress": "",
         "industrySector": "Business council, B2B content, investor and partnership intelligence",
-        "publicDescription": "SEO demand engine for WorldBusiness Council / Worldbc.co using transcripts, Search Console, Analytics, case studies, content generation, internal links, and supervised publishing.",
+        "publicDescription": "SEO demand engine for WorldBusiness Council / Worldbc.co using transcripts, Search Console, Analytics, case studies, content generation, internal links, QA, and supervised WordPress publishing.",
         "commercialRegistrationNumber": "",
         "organizationDisplayName": "WorldBusiness Council",
         "vatOrTaxId": "",
@@ -3186,8 +3186,8 @@
         "primaryDomain": "worldbc.co",
         "id": "identity_department_seo_demand_engine",
         "departmentId": "department_seo_demand_engine",
-        "updatedAt": "2026-06-18T09:11:01Z",
-        "updatedBy": "Human_Iman"
+        "updatedAt": "2026-06-18T14:45:00Z",
+        "updatedBy": "Codex"
       },
       "defaultLanguage": "English",
       "status": "Active",
@@ -3197,8 +3197,19 @@
       "archived": false,
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-18T09:11:01Z",
-      "updatedBy": "Human_Iman"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
+      "staffProfiles": [
+        "Human_Iman",
+        "AIstaff_SEOManager",
+        "AIstaff_SEOSourceAnalyst",
+        "AIstaff_SEOExpert",
+        "AIstaff_CaseStudyMapper",
+        "AIstaff_SEOContentWriter",
+        "AIstaff_InternalLinkBuilder",
+        "AIstaff_SEOQAAnalyst",
+        "AIstaff_WordPressPublisher"
+      ]
     }
   ],
   "departmentTemplates": [
@@ -3407,7 +3418,7 @@
     },
     {
       "id": "template_seo_demand_engine_department",
-      "label": "SEO Demand Engine Department",
+      "label": "WorldBC SEO Demand Engine Department",
       "purpose": "Use Search Console and Analytics data to find SEO opportunities, map case studies, generate content briefs/articles, prepare WordPress/Make.com publishing packages, and track learning.",
       "solutionModuleId": "solution_seo_demand_engine_department",
       "ownershipModes": [
@@ -3440,8 +3451,8 @@
         "AIstaff_CaseStudyMapper",
         "AIstaff_SEOContentWriter",
         "AIstaff_InternalLinkBuilder",
-        "AIstaff_WordPressPublisher",
-        "AIstaff_SEOQAAnalyst"
+        "AIstaff_SEOQAAnalyst",
+        "AIstaff_WordPressPublisher"
       ],
       "templateFamilies": [
         "Department Templates",
@@ -3455,8 +3466,8 @@
       "workspaceEditable": true,
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-17T13:46:19Z",
-      "updatedBy": "Human_Iman"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex"
     }
   ],
   "workspaceOverrides": [
@@ -3759,8 +3770,12 @@
       "visibilityMode": "ownedDepartment",
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-17T13:46:19Z",
-      "updatedBy": "Human_Iman"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
+      "contactEmail": "sofia@local.worldbc-seo.ai",
+      "chatHandle": "seo-manager-thread",
+      "businessAddress": "WorldBusiness Council SEO workspace",
+      "company": "WorldBusiness Council"
     },
     {
       "id": "AIstaff_SEOSourceAnalyst",
@@ -3787,8 +3802,11 @@
       "visibilityMode": "ownedDepartment",
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-17T13:46:19Z",
-      "updatedBy": "Human_Iman"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
+      "contactEmail": "tess@local.worldbc-seo.ai",
+      "chatHandle": "internal-via-sofia",
+      "company": "WorldBusiness Council"
     },
     {
       "id": "AIstaff_SEOExpert",
@@ -3818,8 +3836,11 @@
       "visibilityMode": "ownedDepartment",
       "createdAt": "2026-06-18T13:05:00Z",
       "createdBy": "Platform Admin",
-      "updatedAt": "2026-06-18T13:05:00Z",
-      "updatedBy": "Platform Admin"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
+      "contactEmail": "nora@local.worldbc-seo.ai",
+      "chatHandle": "internal-via-sofia",
+      "company": "WorldBusiness Council"
     },
     {
       "id": "AIstaff_SearchConsoleAnalyst",
@@ -3843,11 +3864,11 @@
       "canContactHuman": false,
       "canCreateHumanFacingThreads": false,
       "reportsTo": "AIstaff_SEOManager",
-      "visibilityMode": "ownedDepartment",
+      "visibilityMode": "archivedStaff",
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-18T13:05:00Z",
-      "updatedBy": "Platform Admin",
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
       "status": "Deprecated",
       "lifecycleStatus": "Deprecated",
       "deprecatedBy": "AIstaff_SEOExpert"
@@ -3873,11 +3894,11 @@
       "canContactHuman": false,
       "canCreateHumanFacingThreads": false,
       "reportsTo": "AIstaff_SEOManager",
-      "visibilityMode": "ownedDepartment",
+      "visibilityMode": "archivedStaff",
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-18T13:05:00Z",
-      "updatedBy": "Platform Admin",
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
       "status": "Deprecated",
       "lifecycleStatus": "Deprecated",
       "deprecatedBy": "AIstaff_SEOExpert"
@@ -3907,8 +3928,11 @@
       "visibilityMode": "ownedDepartment",
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-17T13:46:19Z",
-      "updatedBy": "Human_Iman"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
+      "contactEmail": "cora@local.worldbc-seo.ai",
+      "chatHandle": "internal-via-sofia",
+      "company": "WorldBusiness Council"
     },
     {
       "id": "AIstaff_SEOContentWriter",
@@ -3934,8 +3958,11 @@
       "visibilityMode": "ownedDepartment",
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-17T13:46:19Z",
-      "updatedBy": "Human_Iman"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
+      "contactEmail": "hermes@local.worldbc-seo.ai",
+      "chatHandle": "internal-via-sofia",
+      "company": "WorldBusiness Council"
     },
     {
       "id": "AIstaff_InternalLinkBuilder",
@@ -3961,8 +3988,11 @@
       "visibilityMode": "ownedDepartment",
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-17T13:46:19Z",
-      "updatedBy": "Human_Iman"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
+      "contactEmail": "iris@local.worldbc-seo.ai",
+      "chatHandle": "internal-via-sofia",
+      "company": "WorldBusiness Council"
     },
     {
       "id": "AIstaff_WordPressPublisher",
@@ -3989,8 +4019,11 @@
       "visibilityMode": "ownedDepartment",
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-17T13:46:19Z",
-      "updatedBy": "Human_Iman"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
+      "contactEmail": "priya@local.worldbc-seo.ai",
+      "chatHandle": "internal-via-sofia",
+      "company": "WorldBusiness Council"
     },
     {
       "id": "AIstaff_SEOQAAnalyst",
@@ -4017,8 +4050,11 @@
       "visibilityMode": "ownedDepartment",
       "createdAt": "2026-06-17T13:46:19Z",
       "createdBy": "Human_Iman",
-      "updatedAt": "2026-06-17T13:46:19Z",
-      "updatedBy": "Human_Iman"
+      "updatedAt": "2026-06-18T14:45:00Z",
+      "updatedBy": "Codex",
+      "contactEmail": "vera@local.worldbc-seo.ai",
+      "chatHandle": "internal-via-sofia",
+      "company": "WorldBusiness Council"
     }
   ],
   "outputTemplates": [
