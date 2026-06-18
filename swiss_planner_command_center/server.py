@@ -405,6 +405,14 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
             json_response(self, local_store.list_department_staff_assignments(params.get("departmentId", "")))
             return
 
+        if path == "/api/seo-staff-profile-stages":
+            json_response(self, local_store.list_seo_staff_profile_stages(params.get("departmentId", ""), params.get("staffId", "")))
+            return
+
+        if path == "/api/seo-actors":
+            json_response(self, local_store.seo_actor_manifest(params.get("departmentId", "")))
+            return
+
         if path == "/api/windmill/status":
             json_response(self, {"ok": True, "windmill": local_store.windmill_status()})
             return
@@ -701,6 +709,22 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
 
         if path == "/api/department-staff-assignment":
             json_response(self, local_store.upsert_department_staff_assignment(body))
+            return
+
+        if path == "/api/seo-staff-profile-stages":
+            json_response(self, local_store.save_seo_staff_profile_stages(body))
+            return
+
+        if path == "/api/seo-staff-profile-file":
+            json_response(self, local_store.process_seo_staff_profile_file(body))
+            return
+
+        if path == "/api/seo-staff-actor/command":
+            json_response(self, local_store.seo_staff_actor_command(body))
+            return
+
+        if path == "/api/seo-manager/command":
+            json_response(self, local_store.seo_manager_command(body))
             return
 
         if path == "/api/windmill/test-connection":

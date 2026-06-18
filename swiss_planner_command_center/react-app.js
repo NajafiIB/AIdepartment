@@ -676,6 +676,11 @@ function icon(name) {
       h("path", { key: 1, d: "m22 2-7 20-4-9-9-4Z" }),
       h("path", { key: 2, d: "M22 2 11 13" }),
     ],
+    upload: [
+      h("path", { key: 1, d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }),
+      h("polyline", { key: 2, points: "17 8 12 3 7 8" }),
+      h("line", { key: 3, x1: "12", x2: "12", y1: "3", y2: "15" }),
+    ],
     clock: [
       h("circle", { key: 1, cx: "12", cy: "12", r: "10" }),
       h("path", { key: 2, d: "M12 6v6l4 2" }),
@@ -6014,8 +6019,11 @@ function activityBusinessStatus(status, approvalState) {
 
 function DepartmentAutomationPanel({ department, compact = false }) {
   const [state, setState] = useState({ loading: true, busy: "", error: "", message: "", windmill: {}, orchestration: {}, activities: [], bindings: [] });
+  const [managerCommand, setManagerCommand] = useState("Review the source text, route the next SEO action to the right staff, and return validation-gated next actions.");
+  const [managerResult, setManagerResult] = useState(null);
   const departmentId = department && department.id;
   const showDeveloperAutomation = typeof window !== "undefined" && window.location.search.includes("debugAutomation=1");
+  const isSeoDepartment = normalizedText([department.label, department.purpose, ...(department.projectTypes || [])].join(" ")).includes("seo");
   async function load() {
     if (!departmentId) return;
     setState(current => ({ ...current, loading: true, error: "" }));
@@ -6073,8 +6081,7 @@ function DepartmentAutomationPanel({ department, compact = false }) {
     return runAction("windmill:provision", "Starter Windmill activities provisioned.", () => api("/api/windmill/provision-starter-activities", { method: "POST", body: JSON.stringify({ departmentId }) }));
   }
   async function requestSampleActivity() {
-    const isSeo = normalizedText([department.label, department.purpose, ...(department.projectTypes || [])].join(" ")).includes("seo");
-    const activityName = isSeo ? "worldbc.seo.run_workflow" : "worldbc.file.text_extract";
+    const activityName = isSeoDepartment ? "worldbc.seo.run_workflow" : "worldbc.file.text_extract";
     return runAction("activity:request", "Automation test requested.", () => api("/api/activity/request", {
       method: "POST",
       body: JSON.stringify({
@@ -6088,14 +6095,13 @@ function DepartmentAutomationPanel({ department, compact = false }) {
           departmentLabel: department.label || departmentId,
           goal: (departmentGoalsFromRow(department)[0] || {}).label || "",
           source: "department_workspace",
-          sourceText: isSeo ? "Sample source text for a WorldBC SEO article. The workflow should prepare keyword evidence, a brief, an article package, QA checks, and an approval-ready WordPress payload." : "",
+          sourceText: isSeoDepartment ? "Sample source text for a WorldBC SEO article. The workflow should prepare keyword evidence, a brief, an article package, QA checks, and an approval-ready WordPress payload." : "",
         },
       }),
     }));
   }
   async function requestLiveActivity() {
-    const isSeo = normalizedText([department.label, department.purpose, ...(department.projectTypes || [])].join(" ")).includes("seo");
-    const activityName = isSeo ? "worldbc.wordpress.create_draft" : "worldbc.file.text_extract";
+    const activityName = isSeoDepartment ? "worldbc.wordpress.create_draft" : "worldbc.file.text_extract";
     return runAction("activity:request-live", "Execution request created. Approval is required before external work runs.", () => api("/api/activity/request", {
       method: "POST",
       body: JSON.stringify({
@@ -6125,6 +6131,26 @@ function DepartmentAutomationPanel({ department, compact = false }) {
       method: "POST",
       body: JSON.stringify({ activityRunId: run.activityRunId }),
     }));
+  }
+  async function runSeoManagerCommand() {
+    setState(current => ({ ...current, busy: "seo-manager:command", error: "", message: "" }));
+    try {
+      const result = await api("/api/seo-manager/command", {
+        method: "POST",
+        body: JSON.stringify({
+          departmentId,
+          command: managerCommand,
+          dryRun: true,
+          callWindmill: false,
+          requestedBy: HUMAN_STAFF_ID,
+        }),
+        timeoutMs: 30000,
+      });
+      setManagerResult(result);
+      setState(current => ({ ...current, busy: "", message: result.ok ? "Sofia routed the command through staff actors." : "Sofia stopped at validation." }));
+    } catch (error) {
+      setState(current => ({ ...current, busy: "", error: error.message || String(error), message: "" }));
+    }
   }
   const windmill = state.windmill || {};
   const orchestration = state.orchestration || {};
@@ -6169,7 +6195,41 @@ function DepartmentAutomationPanel({ department, compact = false }) {
         h(Button, { type: "button", variant: "outline", pending: state.busy === "activity:request", onClick: requestSampleActivity }, "Test automation"),
         h(Button, { type: "button", variant: "outline", pending: state.busy === "activity:request-live", onClick: requestLiveActivity }, "Request execution"),
         h(Button, { type: "button", variant: "outline", onClick: load }, "Refresh")
-      )
+      ),
+      isSeoDepartment ? h("section", { className: "seo-manager-command-panel" },
+        h("div", { className: "profile-section-head compact" },
+          h("div", null,
+            h("h4", null, "Sofia Manager Command API"),
+            h("p", null, "Panel commands are routed to independent SEO staff actors with their saved settings, assigned stages, lanes, and skills.")
+          ),
+          h(Button, { type: "button", pending: state.busy === "seo-manager:command", onClick: runSeoManagerCommand }, icon("send"), "Run command")
+        ),
+        h(Field, { label: "Command" },
+          h(Textarea, {
+            value: managerCommand,
+            rows: 4,
+            onChange: event => setManagerCommand(event.target.value),
+          })
+        ),
+        managerResult ? h("div", { className: "activity-binding-strip" },
+          h("article", { className: "activity-binding-card graph-trace-card" },
+            h("strong", null, (managerResult.managerDecision || {}).status || "Manager result"),
+            h("small", null, managerResult.commandId || "local actor run"),
+            h("p", null, (managerResult.managerDecision || {}).summary || managerResult.error || "Manager command completed."),
+            h(Badge, { tone: managerResult.ok ? "success" : "warn" }, managerResult.ok ? "Validation passed" : "Validation stopped")
+          ),
+          ...(managerResult.staffResponses || []).slice(0, 4).map(row => {
+            const response = row.response || {};
+            const validation = row.validation || response.validation || {};
+            return h("article", { key: row.staffId, className: "activity-binding-card" },
+              h("strong", null, response.alias || row.staffId),
+              h("small", null, `${response.title || "SEO actor"} | score ${validation.score ?? ""}`),
+              h("p", null, response.summary || "Actor returned a response."),
+              h(Badge, { tone: validation.passed ? "success" : "warn" }, validation.passed ? "Passed" : "Needs retry")
+            );
+          })
+        ) : null
+      ) : null
     ) : null,
     !compact && automationView === "automations" ? (
       showDeveloperAutomation ? h("section", { className: "activity-binding-strip" },
@@ -9920,8 +9980,10 @@ function StaffProfileHero({ dashboard, fabric, staffId, runOne, openTaskDialog, 
         h("span", { className: "profile-presence" }, isHuman ? "Owner" : "AI")
       ),
       h("div", null,
-        h("h2", null, profile.label),
-        h("p", { className: "profile-title-line" }, contact.jobTitle),
+        h("div", { className: "staff-profile-name-line" },
+          h("h2", null, profile.label),
+          h("span", null, contact.jobTitle)
+        ),
         h("p", { className: "muted" }, staffRolePurpose(staffId, fabric))
       )
     ),
@@ -10240,6 +10302,103 @@ function seoProfileUsedBySubtasks(stage = {}, key = "", id = "") {
     .map(subtask => subtask.label);
 }
 
+function seoProfileSlug(value = "", prefix = "item") {
+  const slug = String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return slug ? `${prefix}_${slug}` : `${prefix}_${Date.now()}`;
+}
+
+function cloneSeoStages(stages = []) {
+  return JSON.parse(JSON.stringify(stages || []));
+}
+
+function normalizeSeoProfileStageGroup(stage = {}, staffId = "") {
+  const fallbackId = `custom_stage_${Date.now()}`;
+  const stageId = stage.id || fallbackId;
+  const lanes = uniqueValues(stage.lanes || []);
+  const skills = uniqueValues(stage.skills || []);
+  const subtasks = (stage.subtasks || []).length ? stage.subtasks : [{
+    id: `${stageId}_subtask_1`,
+    label: "Define first workflow subtask",
+    goal: "Define the goal for this workflow subtask.",
+    detail: "Describe the work the assigned AI staff must complete.",
+    nextAction: "Send the result to Sofia for routing.",
+    readiness: "Draft",
+    lanes: [],
+    skills: [],
+    outputs: [],
+  }];
+  return {
+    ...stage,
+    id: stageId,
+    label: stage.label || "New assigned stage",
+    ownerStaff: stage.ownerStaff || staffId || "",
+    staffAlias: stage.staffAlias || staffProfile(staffId).label,
+    staffTitle: stage.staffTitle || staffJobTitle(staffId),
+    capabilityId: stage.capabilityId || "seo_custom_stage",
+    capabilityLabel: stage.capabilityLabel || "Custom SEO stage",
+    goal: stage.goal || "Define the goal for this assigned stage.",
+    description: stage.description || stage.detail || "Describe what this assigned stage must accomplish.",
+    assignedDuty: stage.assignedDuty || `${staffProfile(staffId).label} owns this stage, its workflow subtasks, and the manager-ready handoff to Sofia.`,
+    readiness: stage.readiness || "Draft",
+    lanes,
+    skills,
+    qualityGates: uniqueValues(stage.qualityGates || []),
+    outputs: uniqueValues(stage.outputs || []),
+    laneCatalog: stage.laneCatalog || {},
+    skillCatalog: stage.skillCatalog || {},
+    subtasks: subtasks.map((subtask, index) => ({
+      ...subtask,
+      id: subtask.id || `${stageId}_subtask_${index + 1}`,
+      label: subtask.label || `Subtask ${index + 1}`,
+      goal: subtask.goal || "Define the goal for this workflow subtask.",
+      detail: subtask.detail || "Describe the work the assigned AI staff must complete.",
+      nextAction: subtask.nextAction || "Send the result to Sofia for routing.",
+      readiness: subtask.readiness || "Draft",
+      lanes: uniqueValues(subtask.lanes || []).filter(id => !lanes.length || lanes.includes(id)),
+      skills: uniqueValues(subtask.skills || []).filter(id => !skills.length || skills.includes(id)),
+      outputs: uniqueValues(subtask.outputs || []),
+    })),
+  };
+}
+
+function newSeoProfileStage(staffId = "") {
+  const id = `custom_stage_${Date.now()}`;
+  return normalizeSeoProfileStageGroup({
+    id,
+    label: "New assigned stage",
+    capabilityId: "seo_custom_stage",
+    capabilityLabel: "Custom SEO stage",
+    readiness: "Draft",
+    outputs: ["manager_ready_result"],
+    subtasks: [{
+      id: `${id}_subtask_1`,
+      label: "Define first workflow subtask",
+      goal: "Define the goal of this step.",
+      detail: "Describe what the AI staff must do in this step.",
+      nextAction: "Send the result to Sofia for routing.",
+      readiness: "Draft",
+      lanes: [],
+      skills: [],
+      outputs: ["step_result"],
+    }],
+  }, staffId);
+}
+
+function fileToBase64Payload(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read the selected file."));
+    reader.onload = () => {
+      const dataUrl = String(reader.result || "");
+      resolve(dataUrl.includes(",") ? dataUrl.split(",").pop() : dataUrl);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog, setSelectedStaffId, p4State = {}, managerStaffId = "AIstaff_Manager" }) {
   const isSeoProfile = isSeoStageProfileStaff(staffId);
   const [activeTab, setActiveTab] = useState(() => isSeoProfile ? "workspace" : "overview");
@@ -10336,17 +10495,186 @@ function SeoProfileChipList({ label, values = [] }) {
 }
 
 function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab = "workspace" }) {
-  const groups = seoProfileStageGroupsForStaff(staffId, scenarioStages);
+  const defaultGroups = seoProfileStageGroupsForStaff(staffId, scenarioStages).map(group => normalizeSeoProfileStageGroup(group, staffId));
+  const [stageState, setStageState] = useState({ loading: true, error: "", saveMessage: "", dirty: false, stages: null, settings: {}, updatedAt: "" });
+  const groups = (stageState.stages || defaultGroups).map(group => normalizeSeoProfileStageGroup(group, staffId));
   const [selectedStageId, setSelectedStageId] = useState((groups[0] || {}).id || "");
+
+  useEffect(() => {
+    let cancelled = false;
+    setStageState({ loading: true, error: "", saveMessage: "", dirty: false, stages: null, settings: {}, updatedAt: "" });
+    api(`/api/seo-staff-profile-stages?departmentId=department_seo_demand_engine&staffId=${encodeURIComponent(staffId)}`, { timeoutMs: 12000 })
+      .then(result => {
+        if (cancelled) return;
+        const savedStages = (result.stages || []).map(stage => normalizeSeoProfileStageGroup(stage, staffId));
+        const profile = result.profile || {};
+        const hasSavedProfile = Boolean(profile.hasStageOverride);
+        setStageState({
+          loading: false,
+          error: "",
+          saveMessage: hasSavedProfile || (profile.settings || {}).updatedAt ? `Loaded saved profile edits${profile.updatedAt || (profile.settings || {}).updatedAt ? ` from ${profile.updatedAt || (profile.settings || {}).updatedAt}` : ""}.` : "",
+          dirty: false,
+          stages: hasSavedProfile ? savedStages : null,
+          settings: profile.settings || {},
+          updatedAt: profile.updatedAt || (profile.settings || {}).updatedAt || "",
+        });
+      })
+      .catch(error => {
+        if (!cancelled) setStageState({ loading: false, error: error.message || String(error), saveMessage: "", dirty: false, stages: null, settings: {}, updatedAt: "" });
+      });
+    return () => { cancelled = true; };
+  }, [staffId]);
 
   useEffect(() => {
     const firstId = (groups[0] || {}).id || "";
     if (!groups.some(group => group.id === selectedStageId)) setSelectedStageId(firstId);
   }, [staffId, groups.map(group => group.id).join("|"), selectedStageId]);
 
+  function setGroups(nextGroups, message = "") {
+    const safeGroups = (typeof nextGroups === "function" ? nextGroups(groups) : nextGroups).map(group => normalizeSeoProfileStageGroup(group, staffId));
+    setStageState(current => ({ ...current, loading: false, saveMessage: message, error: "", dirty: true, stages: safeGroups }));
+  }
+
+  function updateSelectedStage(patch) {
+    setGroups(current => current.map(group => group.id === selectedStageId ? normalizeSeoProfileStageGroup({ ...group, ...patch }, staffId) : group));
+  }
+
+  function updateSelectedSubtask(subtaskId, patch) {
+    setGroups(current => current.map(group => group.id === selectedStageId ? normalizeSeoProfileStageGroup({
+      ...group,
+      subtasks: (group.subtasks || []).map(subtask => subtask.id === subtaskId ? { ...subtask, ...patch } : subtask),
+    }, staffId) : group));
+  }
+
+  function updateProfileSettings(patch) {
+    setStageState(current => ({ ...current, settings: { ...(current.settings || {}), ...patch }, dirty: true, error: "", saveMessage: "Profile settings changed. Save to persist them." }));
+  }
+
+  function addStage() {
+    const stage = newSeoProfileStage(staffId);
+    setGroups(current => [...current, stage], "New assigned stage added. Save to persist it.");
+    setSelectedStageId(stage.id);
+  }
+
+  function removeSelectedStage() {
+    if (!selectedStageId) return;
+    const nextGroups = groups.filter(group => group.id !== selectedStageId);
+    setGroups(nextGroups, "Assigned stage removed. Save to persist it.");
+    setSelectedStageId((nextGroups[0] || {}).id || "");
+  }
+
+  function updateStageLane(laneId, patch) {
+    updateSelectedStage({
+      laneCatalog: {
+        ...(selectedStage.laneCatalog || {}),
+        [laneId]: { ...(selectedStage.laneCatalog || {})[laneId], ...patch },
+      },
+    });
+  }
+
+  function addStageLane(lane) {
+    const laneId = lane.id || seoProfileSlug(lane.label, "lane");
+    updateSelectedStage({
+      lanes: uniqueValues([...(selectedStage.lanes || []), laneId]),
+      laneCatalog: {
+        ...(selectedStage.laneCatalog || {}),
+        [laneId]: { id: laneId, ...lane },
+      },
+    });
+  }
+
+  function removeStageLane(laneId) {
+    const nextCatalog = { ...(selectedStage.laneCatalog || {}) };
+    delete nextCatalog[laneId];
+    updateSelectedStage({
+      lanes: (selectedStage.lanes || []).filter(id => id !== laneId),
+      laneCatalog: nextCatalog,
+      subtasks: (selectedStage.subtasks || []).map(subtask => ({
+        ...subtask,
+        lanes: (subtask.lanes || []).filter(id => id !== laneId),
+      })),
+    });
+  }
+
+  function updateStageSkill(skillId, patch) {
+    updateSelectedStage({
+      skillCatalog: {
+        ...(selectedStage.skillCatalog || {}),
+        [skillId]: { ...(selectedStage.skillCatalog || {})[skillId], ...patch },
+      },
+    });
+  }
+
+  function addStageSkill(skill) {
+    const skillId = skill.id || seoProfileSlug(skill.label, "staff_skill");
+    updateSelectedStage({
+      skills: uniqueValues([...(selectedStage.skills || []), skillId]),
+      skillCatalog: {
+        ...(selectedStage.skillCatalog || {}),
+        [skillId]: { id: skillId, ...skill },
+      },
+    });
+  }
+
+  function removeStageSkill(skillId) {
+    const nextCatalog = { ...(selectedStage.skillCatalog || {}) };
+    delete nextCatalog[skillId];
+    updateSelectedStage({
+      skills: (selectedStage.skills || []).filter(id => id !== skillId),
+      skillCatalog: nextCatalog,
+      subtasks: (selectedStage.subtasks || []).map(subtask => ({
+        ...subtask,
+        skills: (subtask.skills || []).filter(id => id !== skillId),
+      })),
+    });
+  }
+
+  function toggleSubtaskRoute(subtaskId, key, value) {
+    const subtask = (selectedStage.subtasks || []).find(row => row.id === subtaskId) || {};
+    const current = new Set(subtask[key] || []);
+    if (current.has(value)) current.delete(value);
+    else current.add(value);
+    updateSelectedSubtask(subtaskId, { [key]: Array.from(current) });
+  }
+
+  async function saveStages() {
+    try {
+      setStageState(current => ({ ...current, saveMessage: "Saving...", error: "" }));
+      const result = await api("/api/seo-staff-profile-stages", {
+        method: "POST",
+        body: JSON.stringify({ departmentId: "department_seo_demand_engine", staffId, stages: groups, settings: stageState.settings || {}, updatedBy: HUMAN_STAFF_ID }),
+        timeoutMs: 20000,
+      });
+      const savedStages = (result.stages || []).map(stage => normalizeSeoProfileStageGroup(stage, staffId));
+      setStageState(current => ({ ...current, dirty: false, stages: savedStages, settings: result.settings || current.settings || {}, updatedAt: result.updatedAt || "", saveMessage: "Saved.", error: "" }));
+    } catch (error) {
+      setStageState(current => ({ ...current, error: error.message || String(error), saveMessage: "" }));
+    }
+  }
+
+  async function resetStagesToDefault() {
+    try {
+      setStageState(current => ({ ...current, saveMessage: "Resetting...", error: "" }));
+      await api("/api/seo-staff-profile-stages", {
+        method: "POST",
+        body: JSON.stringify({ departmentId: "department_seo_demand_engine", staffId, clear: true, updatedBy: HUMAN_STAFF_ID }),
+        timeoutMs: 20000,
+      });
+      setStageState(current => ({ loading: false, error: "", saveMessage: "Reset to default stage model.", dirty: false, stages: null, settings: current.settings || {}, updatedAt: "" }));
+      setSelectedStageId((defaultGroups[0] || {}).id || "");
+    } catch (error) {
+      setStageState(current => ({ ...current, error: error.message || String(error), saveMessage: "" }));
+    }
+  }
+
   if (!groups.length) {
     return h(ProfileSection, { title: "Step Workspace", body: "Stage duties assigned to this SEO staff member." },
-      h(EmptyState, { title: "No SEO stage assigned", body: "This SEO staff profile exists, but no stage duty is currently assigned to it." })
+      h(EmptyState, { title: "No SEO stage assigned", body: "This SEO staff profile exists, but no stage duty is currently assigned to it." }),
+      h("div", { className: "seo-prototype-edit-actions left" },
+        h(Button, { type: "button", onClick: addStage }, icon("plus"), "Add assigned stage"),
+        h(Button, { type: "button", variant: "outline", onClick: resetStagesToDefault }, icon("rotate-ccw"), "Reset defaults"),
+        h(Button, { type: "button", onClick: saveStages, disabled: !stageState.dirty }, icon("save"), "Save empty list")
+      )
     );
   }
 
@@ -10355,6 +10683,18 @@ function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab 
     title: "Stage Workspace",
     body: `${staffProfile(staffId).label} owns these assigned SEO stages. The workflow rows inside each stage are shown as subtasks with their own goal, detail, next action, lanes, and skills.`
   },
+    h("div", { className: "seo-prototype-edit-bar" },
+      h("div", null,
+        h("strong", null, stageState.dirty ? "Unsaved profile edits" : "Profile stage editor"),
+        h("span", null, stageState.error || stageState.saveMessage || (stageState.loading ? "Loading saved edits..." : stageState.updatedAt ? `Last saved ${stageState.updatedAt}` : "Using default stage model."))
+      ),
+      h("div", { className: "seo-prototype-edit-actions" },
+        h(Button, { type: "button", variant: "outline", onClick: addStage }, icon("plus"), "Add stage"),
+        h(Button, { type: "button", variant: "outline", onClick: removeSelectedStage, disabled: !selectedStageId }, icon("trash"), "Remove stage"),
+        h(Button, { type: "button", variant: "outline", onClick: resetStagesToDefault }, icon("rotate-ccw"), "Reset defaults"),
+        h(Button, { type: "button", onClick: saveStages, disabled: !stageState.dirty && !stageState.error }, icon("save"), "Save changes")
+      )
+    ),
     h("div", { className: "seo-prototype-profile-shell" },
       h("aside", { className: "seo-prototype-stage-rail" },
         h("div", { className: "seo-prototype-rail-head" },
@@ -10380,12 +10720,12 @@ function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab 
         }))
       ),
       h("section", { className: "seo-prototype-tab-panel" },
-        activeTab === "lanes" ? h(SeoPrototypeLanesTab, { selectedStage }) : null,
-        activeTab === "skills" ? h(SeoPrototypeSkillsTab, { selectedStage }) : null,
+        activeTab === "lanes" ? h(SeoPrototypeLanesTab, { staffId, selectedStage, onAddLane: addStageLane, onUpdateLane: updateStageLane, onRemoveLane: removeStageLane, onToggleSubtaskRoute: toggleSubtaskRoute }) : null,
+        activeTab === "skills" ? h(SeoPrototypeSkillsTab, { staffId, selectedStage, onAddSkill: addStageSkill, onUpdateSkill: updateStageSkill, onRemoveSkill: removeStageSkill, onToggleSubtaskRoute: toggleSubtaskRoute }) : null,
         activeTab === "script" ? h(SeoPrototypeScriptTab, { staffId, selectedStage }) : null,
-        activeTab === "settings" ? h(SeoPrototypeSettingsTab, { staffId, selectedStage }) : null,
+        activeTab === "settings" ? h(SeoPrototypeSettingsTab, { staffId, selectedStage, profileSettings: stageState.settings || {}, onStageChange: updateSelectedStage, onSettingsChange: updateProfileSettings }) : null,
         activeTab === "workspace" || !["lanes", "skills", "script", "settings"].includes(activeTab)
-          ? h(SeoPrototypeWorkspaceTab, { staffId, selectedStage })
+          ? h(SeoPrototypeWorkspaceTab, { staffId, selectedStage, onStageChange: updateSelectedStage, onSubtaskChange: updateSelectedSubtask })
           : null
       )
     )
@@ -10403,6 +10743,16 @@ function SeoPrototypeReadOnlyField({ label, value = "", rows = 3 }) {
   );
 }
 
+function SeoPrototypeEditableField({ label, value = "", rows = 3, onChange }) {
+  return h(Field, { label },
+    h(Textarea, {
+      value: value || "",
+      rows,
+      onChange: event => onChange(event.target.value),
+    })
+  );
+}
+
 function SeoPrototypeTabHeader({ title, body }) {
   return h("div", { className: "seo-prototype-tab-head" },
     h("h3", null, title),
@@ -10410,15 +10760,67 @@ function SeoPrototypeTabHeader({ title, body }) {
   );
 }
 
-function SeoPrototypeWorkspaceTab({ staffId, selectedStage }) {
+function SeoPrototypeFileUpload({ staffId, targetKind, onProcessed }) {
+  const [state, setState] = useState({ file: null, busy: false, message: "", error: "" });
+  async function processFile() {
+    if (!state.file) {
+      setState(current => ({ ...current, error: "Choose a PDF, TXT, or MD file first." }));
+      return;
+    }
+    try {
+      setState(current => ({ ...current, busy: true, message: "Processing file...", error: "" }));
+      const dataBase64 = await fileToBase64Payload(state.file);
+      const result = await api("/api/seo-staff-profile-file", {
+        method: "POST",
+        body: JSON.stringify({
+          departmentId: "department_seo_demand_engine",
+          staffId,
+          targetKind,
+          fileName: state.file.name,
+          contentType: state.file.type || "",
+          dataBase64,
+          updatedBy: HUMAN_STAFF_ID,
+        }),
+        timeoutMs: 45000,
+      });
+      const item = targetKind === "lane" ? result.lane : result.skill;
+      if (!item) throw new Error("The uploaded file did not return a usable lane or skill.");
+      onProcessed(item, result.asset || {});
+      setState({ file: null, busy: false, message: `${state.file.name} processed as ${targetKind}. Save changes to persist it.`, error: "" });
+    } catch (error) {
+      setState(current => ({ ...current, busy: false, error: error.message || String(error), message: "" }));
+    }
+  }
+  return h("div", { className: "seo-prototype-upload-card" },
+    h("div", null,
+      h("strong", null, targetKind === "lane" ? "Upload file as data lane" : "Upload file as skill"),
+      h("p", null, targetKind === "lane"
+        ? "PDF, TXT, or MD files become a processed source lane for this stage."
+        : "PDF, TXT, or MD files become a staff skill rule/guidance card for this stage.")
+    ),
+    h("div", { className: "seo-prototype-upload-controls" },
+      h(Input, {
+        type: "file",
+        accept: ".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown",
+        onChange: event => setState({ file: (event.target.files || [])[0] || null, busy: false, message: "", error: "" }),
+      }),
+      h(Button, { type: "button", onClick: processFile, disabled: state.busy }, icon("upload"), state.busy ? "Processing..." : targetKind === "lane" ? "Process as lane" : "Process as skill")
+    ),
+    state.file ? h("small", null, `Selected: ${state.file.name}`) : null,
+    state.message ? h("small", { className: "success-text" }, state.message) : null,
+    state.error ? h("small", { className: "error-text" }, state.error) : null
+  );
+}
+
+function SeoPrototypeWorkspaceTab({ staffId, selectedStage, onStageChange, onSubtaskChange }) {
   const readiness = seoProfileStageReadiness(selectedStage);
   return h("div", { className: "seo-prototype-tab-content" },
     h(SeoPrototypeTabHeader, { title: selectedStage.label, body: selectedStage.goal || "Assigned SEO department stage." }),
     h("div", { className: "seo-prototype-workspace-grid" },
       h("section", { className: "seo-prototype-main-column" },
-        h(SeoPrototypeReadOnlyField, { label: "Stage goal", value: selectedStage.goal, rows: 4 }),
-        h(SeoPrototypeReadOnlyField, { label: "Stage description", value: selectedStage.description, rows: 5 }),
-        h(SeoPrototypeReadOnlyField, { label: "Duty assigned to staff", value: selectedStage.assignedDuty, rows: 4 }),
+        h(SeoPrototypeEditableField, { label: "Stage goal", value: selectedStage.goal, rows: 4, onChange: value => onStageChange({ goal: value }) }),
+        h(SeoPrototypeEditableField, { label: "Stage description", value: selectedStage.description, rows: 5, onChange: value => onStageChange({ description: value }) }),
+        h(SeoPrototypeEditableField, { label: "Duty assigned to staff", value: selectedStage.assignedDuty, rows: 4, onChange: value => onStageChange({ assignedDuty: value }) }),
         h("div", { className: "seo-prototype-subtask-section" },
           h("div", { className: "seo-prototype-section-title" },
             h("p", { className: "eyebrow" }, "Workflow stages"),
@@ -10434,9 +10836,9 @@ function SeoPrototypeWorkspaceTab({ staffId, selectedStage }) {
               h(Badge, { tone: seoWorkspaceTone(subtask.readiness) }, subtask.readiness || "Ready")
             ),
             h("div", { className: "seo-prototype-subtask-fields" },
-              h(SeoPrototypeReadOnlyField, { label: "Goal of this step", value: subtask.goal, rows: 4 }),
-              h(SeoPrototypeReadOnlyField, { label: "Step detail", value: subtask.detail, rows: 4 }),
-              h(SeoPrototypeReadOnlyField, { label: "Next action", value: subtask.nextAction, rows: 3 })
+              h(SeoPrototypeEditableField, { label: "Goal of this step", value: subtask.goal, rows: 4, onChange: value => onSubtaskChange(subtask.id, { goal: value }) }),
+              h(SeoPrototypeEditableField, { label: "Step detail", value: subtask.detail, rows: 4, onChange: value => onSubtaskChange(subtask.id, { detail: value }) }),
+              h(SeoPrototypeEditableField, { label: "Next action", value: subtask.nextAction, rows: 3, onChange: value => onSubtaskChange(subtask.id, { nextAction: value }) })
             ),
             h("div", { className: "seo-prototype-route-grid" },
               h(SeoProfileChipList, { label: "Uses lanes", values: subtask.lanes }),
@@ -10468,47 +10870,112 @@ function SeoPrototypeWorkspaceTab({ staffId, selectedStage }) {
   );
 }
 
-function SeoPrototypeLanesTab({ selectedStage }) {
-  const laneCatalog = defaultSeoLaneCatalog();
+function SeoPrototypeLanesTab({ staffId, selectedStage, onAddLane, onUpdateLane, onRemoveLane, onToggleSubtaskRoute }) {
+  const laneCatalog = { ...defaultSeoLaneCatalog(), ...(selectedStage.laneCatalog || {}) };
+  const [draft, setDraft] = useState({ id: "", label: "", type: "", data: "", status: "Draft" });
+  function submitLane() {
+    const label = draft.label.trim();
+    const id = (draft.id || seoProfileSlug(label, "lane")).trim();
+    if (!label && !id) return;
+    onAddLane({
+      id,
+      label: label || promptRuleLabel(id),
+      type: draft.type || "custom route",
+      data: draft.data || "custom data",
+      status: draft.status || "Draft",
+    });
+    setDraft({ id: "", label: "", type: "", data: "", status: "Draft" });
+  }
   return h("div", { className: "seo-prototype-tab-content" },
     h(SeoPrototypeTabHeader, { title: "Data lanes used in this stage", body: "Stage-level lanes are inherited by the workflow subtasks that need them." }),
+    h(SeoPrototypeFileUpload, { staffId, targetKind: "lane", onProcessed: lane => onAddLane(lane) }),
+    h("div", { className: "seo-prototype-add-row" },
+      h(Field, { label: "Lane ID" }, h(Input, { value: draft.id, placeholder: "lane_custom_source", onChange: event => setDraft({ ...draft, id: event.target.value }) })),
+      h(Field, { label: "Lane label" }, h(Input, { value: draft.label, placeholder: "Custom source lane", onChange: event => setDraft({ ...draft, label: event.target.value }) })),
+      h(Field, { label: "Route type" }, h(Input, { value: draft.type, placeholder: "local file/text intake", onChange: event => setDraft({ ...draft, type: event.target.value }) })),
+      h(Button, { type: "button", onClick: submitLane }, icon("plus"), "Add lane")
+    ),
     h("table", { className: "seo-prototype-mini-table" },
       h("thead", null, h("tr", null,
         h("th", null, "Lane"),
         h("th", null, "Route type"),
         h("th", null, "Data handled"),
         h("th", null, "Status"),
-        h("th", null, "Used by subtasks")
+        h("th", null, "Used by subtasks"),
+        h("th", null, "")
       )),
       h("tbody", null, (selectedStage.lanes || []).map(id => {
         const lane = laneCatalog[id] || { label: promptRuleLabel(id), type: "custom route", data: "custom data", status: "Draft" };
-        const usedBy = seoProfileUsedBySubtasks(selectedStage, "lanes", id);
         return h("tr", { key: id },
-          h("td", null, h("strong", null, lane.label), h("small", null, id)),
-          h("td", null, lane.type),
-          h("td", null, lane.data),
-          h("td", null, h(Badge, { tone: seoWorkspaceTone(lane.status) }, lane.status)),
-          h("td", null, usedBy.length ? usedBy.join(", ") : "Stage-level only")
+          h("td", null,
+            h(Input, { value: lane.label || "", onChange: event => onUpdateLane(id, { ...lane, label: event.target.value }) }),
+            h("small", null, id)
+          ),
+          h("td", null, h(Input, { value: lane.type || "", onChange: event => onUpdateLane(id, { ...lane, type: event.target.value }) })),
+          h("td", null, h(Input, { value: lane.data || "", onChange: event => onUpdateLane(id, { ...lane, data: event.target.value }) })),
+          h("td", null, h(Input, { value: lane.status || "", onChange: event => onUpdateLane(id, { ...lane, status: event.target.value }) })),
+          h("td", null,
+            h("div", { className: "seo-prototype-checkbox-stack" }, (selectedStage.subtasks || []).map(subtask =>
+              h("label", { key: `${id}-${subtask.id}` },
+                h("input", {
+                  type: "checkbox",
+                  checked: (subtask.lanes || []).includes(id),
+                  onChange: () => onToggleSubtaskRoute(subtask.id, "lanes", id),
+                }),
+                h("span", null, subtask.label)
+              )
+            ))
+          ),
+          h("td", null, h(Button, { type: "button", variant: "outline", onClick: () => onRemoveLane(id) }, "Remove"))
         );
       }))
     )
   );
 }
 
-function SeoPrototypeSkillsTab({ selectedStage }) {
-  const skillCatalog = defaultSeoSkillCatalog();
+function SeoPrototypeSkillsTab({ staffId, selectedStage, onAddSkill, onUpdateSkill, onRemoveSkill, onToggleSubtaskRoute }) {
+  const skillCatalog = { ...defaultSeoSkillCatalog(), ...(selectedStage.skillCatalog || {}) };
+  const [draft, setDraft] = useState({ id: "", label: "", scope: "Custom", rule: "" });
+  function submitSkill() {
+    const label = draft.label.trim();
+    const id = (draft.id || seoProfileSlug(label, "staff_skill")).trim();
+    if (!label && !id) return;
+    onAddSkill({
+      id,
+      label: label || promptRuleLabel(id),
+      scope: draft.scope || "Custom",
+      rule: draft.rule || "Define this skill rule.",
+    });
+    setDraft({ id: "", label: "", scope: "Custom", rule: "" });
+  }
   return h("div", { className: "seo-prototype-tab-content" },
     h(SeoPrototypeTabHeader, { title: "Skills used in this stage", body: "Skills define the behavior, guardrails, and reporting style for the assigned staff and its subtasks." }),
+    h(SeoPrototypeFileUpload, { staffId, targetKind: "skill", onProcessed: skill => onAddSkill(skill) }),
+    h("div", { className: "seo-prototype-add-row" },
+      h(Field, { label: "Skill ID" }, h(Input, { value: draft.id, placeholder: "staff_skill_custom", onChange: event => setDraft({ ...draft, id: event.target.value }) })),
+      h(Field, { label: "Skill label" }, h(Input, { value: draft.label, placeholder: "Custom SEO checker", onChange: event => setDraft({ ...draft, label: event.target.value }) })),
+      h(Field, { label: "Scope" }, h(Input, { value: draft.scope, onChange: event => setDraft({ ...draft, scope: event.target.value }) })),
+      h(Button, { type: "button", onClick: submitSkill }, icon("plus"), "Add skill")
+    ),
     h("div", { className: "seo-prototype-skill-grid" }, (selectedStage.skills || []).map(id => {
       const skill = skillCatalog[id] || { label: promptRuleLabel(id), scope: "Custom", rule: "Custom skill rule." };
-      const usedBy = seoProfileUsedBySubtasks(selectedStage, "skills", id);
       return h("article", { className: "seo-prototype-skill-card", key: id },
         h("div", null,
-          h("strong", null, skill.label),
-          h("span", null, skill.scope)
+          h(Field, { label: "Skill label" }, h(Input, { value: skill.label || "", onChange: event => onUpdateSkill(id, { ...skill, label: event.target.value }) })),
+          h(Field, { label: "Scope" }, h(Input, { value: skill.scope || "", onChange: event => onUpdateSkill(id, { ...skill, scope: event.target.value }) }))
         ),
-        h("p", null, skill.rule),
-        h("small", null, `Used by: ${usedBy.length ? usedBy.join(", ") : "stage duty"}`)
+        h(Field, { label: "Rule" }, h(Textarea, { value: skill.rule || "", rows: 4, onChange: event => onUpdateSkill(id, { ...skill, rule: event.target.value }) })),
+        h("div", { className: "seo-prototype-checkbox-stack" }, (selectedStage.subtasks || []).map(subtask =>
+          h("label", { key: `${id}-${subtask.id}` },
+            h("input", {
+              type: "checkbox",
+              checked: (subtask.skills || []).includes(id),
+              onChange: () => onToggleSubtaskRoute(subtask.id, "skills", id),
+            }),
+            h("span", null, subtask.label)
+          )
+        )),
+        h(Button, { type: "button", variant: "outline", onClick: () => onRemoveSkill(id) }, "Remove skill")
       );
     }))
   );
@@ -10540,23 +11007,36 @@ function SeoPrototypeScriptTab({ staffId, selectedStage }) {
   );
 }
 
-function SeoPrototypeSettingsTab({ staffId, selectedStage }) {
+function SeoPrototypeSettingsTab({ staffId, selectedStage, profileSettings = {}, onStageChange, onSettingsChange }) {
   const readiness = seoProfileStageReadiness(selectedStage);
+  const isSeoManager = staffId === "AIstaff_SEOManager";
   return h("div", { className: "seo-prototype-tab-content" },
-    h(SeoPrototypeTabHeader, { title: "Settings", body: "Read-only source view for the staff stage profile that would be written to the department model." }),
+    h(SeoPrototypeTabHeader, { title: "Settings", body: "Editable source view for the staff stage profile that is saved in the local backend." }),
     h("div", { className: "seo-prototype-settings-grid" },
       h("section", { className: "seo-prototype-main-column" },
+        isSeoManager ? h(Field, { label: "Manager email address" },
+          h(Input, {
+            type: "email",
+            value: profileSettings.email || "",
+            placeholder: "sofia@example.com",
+            onChange: event => onSettingsChange({ email: event.target.value }),
+          })
+        ) : null,
         h("div", { className: "seo-prototype-two-col" },
-          h(Field, { label: "Stage name" }, h(Input, { value: selectedStage.label, readOnly: true })),
-          h(Field, { label: "Readiness" }, h(Input, { value: readiness, readOnly: true }))
+          h(Field, { label: "Stage name" }, h(Input, { value: selectedStage.label, onChange: event => onStageChange({ label: event.target.value }) })),
+          h(Field, { label: "Readiness" }, h(Input, { value: selectedStage.readiness || readiness, onChange: event => onStageChange({ readiness: event.target.value }) }))
         ),
         h("div", { className: "seo-prototype-two-col" },
-          h(Field, { label: "Staff display name" }, h(Input, { value: staffProfile(staffId).label, readOnly: true })),
-          h(Field, { label: "Staff job title" }, h(Input, { value: staffJobTitle(staffId), readOnly: true }))
+          h(Field, { label: "Staff display name" }, h(Input, { value: selectedStage.staffAlias || staffProfile(staffId).label, onChange: event => onStageChange({ staffAlias: event.target.value }) })),
+          h(Field, { label: "Staff job title" }, h(Input, { value: selectedStage.staffTitle || staffJobTitle(staffId), onChange: event => onStageChange({ staffTitle: event.target.value }) }))
         ),
         h("div", { className: "seo-prototype-two-col" },
-          h(Field, { label: "Capability ID" }, h(Input, { value: selectedStage.capabilityId || "", readOnly: true })),
-          h(Field, { label: "Owner staff ID" }, h(Input, { value: staffId, readOnly: true }))
+          h(Field, { label: "Capability ID" }, h(Input, { value: selectedStage.capabilityId || "", onChange: event => onStageChange({ capabilityId: event.target.value }) })),
+          h(Field, { label: "Owner staff ID" }, h(Input, { value: selectedStage.ownerStaff || staffId, onChange: event => onStageChange({ ownerStaff: event.target.value }) }))
+        ),
+        h("div", { className: "seo-prototype-two-col" },
+          h(Field, { label: "Capability label" }, h(Input, { value: selectedStage.capabilityLabel || "", onChange: event => onStageChange({ capabilityLabel: event.target.value }) })),
+          h(Field, { label: "Outputs" }, h(Input, { value: (selectedStage.outputs || []).join(", "), onChange: event => onStageChange({ outputs: event.target.value.split(",").map(item => item.trim()).filter(Boolean) }) }))
         )
       ),
       h("aside", { className: "seo-prototype-summary-card" },
