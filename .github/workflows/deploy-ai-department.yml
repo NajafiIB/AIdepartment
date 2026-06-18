@@ -95,8 +95,9 @@ jobs:
 
       - name: Deploy release on VM
         run: |
+          DEPLOY_SCRIPT="/tmp/deploy_gce_release-${GITHUB_SHA}.sh"
           gcloud compute scp scripts/deploy_gce_release.sh \
-            "${GCE_INSTANCE}:/tmp/deploy_gce_release.sh" \
+            "${GCE_INSTANCE}:${DEPLOY_SCRIPT}" \
             --zone="${GCP_ZONE}" \
             --project="${GCP_PROJECT_ID}" \
             --quiet
@@ -104,7 +105,7 @@ jobs:
             --zone="${GCP_ZONE}" \
             --project="${GCP_PROJECT_ID}" \
             --quiet \
-            --command="chmod +x /tmp/deploy_gce_release.sh && DEPLOY_SHA='${GITHUB_SHA}' /tmp/deploy_gce_release.sh"
+            --command="chmod +x '${DEPLOY_SCRIPT}' && DEPLOY_SHA='${GITHUB_SHA}' '${DEPLOY_SCRIPT}'"
 
       - name: Verify HTTPS
         run: |
