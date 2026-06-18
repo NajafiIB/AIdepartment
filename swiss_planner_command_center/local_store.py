@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
 import re
@@ -500,6 +502,36 @@ def init_db() -> None:
               payload_json TEXT NOT NULL DEFAULT '{}',
               created_at REAL NOT NULL,
               created_by TEXT NOT NULL DEFAULT 'AIstaff_Manager'
+            );
+            CREATE TABLE IF NOT EXISTS seo_staff_profile_stage_overrides (
+              department_id TEXT NOT NULL,
+              staff_id TEXT NOT NULL,
+              payload TEXT NOT NULL DEFAULT '[]',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              updated_by TEXT NOT NULL DEFAULT 'Human_Iman',
+              PRIMARY KEY (department_id, staff_id)
+            );
+            CREATE TABLE IF NOT EXISTS seo_staff_profile_settings (
+              department_id TEXT NOT NULL,
+              staff_id TEXT NOT NULL,
+              payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              updated_by TEXT NOT NULL DEFAULT 'Human_Iman',
+              PRIMARY KEY (department_id, staff_id)
+            );
+            CREATE TABLE IF NOT EXISTS seo_staff_profile_file_assets (
+              asset_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL,
+              staff_id TEXT NOT NULL,
+              target_kind TEXT NOT NULL,
+              file_name TEXT NOT NULL,
+              content_type TEXT NOT NULL DEFAULT '',
+              text_content TEXT NOT NULL DEFAULT '',
+              source_payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              created_by TEXT NOT NULL DEFAULT 'Human_Iman'
             );
             CREATE TABLE IF NOT EXISTS activity_bindings (
               binding_id TEXT PRIMARY KEY,
@@ -1894,6 +1926,842 @@ def local_status(*, fast: bool = False, snapshot_payload: Dashboard | None = Non
 
 SEO_DEMAND_ENGINE_DEPARTMENT_ID = "department_seo_demand_engine"
 SEO_DEMAND_ENGINE_WINDMILL_PREFIX = "u/admin/seo_demand_engine_worldbc"
+SEO_STAFF_ACTOR_ORDER = [
+    "AIstaff_SEOManager",
+    "AIstaff_SEOSourceAnalyst",
+    "AIstaff_SEOExpert",
+    "AIstaff_CaseStudyMapper",
+    "AIstaff_SEOContentWriter",
+    "AIstaff_InternalLinkBuilder",
+    "AIstaff_SEOQAAnalyst",
+    "AIstaff_WordPressPublisher",
+]
+SEO_STAFF_PROFILE_IDS = set(SEO_STAFF_ACTOR_ORDER)
+SEO_STAFF_ACTOR_TITLES = {
+    "AIstaff_SEOManager": "SEO Demand Engine Manager",
+    "AIstaff_SEOSourceAnalyst": "Transcript And Source Intelligence Analyst",
+    "AIstaff_SEOExpert": "SEO Strategy, Analytics And Reporting Expert",
+    "AIstaff_CaseStudyMapper": "Case Study And Evidence Mapper",
+    "AIstaff_SEOContentWriter": "SEO Brief And Article Writer",
+    "AIstaff_InternalLinkBuilder": "Internal Link And Content Inventory Specialist",
+    "AIstaff_SEOQAAnalyst": "SEO QA And Performance Learning Analyst",
+    "AIstaff_WordPressPublisher": "Supervised WordPress And Make.com Publisher",
+}
+
+
+def seo_staff_actor_slug(staff_id: str) -> str:
+    raw = str(staff_id or "").replace("AIstaff_", "")
+    return fabric_slug(raw, "seo_staff")
+
+
+def seo_staff_actor_activity_name(staff_id: str) -> str:
+    return f"worldbc.seo.actor.{seo_staff_actor_slug(staff_id)}"
+
+
+def seo_staff_actor_path(staff_id: str) -> str:
+    return f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_actor_{seo_staff_actor_slug(staff_id)}"
+
+
+def seo_staff_actor_contracts() -> list[dict[str, Any]]:
+    contracts: list[dict[str, Any]] = [
+        {
+            "staffId": "AIstaff_SEOManager",
+            "alias": DEFAULT_STAFF_ALIASES.get("AIstaff_SEOManager", "Sofia"),
+            "title": SEO_STAFF_ACTOR_TITLES["AIstaff_SEOManager"],
+            "purpose": "Receive panel commands, resolve department/staff context, choose specialist actors, validate responses, and decide whether to continue, retry, reroute, or ask for approval.",
+            "canContactHuman": True,
+        }
+    ]
+    purposes = {
+        "AIstaff_SEOSourceAnalyst": "Read transcripts, uploaded notes, briefs, and source material; extract reusable SEO requirements, claims, missing context, and routing evidence.",
+        "AIstaff_SEOExpert": "Analyze SEO strategy, Search Console/analytics evidence, keyword opportunities, rankings, and performance learning.",
+        "AIstaff_CaseStudyMapper": "Map case studies, proof, references, and claims to keywords or article angles.",
+        "AIstaff_SEOContentWriter": "Prepare SEO briefs, outlines, article drafts, metadata, and content packages from approved evidence.",
+        "AIstaff_InternalLinkBuilder": "Inspect content inventory and prepare internal link targets, anchors, and page relationships.",
+        "AIstaff_SEOQAAnalyst": "Validate SEO quality, evidence coverage, metadata, duplication risk, and post-publish learning criteria.",
+        "AIstaff_WordPressPublisher": "Prepare supervised WordPress and Make.com draft/publish payloads and block external execution until approval.",
+    }
+    for staff_id in SEO_STAFF_ACTOR_ORDER:
+        if staff_id == "AIstaff_SEOManager":
+            continue
+        contracts.append(
+            {
+                "staffId": staff_id,
+                "alias": DEFAULT_STAFF_ALIASES.get(staff_id, staff_id),
+                "title": SEO_STAFF_ACTOR_TITLES.get(staff_id, staff_label(staff_id)),
+                "purpose": purposes.get(staff_id, "Execute assigned SEO department work under manager supervision."),
+                "canContactHuman": False,
+            }
+        )
+    for row in contracts:
+        staff_id = row["staffId"]
+        row.update(
+            {
+                "activityName": seo_staff_actor_activity_name(staff_id),
+                "windmillPath": f"/p/{seo_staff_actor_path(staff_id)}",
+                "apiContract": {
+                    "input": ["command", "stage", "subtask", "actorContext", "managerCommand", "qualityThreshold"],
+                    "output": ["ok", "status", "summary", "result", "nextAction", "validation"],
+                    "communicationRule": "Specialist actors return to Sofia/manager; only manager can communicate with the human.",
+                },
+            }
+        )
+    return contracts
+
+
+def seo_profile_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item or "").strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in re.split(r"[\n,]+", value) if item.strip()]
+    return []
+
+
+def seo_profile_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def sanitize_seo_staff_profile_stage(stage: Any, staff_id: str, index: int = 0) -> dict[str, Any]:
+    source = stage if isinstance(stage, dict) else {}
+    stage_id = str(source.get("id") or source.get("stageId") or f"custom_stage_{index + 1}").strip()
+    stage_id = re.sub(r"[^a-zA-Z0-9_:-]+", "_", stage_id).strip("_") or f"custom_stage_{index + 1}"
+    label = str(source.get("label") or source.get("stageName") or f"Assigned Stage {index + 1}").strip()
+    lanes = seo_profile_list(source.get("lanes"))
+    skills = seo_profile_list(source.get("skills"))
+    lane_catalog = {
+        str(key).strip(): value
+        for key, value in seo_profile_dict(source.get("laneCatalog")).items()
+        if str(key).strip() and isinstance(value, dict)
+    }
+    skill_catalog = {
+        str(key).strip(): value
+        for key, value in seo_profile_dict(source.get("skillCatalog")).items()
+        if str(key).strip() and isinstance(value, dict)
+    }
+    subtasks = []
+    for sub_index, subtask in enumerate(source.get("subtasks") if isinstance(source.get("subtasks"), list) else []):
+        if not isinstance(subtask, dict):
+            continue
+        subtask_id = str(subtask.get("id") or f"{stage_id}_subtask_{sub_index + 1}").strip()
+        subtask_id = re.sub(r"[^a-zA-Z0-9_:-]+", "_", subtask_id).strip("_") or f"{stage_id}_subtask_{sub_index + 1}"
+        subtasks.append(
+            {
+                **subtask,
+                "id": subtask_id,
+                "label": str(subtask.get("label") or f"Subtask {sub_index + 1}").strip(),
+                "goal": str(subtask.get("goal") or "").strip(),
+                "detail": str(subtask.get("detail") or "").strip(),
+                "nextAction": str(subtask.get("nextAction") or "").strip(),
+                "readiness": str(subtask.get("readiness") or "Ready").strip(),
+                "lanes": [item for item in seo_profile_list(subtask.get("lanes")) if not lanes or item in lanes],
+                "skills": [item for item in seo_profile_list(subtask.get("skills")) if not skills or item in skills],
+                "outputs": seo_profile_list(subtask.get("outputs")),
+            }
+        )
+    if not subtasks:
+        subtasks.append(
+            {
+                "id": f"{stage_id}_subtask_1",
+                "label": "Define first workflow subtask",
+                "goal": "Define the goal for this workflow subtask.",
+                "detail": "Describe the work the assigned AI staff must complete.",
+                "nextAction": "Send the result to Sofia for routing.",
+                "readiness": "Draft",
+                "lanes": [],
+                "skills": [],
+                "outputs": [],
+            }
+        )
+    return {
+        **source,
+        "id": stage_id,
+        "label": label,
+        "ownerStaff": str(source.get("ownerStaff") or staff_id).strip(),
+        "staffAlias": str(source.get("staffAlias") or DEFAULT_STAFF_ALIASES.get(staff_id) or staff_id).strip(),
+        "staffTitle": str(source.get("staffTitle") or "").strip(),
+        "capabilityId": str(source.get("capabilityId") or "").strip(),
+        "capabilityLabel": str(source.get("capabilityLabel") or "").strip(),
+        "goal": str(source.get("goal") or "").strip(),
+        "description": str(source.get("description") or source.get("detail") or "").strip(),
+        "assignedDuty": str(source.get("assignedDuty") or "").strip(),
+        "readiness": str(source.get("readiness") or "Ready").strip(),
+        "lanes": lanes,
+        "skills": skills,
+        "qualityGates": seo_profile_list(source.get("qualityGates")),
+        "outputs": seo_profile_list(source.get("outputs")),
+        "laneCatalog": lane_catalog,
+        "skillCatalog": skill_catalog,
+        "subtasks": subtasks,
+    }
+
+
+def default_seo_staff_profile_settings(staff_id: str = "") -> dict[str, Any]:
+    email = ""
+    if staff_id == "AIstaff_SEOManager":
+        email = local_env_value("SEO_MANAGER_EMAIL", "") or local_env_value("MANAGER_EMAIL", "")
+    return {
+        "email": email,
+    }
+
+
+def sanitize_seo_staff_profile_settings(value: Any, staff_id: str = "") -> dict[str, Any]:
+    source = default_seo_staff_profile_settings(staff_id)
+    if isinstance(value, dict):
+        source.update(value)
+    source["email"] = str(source.get("email") or "").strip()
+    return source
+
+
+def load_seo_staff_profile_settings(department_id: str, staff_id: str) -> dict[str, Any]:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT payload, updated_at, updated_by FROM seo_staff_profile_settings WHERE department_id = ? AND staff_id = ?",
+            (department_id, staff_id),
+        ).fetchone()
+    settings = sanitize_seo_staff_profile_settings(parse_json_text(row["payload"], {}) if row else {}, staff_id)
+    if row:
+        settings["updatedAt"] = iso_like(row["updated_at"])
+        settings["updatedBy"] = row["updated_by"]
+    return settings
+
+
+def save_seo_staff_profile_settings(department_id: str, staff_id: str, settings: Any, updated_by: str = "Human_Iman") -> dict[str, Any]:
+    safe_settings = sanitize_seo_staff_profile_settings(settings, staff_id)
+    now = utc_ts()
+    with connect() as conn:
+        before = conn.execute(
+            "SELECT payload FROM seo_staff_profile_settings WHERE department_id = ? AND staff_id = ?",
+            (department_id, staff_id),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO seo_staff_profile_settings (
+              department_id, staff_id, payload, created_at, updated_at, updated_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(department_id, staff_id) DO UPDATE SET
+              payload = excluded.payload,
+              updated_at = excluded.updated_at,
+              updated_by = excluded.updated_by
+            """,
+            (
+                department_id,
+                staff_id,
+                json.dumps(safe_settings, ensure_ascii=False, default=str),
+                now,
+                now,
+                updated_by,
+            ),
+        )
+    record_department_version(
+        object_type="seoStaffProfileSettings",
+        object_id=f"{department_id}:{staff_id}",
+        action="Update SEO staff profile settings",
+        before_payload=parse_json_text(before["payload"], {}) if before else {},
+        after_payload=safe_settings,
+        created_by=updated_by,
+        reason="SEO staff profile settings updated.",
+    )
+    safe_settings["updatedAt"] = iso_like(now)
+    safe_settings["updatedBy"] = updated_by
+    return safe_settings
+
+
+def pdf_text_from_bytes(raw: bytes) -> str:
+    try:
+        from pypdf import PdfReader  # type: ignore
+        reader = PdfReader(io.BytesIO(raw))
+        return "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+    except Exception:
+        pass
+    try:
+        from PyPDF2 import PdfReader  # type: ignore
+        reader = PdfReader(io.BytesIO(raw))
+        return "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+    except Exception:
+        pass
+    fallback = raw.decode("latin-1", errors="ignore")
+    return re.sub(r"[^\x09\x0a\x0d\x20-\x7e]+", " ", fallback).strip()
+
+
+def extract_seo_uploaded_text(file_name: str, content_type: str, data_base64: str) -> tuple[str, dict[str, Any]]:
+    raw = base64.b64decode(str(data_base64 or ""), validate=False)
+    extension = Path(file_name or "").suffix.lower()
+    kind = "binary"
+    if extension == ".pdf" or "pdf" in normalize_text(content_type):
+        kind = "pdf"
+        text = pdf_text_from_bytes(raw)
+    elif extension in {".txt", ".md", ".markdown"} or "text" in normalize_text(content_type):
+        kind = "text"
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1", errors="ignore")
+    else:
+        try:
+            text = raw.decode("utf-8")
+            kind = "text"
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1", errors="ignore")
+    text = re.sub(r"\r\n?", "\n", text or "").strip()
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text[:200000], {
+        "fileKind": kind,
+        "byteLength": len(raw),
+        "textLength": len(text),
+        "truncated": len(text) > 200000,
+    }
+
+
+def process_seo_staff_profile_file(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    department_id = str(payload.get("departmentId") or SEO_DEMAND_ENGINE_DEPARTMENT_ID).strip() or SEO_DEMAND_ENGINE_DEPARTMENT_ID
+    staff_id = str(payload.get("staffId") or "").strip()
+    target_kind = normalize_text(payload.get("targetKind") or payload.get("kind") or "")
+    if staff_id not in SEO_STAFF_PROFILE_IDS:
+        return {"ok": False, "error": f"Unsupported SEO staff profile: {staff_id or 'missing'}"}
+    if target_kind not in {"lane", "skill"}:
+        return {"ok": False, "error": "targetKind must be lane or skill."}
+    file_name = str(payload.get("fileName") or "").strip()
+    if not file_name:
+        return {"ok": False, "error": "Missing fileName."}
+    extension = Path(file_name).suffix.lower()
+    if extension not in {".pdf", ".txt", ".md", ".markdown"}:
+        return {"ok": False, "error": "Only PDF, TXT, and MD files are supported."}
+    data_base64 = str(payload.get("dataBase64") or "").strip()
+    if not data_base64:
+        return {"ok": False, "error": "Missing file data."}
+    text, metadata = extract_seo_uploaded_text(file_name, str(payload.get("contentType") or ""), data_base64)
+    if not text:
+        return {"ok": False, "error": "Could not extract text from the uploaded file."}
+    asset_id = "seo_file_" + str(uuid.uuid4())
+    created_by = str(payload.get("updatedBy") or "Human_Iman")
+    now = utc_ts()
+    source_payload = {
+        "metadata": metadata,
+        "preview": text[:1200],
+    }
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO seo_staff_profile_file_assets (
+              asset_id, department_id, staff_id, target_kind, file_name, content_type,
+              text_content, source_payload, created_at, created_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                asset_id,
+                department_id,
+                staff_id,
+                target_kind,
+                file_name,
+                str(payload.get("contentType") or ""),
+                text,
+                json.dumps(source_payload, ensure_ascii=False, default=str),
+                now,
+                created_by,
+            ),
+        )
+    base_label = re.sub(r"\.[^.]+$", "", Path(file_name).name).strip() or file_name
+    slug = fabric_slug(base_label, "uploaded_file")
+    preview = re.sub(r"\s+", " ", text).strip()[:520]
+    asset = {
+        "assetId": asset_id,
+        "fileName": file_name,
+        "contentType": str(payload.get("contentType") or ""),
+        "targetKind": target_kind,
+        "createdAt": iso_like(now),
+        "metadata": metadata,
+        "textPreview": text[:1200],
+    }
+    result: dict[str, Any] = {"ok": True, "asset": asset}
+    if target_kind == "lane":
+        result["lane"] = {
+            "id": f"lane_file_{slug}",
+            "label": base_label,
+            "type": f"uploaded {metadata.get('fileKind') or 'file'} source",
+            "status": "Processed",
+            "data": preview,
+            "assetId": asset_id,
+            "fileName": file_name,
+            "contentType": str(payload.get("contentType") or ""),
+            "textPreview": text[:1200],
+        }
+    else:
+        result["skill"] = {
+            "id": f"staff_skill_file_{slug}",
+            "label": base_label,
+            "scope": "Uploaded file",
+            "rule": f"Use the uploaded file `{file_name}` as staff guidance. Extracted preview: {preview}",
+            "assetId": asset_id,
+            "fileName": file_name,
+            "contentType": str(payload.get("contentType") or ""),
+            "textPreview": text[:1200],
+        }
+    return result
+
+
+def list_seo_staff_profile_stages(department_id: str = "", staff_id: str = "") -> dict[str, Any]:
+    init_db()
+    department_id = str(department_id or SEO_DEMAND_ENGINE_DEPARTMENT_ID).strip() or SEO_DEMAND_ENGINE_DEPARTMENT_ID
+    staff_id = str(staff_id or "").strip()
+    if staff_id and staff_id not in SEO_STAFF_PROFILE_IDS:
+        return {"ok": False, "error": f"Unsupported SEO staff profile: {staff_id}"}
+    with connect() as conn:
+        if staff_id:
+            rows = conn.execute(
+                "SELECT * FROM seo_staff_profile_stage_overrides WHERE department_id = ? AND staff_id = ?",
+                (department_id, staff_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM seo_staff_profile_stage_overrides WHERE department_id = ?",
+                (department_id,),
+            ).fetchall()
+    profiles = {}
+    for row in rows:
+        stages = parse_json_text(row["payload"], [])
+        safe_stages = [
+            sanitize_seo_staff_profile_stage(stage, row["staff_id"], index)
+            for index, stage in enumerate(stages if isinstance(stages, list) else [])
+        ]
+        profiles[row["staff_id"]] = {
+            "staffId": row["staff_id"],
+            "stages": safe_stages,
+            "settings": load_seo_staff_profile_settings(department_id, row["staff_id"]),
+            "hasStageOverride": True,
+            "updatedAt": iso_like(row["updated_at"]),
+            "updatedBy": row["updated_by"],
+        }
+    if staff_id and staff_id not in profiles:
+        profiles[staff_id] = {
+            "staffId": staff_id,
+            "stages": [],
+            "settings": load_seo_staff_profile_settings(department_id, staff_id),
+            "hasStageOverride": False,
+        }
+    return {
+        "ok": True,
+        "departmentId": department_id,
+        "staffId": staff_id,
+        "stages": (profiles.get(staff_id) or {}).get("stages", []) if staff_id else [],
+        "profile": profiles.get(staff_id, {}) if staff_id else {},
+        "profiles": profiles,
+    }
+
+
+def save_seo_staff_profile_stages(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    department_id = str(payload.get("departmentId") or SEO_DEMAND_ENGINE_DEPARTMENT_ID).strip() or SEO_DEMAND_ENGINE_DEPARTMENT_ID
+    staff_id = str(payload.get("staffId") or "").strip()
+    if staff_id not in SEO_STAFF_PROFILE_IDS:
+        return {"ok": False, "error": f"Unsupported SEO staff profile: {staff_id or 'missing'}"}
+    if bool(payload.get("clear")):
+        with connect() as conn:
+            before = conn.execute(
+                "SELECT payload FROM seo_staff_profile_stage_overrides WHERE department_id = ? AND staff_id = ?",
+                (department_id, staff_id),
+            ).fetchone()
+            conn.execute(
+                "DELETE FROM seo_staff_profile_stage_overrides WHERE department_id = ? AND staff_id = ?",
+                (department_id, staff_id),
+            )
+        version = record_department_version(
+            object_type="seoStaffProfileStages",
+            object_id=f"{department_id}:{staff_id}",
+            action="Reset SEO staff profile stages",
+            before_payload=parse_json_text(before["payload"], []) if before else [],
+            after_payload=[],
+            created_by=str(payload.get("updatedBy") or "Human_Iman"),
+            reason=str(payload.get("reason") or "SEO staff profile stage override reset."),
+        )
+        return {
+            "ok": True,
+            "departmentId": department_id,
+            "staffId": staff_id,
+            "stages": [],
+            "cleared": True,
+            "updatedAt": iso_like(),
+            "updatedBy": str(payload.get("updatedBy") or "Human_Iman"),
+            "version": version,
+        }
+    raw_stages = payload.get("stages") if isinstance(payload.get("stages"), list) else []
+    stages = [sanitize_seo_staff_profile_stage(stage, staff_id, index) for index, stage in enumerate(raw_stages)]
+    now = utc_ts()
+    updated_by = str(payload.get("updatedBy") or "Human_Iman").strip() or "Human_Iman"
+    settings = None
+    if isinstance(payload.get("settings"), dict):
+        settings = save_seo_staff_profile_settings(department_id, staff_id, payload.get("settings"), updated_by)
+    with connect() as conn:
+        before = conn.execute(
+            "SELECT payload FROM seo_staff_profile_stage_overrides WHERE department_id = ? AND staff_id = ?",
+            (department_id, staff_id),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO seo_staff_profile_stage_overrides (
+              department_id, staff_id, payload, created_at, updated_at, updated_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(department_id, staff_id) DO UPDATE SET
+              payload = excluded.payload,
+              updated_at = excluded.updated_at,
+              updated_by = excluded.updated_by
+            """,
+            (
+                department_id,
+                staff_id,
+                json.dumps(stages, ensure_ascii=False, default=str),
+                now,
+                now,
+                updated_by,
+            ),
+        )
+    version = record_department_version(
+        object_type="seoStaffProfileStages",
+        object_id=f"{department_id}:{staff_id}",
+        action="Update SEO staff profile stages",
+        before_payload=parse_json_text(before["payload"], []) if before else [],
+        after_payload=stages,
+        created_by=updated_by,
+        reason=str(payload.get("reason") or "SEO staff profile stage configuration updated."),
+    )
+    return {
+        "ok": True,
+        "departmentId": department_id,
+        "staffId": staff_id,
+        "stages": stages,
+        "settings": settings or load_seo_staff_profile_settings(department_id, staff_id),
+        "updatedAt": iso_like(now),
+        "updatedBy": updated_by,
+        "version": version,
+    }
+
+
+def seo_stage_override_context(department_id: str, staff_id: str) -> dict[str, Any]:
+    profile = list_seo_staff_profile_stages(department_id, staff_id).get("profile") or {}
+    stages = profile.get("stages") if isinstance(profile.get("stages"), list) else []
+    lane_catalog: dict[str, Any] = {}
+    skill_catalog: dict[str, Any] = {}
+    lane_ids: list[str] = []
+    skill_ids: list[str] = []
+    for stage in stages:
+        if not isinstance(stage, dict):
+            continue
+        for lane_id in seo_profile_list(stage.get("lanes")):
+            if lane_id not in lane_ids:
+                lane_ids.append(lane_id)
+        for skill_id in seo_profile_list(stage.get("skills")):
+            if skill_id not in skill_ids:
+                skill_ids.append(skill_id)
+        for key, value in seo_profile_dict(stage.get("laneCatalog")).items():
+            if key:
+                lane_catalog[key] = value
+        for key, value in seo_profile_dict(stage.get("skillCatalog")).items():
+            if key:
+                skill_catalog[key] = value
+    return {
+        "settings": profile.get("settings") or load_seo_staff_profile_settings(department_id, staff_id),
+        "assignedStages": stages,
+        "laneIds": lane_ids,
+        "skillIds": skill_ids,
+        "laneCatalog": lane_catalog,
+        "skillCatalog": skill_catalog,
+        "hasStageOverride": bool(profile.get("hasStageOverride")),
+        "updatedAt": profile.get("updatedAt") or "",
+        "updatedBy": profile.get("updatedBy") or "",
+    }
+
+
+def seo_staff_actor_runtime_context(department_id: str, staff_id: str, input_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    department_id = str(department_id or SEO_DEMAND_ENGINE_DEPARTMENT_ID).strip() or SEO_DEMAND_ENGINE_DEPARTMENT_ID
+    staff_id = str(staff_id or "").strip()
+    if staff_id not in SEO_STAFF_PROFILE_IDS:
+        raise ValueError(f"Unsupported SEO staff actor: {staff_id or 'missing'}")
+    fabric = load_capability_fabric()
+    department = department_row_by_id(department_id)
+    resolved = resolved_department_staff_context(department_id)
+    assignments = list_department_staff_assignments(department_id).get("assignments") or []
+    assignment = next((row for row in assignments if str(row.get("staffProfileId") or "") == staff_id), {})
+    staff_context = (resolved.get("staff") or {}).get(staff_id) or {}
+    contract = next((row for row in seo_staff_actor_contracts() if row.get("staffId") == staff_id), {})
+    overrides = seo_stage_override_context(department_id, staff_id)
+    stage = input_payload.get("stage") if isinstance(input_payload, dict) and isinstance(input_payload.get("stage"), dict) else {}
+    subtask = input_payload.get("subtask") if isinstance(input_payload, dict) and isinstance(input_payload.get("subtask"), dict) else {}
+    if not stage and overrides.get("assignedStages"):
+        stage = overrides["assignedStages"][0]
+    return {
+        "departmentId": department_id,
+        "staffId": staff_id,
+        "actor": {
+            "staffId": staff_id,
+            "alias": contract.get("alias") or DEFAULT_STAFF_ALIASES.get(staff_id) or staff_label(staff_id),
+            "title": contract.get("title") or SEO_STAFF_ACTOR_TITLES.get(staff_id) or staff_label(staff_id),
+            "purpose": contract.get("purpose") or "",
+            "canContactHuman": bool(contract.get("canContactHuman")),
+            "reportsTo": "Human_Iman" if staff_id == "AIstaff_SEOManager" else "AIstaff_SEOManager",
+            "activityName": contract.get("activityName") or seo_staff_actor_activity_name(staff_id),
+            "windmillPath": contract.get("windmillPath") or f"/p/{seo_staff_actor_path(staff_id)}",
+            "apiContract": contract.get("apiContract") or {},
+        },
+        "department": resolved.get("department") or {
+            "id": department.get("id") or department_id,
+            "label": department.get("label") or "",
+            "purpose": department.get("purpose") or "",
+            "approvalPolicy": department.get("approvalPolicy") or "",
+        },
+        "organization": resolved.get("organization") or {},
+        "baseKnowledge": {
+            "departmentDetail": department,
+            "staffDetail": staff_context,
+            "staffTemplate": (assignment.get("blueprint") or {}),
+            "assignmentOverride": (assignment.get("assignment") or {}),
+            "platformSafetySkills": resolved.get("platformSafetySkills") or [],
+            "departmentSkills": resolved.get("departmentSkills") or [],
+            "staffTemplateSkills": staff_context.get("skills") or [],
+            "editableSkillRules": staff_context.get("editableSkillRules") or [],
+            "skillResolutionOrder": resolved.get("skillResolutionOrder") or [],
+        },
+        "overrides": overrides,
+        "selectedStage": stage,
+        "selectedSubtask": subtask,
+        "qualityPolicy": {
+            "minimumScore": 0.75,
+            "requiredChecks": ["has_summary", "has_next_action", "manager_route_respected", "has_validation"],
+            "managerDecision": "Continue only when validation.passed is true; otherwise retry, reroute, or ask for missing input.",
+        },
+    }
+
+
+def seo_actor_command_targets(command: str, requested: Any = None) -> list[str]:
+    requested_ids = [item for item in seo_profile_list(requested) if item in SEO_STAFF_PROFILE_IDS]
+    if requested_ids:
+        return requested_ids
+    text = normalize_text(command)
+    routes = [
+        ("AIstaff_SEOSourceAnalyst", ["transcript", "source", "notes", "requirement", "extract", "uploaded"]),
+        ("AIstaff_SEOExpert", ["search console", "analytics", "keyword", "ranking", "rank", "performance", "traffic"]),
+        ("AIstaff_CaseStudyMapper", ["case study", "proof", "evidence", "claim", "reference"]),
+        ("AIstaff_SEOContentWriter", ["brief", "article", "draft", "content", "write", "metadata", "title"]),
+        ("AIstaff_InternalLinkBuilder", ["internal link", "anchor", "inventory", "crawl", "existing page"]),
+        ("AIstaff_SEOQAAnalyst", ["qa", "review", "validate", "quality", "check", "learn"]),
+        ("AIstaff_WordPressPublisher", ["wordpress", "publish", "make.com", "make", "payload", "webhook"]),
+    ]
+    targets = [staff_id for staff_id, tokens in routes if any(token in text for token in tokens)]
+    if not targets:
+        targets = ["AIstaff_SEOSourceAnalyst"]
+    return targets
+
+
+def validate_seo_staff_actor_response(response: dict[str, Any], actor_context: dict[str, Any]) -> dict[str, Any]:
+    staff_id = actor_context.get("staffId") or ""
+    checks = [
+        {"id": "has_summary", "label": "Response includes summary", "passed": bool(str(response.get("summary") or "").strip())},
+        {"id": "has_next_action", "label": "Response includes next action", "passed": bool(str(response.get("nextAction") or "").strip())},
+        {"id": "has_validation", "label": "Response includes validation object", "passed": isinstance(response.get("validation"), dict)},
+        {
+            "id": "manager_route_respected",
+            "label": "Specialist response stays manager-facing",
+            "passed": staff_id == "AIstaff_SEOManager" or not bool(response.get("humanFacingRequest")),
+        },
+        {
+            "id": "has_context",
+            "label": "Actor received base knowledge and overrides",
+            "passed": bool(actor_context.get("baseKnowledge")) and "overrides" in actor_context,
+        },
+    ]
+    passed_count = len([row for row in checks if row.get("passed")])
+    score = passed_count / max(1, len(checks))
+    passed = score >= float((actor_context.get("qualityPolicy") or {}).get("minimumScore") or 0.75) and all(
+        row.get("passed") for row in checks if row.get("id") in {"has_summary", "has_next_action", "manager_route_respected"}
+    )
+    return {
+        "passed": passed,
+        "score": round(score, 2),
+        "checks": checks,
+        "nextDecision": "continue" if passed else "retry_or_reroute",
+    }
+
+
+def local_seo_staff_actor_response(command: str, actor_context: dict[str, Any], manager_command: dict[str, Any] | None = None) -> dict[str, Any]:
+    actor = actor_context.get("actor") or {}
+    overrides = actor_context.get("overrides") or {}
+    selected_stage = actor_context.get("selectedStage") or {}
+    selected_subtask = actor_context.get("selectedSubtask") or {}
+    lane_count = len(overrides.get("laneIds") or [])
+    skill_count = len(overrides.get("skillIds") or [])
+    stage_label = selected_stage.get("label") or "assigned SEO stage"
+    subtask_label = selected_subtask.get("label") or ""
+    summary = (
+        f"{actor.get('alias') or actor_context.get('staffId')} accepted the command for {stage_label}. "
+        f"Runtime context includes {len(overrides.get('assignedStages') or [])} assigned stage(s), "
+        f"{lane_count} lane override(s), and {skill_count} skill override(s)."
+    )
+    if subtask_label:
+        summary += f" Active subtask: {subtask_label}."
+    response = {
+        "ok": True,
+        "status": "done",
+        "staffId": actor_context.get("staffId"),
+        "alias": actor.get("alias") or "",
+        "title": actor.get("title") or "",
+        "command": command,
+        "summary": summary,
+        "result": {
+            "stageId": selected_stage.get("id") or "",
+            "stageGoal": selected_stage.get("goal") or "",
+            "subtaskId": selected_subtask.get("id") or "",
+            "lanesAvailable": overrides.get("laneIds") or [],
+            "skillsAvailable": overrides.get("skillIds") or [],
+            "settings": overrides.get("settings") or {},
+            "managerCommandId": (manager_command or {}).get("commandId") or "",
+        },
+        "nextAction": "Return this manager-facing result to Sofia for validation and the next routing decision.",
+        "humanFacingRequest": False,
+        "validation": {"source": "local_actor_contract", "receivedActorContext": True},
+    }
+    response["validation"] = validate_seo_staff_actor_response(response, actor_context)
+    return response
+
+
+def seo_staff_actor_command(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    department_id = str(payload.get("departmentId") or SEO_DEMAND_ENGINE_DEPARTMENT_ID).strip() or SEO_DEMAND_ENGINE_DEPARTMENT_ID
+    staff_id = str(payload.get("staffId") or payload.get("targetStaffId") or "").strip()
+    if staff_id not in SEO_STAFF_PROFILE_IDS:
+        return {"ok": False, "error": f"Unsupported SEO staff actor: {staff_id or 'missing'}"}
+    command = str(payload.get("command") or payload.get("message") or "").strip()
+    if not command:
+        return {"ok": False, "error": "Missing command."}
+    actor_context = seo_staff_actor_runtime_context(department_id, staff_id, payload)
+    call_windmill = bool(payload.get("callWindmill")) and windmill_config()["configured"]
+    windmill_result: dict[str, Any] = {}
+    if call_windmill:
+        requested = request_activity(
+            {
+                "departmentId": department_id,
+                "activityName": seo_staff_actor_activity_name(staff_id),
+                "dryRun": bool(payload.get("dryRun", False)),
+                "requestedBy": str(payload.get("requestedBy") or "AIstaff_SEOManager"),
+                "idempotencyKey": str(payload.get("idempotencyKey") or f"{department_id}:{staff_id}:{uuid.uuid4().hex[:12]}"),
+                "input": {
+                    "command": command,
+                    "targetStaffId": staff_id,
+                    "actorContext": actor_context,
+                    "managerCommand": payload.get("managerCommand") if isinstance(payload.get("managerCommand"), dict) else {},
+                    "stage": payload.get("stage") if isinstance(payload.get("stage"), dict) else {},
+                    "subtask": payload.get("subtask") if isinstance(payload.get("subtask"), dict) else {},
+                },
+            }
+        )
+        activity = requested.get("activityRun") if requested.get("ok") else None
+        if activity and activity.get("approvalState") != "Pending":
+            windmill_result = run_activity({"activityRunId": activity.get("activityRunId")})
+        else:
+            windmill_result = {"ok": False, "error": requested.get("error") or "Windmill actor activity could not be requested.", "requested": requested}
+    if windmill_result.get("ok"):
+        raw = ((windmill_result.get("result") or {}).get("result") or windmill_result.get("result") or {})
+        response = raw if isinstance(raw, dict) else {"ok": True, "summary": str(raw), "nextAction": "Return result to manager.", "validation": {}}
+        response["validation"] = validate_seo_staff_actor_response(response, actor_context)
+    else:
+        response = local_seo_staff_actor_response(command, actor_context, payload.get("managerCommand") if isinstance(payload.get("managerCommand"), dict) else {})
+    return {
+        "ok": bool((response.get("validation") or {}).get("passed", response.get("ok", True))),
+        "departmentId": department_id,
+        "staffId": staff_id,
+        "actorContext": actor_context,
+        "response": response,
+        "validation": response.get("validation") or validate_seo_staff_actor_response(response, actor_context),
+        "windmill": {
+            "called": bool(windmill_result),
+            "configured": windmill_config()["configured"],
+            "activityName": seo_staff_actor_activity_name(staff_id),
+            "path": f"/p/{seo_staff_actor_path(staff_id)}",
+            "result": windmill_result,
+        },
+    }
+
+
+def seo_manager_command(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    department_id = str(payload.get("departmentId") or SEO_DEMAND_ENGINE_DEPARTMENT_ID).strip() or SEO_DEMAND_ENGINE_DEPARTMENT_ID
+    command = str(payload.get("command") or payload.get("message") or "").strip()
+    if not command:
+        return {"ok": False, "error": "Missing command."}
+    manager_context = seo_staff_actor_runtime_context(department_id, "AIstaff_SEOManager", payload)
+    targets = seo_actor_command_targets(command, payload.get("targetStaffIds") or payload.get("targetStaffId"))
+    if bool(payload.get("runFullFlow")):
+        targets = [staff_id for staff_id in SEO_STAFF_ACTOR_ORDER if staff_id != "AIstaff_SEOManager"]
+    command_id = f"seo_cmd_{uuid.uuid4().hex[:12]}"
+    manager_decision = {
+        "commandId": command_id,
+        "manager": "AIstaff_SEOManager",
+        "summary": f"Sofia received the panel command and routed it to {len(targets)} actor(s).",
+        "targets": targets,
+        "validationPolicy": manager_context.get("qualityPolicy") or {},
+        "nextAction": "Call each selected actor, validate the response, then continue, retry, reroute, or pause.",
+    }
+    staff_responses: list[dict[str, Any]] = []
+    blocked = False
+    for staff_id in targets:
+        result = seo_staff_actor_command(
+            {
+                **payload,
+                "departmentId": department_id,
+                "staffId": staff_id,
+                "command": command,
+                "requestedBy": "AIstaff_SEOManager",
+                "managerCommand": manager_decision,
+                "callWindmill": bool(payload.get("callWindmill")),
+                "dryRun": bool(payload.get("dryRun", True)),
+            }
+        )
+        staff_responses.append(result)
+        if not (result.get("validation") or {}).get("passed"):
+            blocked = True
+            break
+    return {
+        "ok": not blocked,
+        "departmentId": department_id,
+        "commandId": command_id,
+        "managerContext": manager_context,
+        "managerDecision": {
+            **manager_decision,
+            "status": "blocked_validation" if blocked else "ready_to_continue",
+            "nextAction": "Retry or reroute the failed actor response before continuing." if blocked else "Continue the SEO action flow or request approval for external execution.",
+        },
+        "staffResponses": staff_responses,
+        "validation": {
+            "passed": not blocked,
+            "responseCount": len(staff_responses),
+            "failedActors": [
+                row.get("staffId")
+                for row in staff_responses
+                if not (row.get("validation") or {}).get("passed")
+            ],
+        },
+        "windmill": {
+            "configured": windmill_config()["configured"],
+            "managerActivityName": "worldbc.seo.manager.command",
+            "managerPath": f"/p/{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_manager_command",
+            "actorContracts": seo_staff_actor_contracts(),
+        },
+    }
+
+
+def seo_actor_manifest(department_id: str = "") -> dict[str, Any]:
+    department_id = str(department_id or SEO_DEMAND_ENGINE_DEPARTMENT_ID).strip() or SEO_DEMAND_ENGINE_DEPARTMENT_ID
+    return {
+        "ok": True,
+        "departmentId": department_id,
+        "manager": seo_staff_actor_runtime_context(department_id, "AIstaff_SEOManager"),
+        "actors": [
+            seo_staff_actor_runtime_context(department_id, staff_id)
+            for staff_id in SEO_STAFF_ACTOR_ORDER
+        ],
+        "bindings": seo_staff_actor_default_activity_bindings(),
+    }
 
 
 DEFAULT_ACTIVITY_BINDINGS = [
@@ -1956,6 +2824,37 @@ DEFAULT_ACTIVITY_BINDINGS = [
 ]
 
 
+def seo_staff_actor_default_activity_bindings() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = [
+        {
+            "bindingId": "binding_department_seo_demand_engine_manager_command",
+            "departmentId": SEO_DEMAND_ENGINE_DEPARTMENT_ID,
+            "activityName": "worldbc.seo.manager.command",
+            "label": "Sofia Manager Command API",
+            "windmillPath": f"/p/{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_manager_command",
+            "approvalRequired": False,
+            "dryRunSupported": True,
+            "status": "Active",
+            "summary": "Manager-facing command endpoint that receives panel commands, resolves actor context, and returns a validation-gated routing plan.",
+        }
+    ]
+    for contract in seo_staff_actor_contracts():
+        rows.append(
+            {
+                "bindingId": f"binding_department_seo_demand_engine_actor_{seo_staff_actor_slug(contract['staffId'])}",
+                "departmentId": SEO_DEMAND_ENGINE_DEPARTMENT_ID,
+                "activityName": contract["activityName"],
+                "label": f"{contract['alias']} Actor API",
+                "windmillPath": contract["windmillPath"],
+                "approvalRequired": False,
+                "dryRunSupported": True,
+                "status": "Active",
+                "summary": contract["purpose"],
+            }
+        )
+    return rows
+
+
 LEGACY_ACTIVITY_BINDING_IDS = {
     "binding_worldbc_wordpress_draft",
     "binding_worldbc_search_console_query",
@@ -1992,12 +2891,13 @@ def archive_legacy_activity_bindings() -> None:
 def ensure_default_activity_bindings() -> None:
     now = utc_ts()
     with connect() as conn:
-        for row in DEFAULT_ACTIVITY_BINDINGS:
+        for row in [*DEFAULT_ACTIVITY_BINDINGS, *seo_staff_actor_default_activity_bindings()]:
             payload = {
                 "summary": row.get("summary", ""),
                 "handler": "windmill",
-                "batch": "langgraph_windmill_foundation",
+                "batch": "seo_staff_actor_runtime",
                 "runnableKind": row.get("runnableKind", "script"),
+                "actorContract": next((contract for contract in seo_staff_actor_contracts() if contract.get("activityName") == row.get("activityName")), {}),
             }
             conn.execute(
                 """
@@ -2322,11 +3222,16 @@ def seo_flow_stage_module(stage_id: str, label: str, staff_id: str, staff_alias:
         "stageLabel": windmill_static(label),
         "staffId": windmill_static(staff_id),
         "staffAlias": windmill_static(staff_alias),
+        "targetStaffId": windmill_static(staff_id),
+        "command": windmill_static(summary),
         "mode": windmill_static(mode),
         "summary": windmill_static(summary),
         "activityRun": windmill_expr("flow_input.activityRun"),
         "input": windmill_expr("flow_input.input"),
         "staffContext": windmill_expr("flow_input.staffContext || {}"),
+        "actorContext": windmill_expr(f"(flow_input.actorContexts || {{}})['{staff_id}'] || {{}}"),
+        "managerCommand": windmill_expr("flow_input.managerCommand || {}"),
+        "stage": windmill_static({"id": stage_id, "label": label, "mode": mode, "ownerStaff": staff_id, "description": summary}),
         "previous": windmill_expr("results || {}"),
         "extra": windmill_static(extra or {}),
     }
@@ -2335,7 +3240,7 @@ def seo_flow_stage_module(stage_id: str, label: str, staff_id: str, staff_alias:
         "summary": f"{staff_alias} - {label}",
         "value": {
             "type": "script",
-            "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_staff_stage",
+            "path": seo_staff_actor_path(staff_id),
             "input_transforms": transforms,
         },
     }
@@ -2761,6 +3666,119 @@ def main(stageId="", stageLabel="", staffId="", staffAlias="", mode="", summary=
         output["nextAction"] = "Return QA findings to Sofia before WordPress/Make approval."
     return output
 '''.strip()
+    seo_actor_script = r'''
+import re
+
+
+def _words(text):
+    return re.findall(r"\b[\w'-]+\b", text or "")
+
+
+def _as_dict(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value):
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
+
+
+def _validation(response, actor_context):
+    checks = [
+        {"id": "has_summary", "passed": bool(response.get("summary"))},
+        {"id": "has_next_action", "passed": bool(response.get("nextAction"))},
+        {"id": "manager_route_respected", "passed": actor_context.get("staffId") == "AIstaff_SEOManager" or not response.get("humanFacingRequest")},
+        {"id": "has_context", "passed": bool(actor_context.get("baseKnowledge")) and "overrides" in actor_context},
+    ]
+    score = len([row for row in checks if row.get("passed")]) / max(1, len(checks))
+    return {"passed": score >= 0.75, "score": round(score, 2), "checks": checks}
+
+
+def main(activityRun=None, input=None, staffContext=None, command="", targetStaffId="", actorContext=None, managerCommand=None, stage=None, subtask=None):
+    data = input or {}
+    actor_context = actorContext or data.get("actorContext") or {}
+    actor = actor_context.get("actor") or {}
+    overrides = actor_context.get("overrides") or {}
+    command = command or data.get("command") or ""
+    staff_id = targetStaffId or data.get("targetStaffId") or actor_context.get("staffId") or ""
+    stage = stage or data.get("stage") or actor_context.get("selectedStage") or {}
+    subtask = subtask or data.get("subtask") or actor_context.get("selectedSubtask") or {}
+    source_text = data.get("sourceText") or data.get("text") or data.get("transcript") or ""
+    lanes = _list(overrides.get("laneIds"))
+    skills = _list(overrides.get("skillIds"))
+    summary = (
+        f"{actor.get('alias') or staff_id} processed the command as an independent SEO actor. "
+        f"Stage: {stage.get('label') or 'not selected'}. "
+        f"Context: {len(lanes)} lane override(s), {len(skills)} skill override(s), {len(overrides.get('assignedStages') or [])} assigned stage(s)."
+    )
+    response = {
+        "ok": True,
+        "status": "done",
+        "staffId": staff_id,
+        "alias": actor.get("alias") or "",
+        "title": actor.get("title") or "",
+        "command": command,
+        "summary": summary,
+        "result": {
+            "stageId": stage.get("id") or "",
+            "subtaskId": subtask.get("id") or "",
+            "sourceWordCount": len(_words(source_text)),
+            "lanesAvailable": lanes,
+            "skillsAvailable": skills,
+            "settings": _as_dict(overrides.get("settings")),
+        },
+        "nextAction": "Return this result to Sofia for validation and the next routing decision.",
+        "humanFacingRequest": False,
+    }
+    response["validation"] = _validation(response, actor_context)
+    return response
+'''.strip()
+    seo_manager_command_script = r'''
+import re
+
+
+def _norm(value):
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def _targets(command):
+    text = _norm(command)
+    routes = [
+        ("AIstaff_SEOSourceAnalyst", ["transcript", "source", "notes", "requirement", "extract", "uploaded"]),
+        ("AIstaff_SEOExpert", ["search console", "analytics", "keyword", "ranking", "rank", "performance", "traffic"]),
+        ("AIstaff_CaseStudyMapper", ["case study", "proof", "evidence", "claim", "reference"]),
+        ("AIstaff_SEOContentWriter", ["brief", "article", "draft", "content", "write", "metadata", "title"]),
+        ("AIstaff_InternalLinkBuilder", ["internal link", "anchor", "inventory", "crawl", "existing page"]),
+        ("AIstaff_SEOQAAnalyst", ["qa", "review", "validate", "quality", "check", "learn"]),
+        ("AIstaff_WordPressPublisher", ["wordpress", "publish", "make", "payload", "webhook"]),
+    ]
+    selected = [staff_id for staff_id, tokens in routes if any(token in text for token in tokens)]
+    return selected or ["AIstaff_SEOSourceAnalyst"]
+
+
+def main(activityRun=None, input=None, staffContext=None, command="", actorContext=None):
+    data = input or {}
+    command = command or data.get("command") or ""
+    target_staff_ids = data.get("targetStaffIds") or _targets(command)
+    return {
+        "ok": True,
+        "status": "routing_plan_ready",
+        "manager": "AIstaff_SEOManager",
+        "summary": f"Sofia accepted the command and prepared a routing plan for {len(target_staff_ids)} actor(s).",
+        "targets": target_staff_ids,
+        "nextAction": "Call each actor API with its resolved actorContext, then validate the returned response before continuing.",
+        "validation": {
+            "passed": bool(command),
+            "checks": [
+                {"id": "has_command", "passed": bool(command)},
+                {"id": "has_targets", "passed": bool(target_staff_ids)},
+            ],
+        },
+    }
+'''.strip()
     seo_workflow_script = r'''
 import datetime
 import re
@@ -3051,7 +4069,7 @@ def main(activityRun=None, input=None, mode="run_project", dry_run=True):
         "nextAction": "Review the draft package, then approve the WordPress/Make.com activity from the AI Department UI." if not missing else "Paste or upload source text for the SEO article.",
     }
 '''.strip()
-    return [
+    scripts = [
         {
             "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_staff_stage",
             "summary": "WorldBC SEO staff-labeled flow stage",
@@ -3101,6 +4119,28 @@ def main(activityRun=None, input=None, mode="run_project", dry_run=True):
             "tag": "",
         },
     ]
+    scripts.append(
+        {
+            "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_manager_command",
+            "summary": "Sofia manager command API",
+            "description": "Receives AI Department panel commands and returns a routing plan for independent SEO staff actor APIs.",
+            "content": seo_manager_command_script,
+            "schema": activity_schema,
+            "tag": "",
+        }
+    )
+    for contract in seo_staff_actor_contracts():
+        scripts.append(
+            {
+                "path": seo_staff_actor_path(contract["staffId"]),
+                "summary": f"{contract['alias']} actor API",
+                "description": f"Independent Windmill actor script for {contract['title']}. {contract['purpose']}",
+                "content": seo_actor_script,
+                "schema": activity_schema,
+                "tag": "",
+            }
+        )
+    return scripts
 
 
 def windmill_starter_flows() -> list[dict[str, Any]]:
@@ -3936,11 +4976,19 @@ def run_windmill_activity(activity_run: dict[str, Any], binding: dict[str, Any])
         **(request_payload.get("input") or {}),
         **secure_activity_runtime_input(activity_run.get("activityName") or "", activity_run.get("departmentId") or ""),
     }
+    actor_contexts = runtime_input.get("actorContexts") if isinstance(runtime_input.get("actorContexts"), dict) else {}
+    if not actor_contexts and activity_run.get("departmentId") == SEO_DEMAND_ENGINE_DEPARTMENT_ID:
+        actor_contexts = {
+            staff_id: seo_staff_actor_runtime_context(activity_run.get("departmentId") or "", staff_id, runtime_input)
+            for staff_id in SEO_STAFF_ACTOR_ORDER
+        }
     body = json.dumps(
         {
             "activityRun": activity_run,
             "input": runtime_input,
             "staffContext": request_payload.get("staffContext") or resolved_department_staff_context(activity_run.get("departmentId") or ""),
+            "actorContexts": actor_contexts,
+            "managerCommand": runtime_input.get("managerCommand") if isinstance(runtime_input.get("managerCommand"), dict) else {},
         },
         ensure_ascii=False,
         default=str,
