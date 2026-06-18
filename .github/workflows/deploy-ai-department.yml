@@ -1,0 +1,112 @@
+name: Deploy AI Department to Google Cloud
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ai-department-production
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0082422976
+  GCP_ZONE: europe-central2-a
+  GCE_INSTANCE: ai-department-vm
+  GCP_WORKLOAD_IDENTITY_PROVIDER: projects/998539683150/locations/global/workloadIdentityPools/github-actions/providers/github-ai-department
+  GCP_SERVICE_ACCOUNT: ai-department-deployer@gen-lang-client-0082422976.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    name: Deploy merged PR
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Python
+        run: |
+          python -m py_compile \
+            swiss_planner_command_center/local_store.py \
+            swiss_planner_command_center/server.py \
+            swiss_planner_command_center/langgraph_orchestrator.py
+
+      - name: Validate React bundle
+        run: node --check swiss_planner_command_center/react-app.js
+
+      - name: Validate deploy script
+        run: bash -n scripts/deploy_gce_release.sh
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Build deployment package
+        run: |
+          tar -czf ai-department-deploy.tar.gz \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='external_repos' \
+            --exclude='Implementation_Musahama' \
+            --exclude='backups' \
+            --exclude='outbox' \
+            --exclude='swiss_planner_command_center/swiss_planner_local.db*' \
+            --exclude='swiss_planner_command_center/*.log' \
+            --exclude='**/__pycache__' \
+            --exclude='*.pyc' \
+            README.md \
+            LICENSE \
+            .env.example \
+            GITHUB_HANDOFF.md \
+            docs \
+            gmail_bridge \
+            skills \
+            scripts \
+            swiss_planner_command_center
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Upload deployment package
+        run: |
+          gcloud compute scp ai-department-deploy.tar.gz \
+            "${GCE_INSTANCE}:/tmp/ai-department-deploy.tar.gz" \
+            --zone="${GCP_ZONE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --quiet
+
+      - name: Deploy release on VM
+        run: |
+          gcloud compute scp scripts/deploy_gce_release.sh \
+            "${GCE_INSTANCE}:/tmp/deploy_gce_release.sh" \
+            --zone="${GCP_ZONE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --quiet
+          gcloud compute ssh "${GCE_INSTANCE}" \
+            --zone="${GCP_ZONE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --quiet \
+            --command="chmod +x /tmp/deploy_gce_release.sh && DEPLOY_SHA='${GITHUB_SHA}' /tmp/deploy_gce_release.sh"
+
+      - name: Verify HTTPS
+        run: |
+          curl -fsS https://deptest.apastrof.com/ >/dev/null
+          curl -fsS https://deptest.apastrof.com/api/windmill/status >/dev/null

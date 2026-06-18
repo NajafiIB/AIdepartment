@@ -60,6 +60,39 @@ sudo certbot certificates
 sudo systemctl status certbot.timer
 ```
 
+## GitHub Auto Deploy
+
+GitHub Actions deploys merged PRs to the VM through `.github/workflows/deploy-ai-department.yml`.
+
+Trigger behavior:
+
+- Runs when a pull request into `main` is closed and `merged == true`.
+- Can also be run manually from GitHub Actions with `workflow_dispatch`.
+- Does not deploy unmerged or closed-without-merge PRs.
+
+The workflow:
+
+1. Checks out the repo.
+2. Runs Python compile checks.
+3. Runs `node --check` for `react-app.js`.
+4. Builds a source-only tarball that excludes `.env*`, local SQLite DBs, logs, backups, and generated runtime folders.
+5. Uploads the tarball to `ai-department-vm`.
+6. Extracts it as a release under `/opt/ai-department-releases/<commit-sha>`.
+7. Points `/opt/ai-department` to that release.
+8. Restarts `ai-department.service`.
+9. Verifies `https://deptest.apastrof.com/` and `/api/windmill/status`.
+
+Runtime state and secrets are not overwritten:
+
+- `/var/lib/ai-department/swiss_planner_local.db`
+- `/etc/ai-department/env`
+- Nginx and Certbot configuration
+
+GitHub authenticates to Google Cloud through Workload Identity Federation:
+
+- Service account: `ai-department-deployer@gen-lang-client-0082422976.iam.gserviceaccount.com`
+- Provider: `projects/998539683150/locations/global/workloadIdentityPools/github-actions/providers/github-ai-department`
+
 ## Deployment Notes
 
 - `capability_fabric.json` remains the source of truth for catalog definitions.
