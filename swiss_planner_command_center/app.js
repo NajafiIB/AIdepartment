@@ -31,6 +31,14 @@ const STAFF_ORDER = [
   "AIstaff_LeadPackSender",
   "AIstaff_FollowUpController",
   "AIstaff_CRMController",
+  "AIstaff_SEOManager",
+  "AIstaff_SEOSourceAnalyst",
+  "AIstaff_SEOExpert",
+  "AIstaff_CaseStudyMapper",
+  "AIstaff_SEOContentWriter",
+  "AIstaff_InternalLinkBuilder",
+  "AIstaff_SEOQAAnalyst",
+  "AIstaff_WordPressPublisher",
 ];
 
 function initNavigation() {
@@ -96,6 +104,14 @@ function staffProfile(value) {
     ["LeadPackSender", "Supplier Outreach Specialist", "PS", "send-person", "sender"],
     ["FollowUpController", "Follow-up Controller", "FU", "clock-person", "follow"],
     ["CRMController", "CRM Controller", "CRM", "database-person", "crm"],
+    ["SEOManager", "Sofia", "SEO", "person-check", "manager"],
+    ["SEOSourceAnalyst", "Tess", "TSA", "reader-person", "research"],
+    ["SEOExpert", "Nora", "SEO", "chart-person", "fit"],
+    ["CaseStudyMapper", "Cora", "CSM", "reader-person", "research"],
+    ["SEOContentWriter", "Hermes", "CW", "document-person", "maker"],
+    ["InternalLinkBuilder", "Iris", "IL", "search-person", "hunter"],
+    ["SEOQAAnalyst", "Vera", "QA", "document-person", "maker"],
+    ["WordPressPublisher", "Priya", "WP", "send-person", "sender"],
   ];
   const compact = id.replace(/^AIstaff_/, "").replace(/_/g, "");
   for (const [needle, label, initials, icon, tone] of profiles) {

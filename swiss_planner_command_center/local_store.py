@@ -83,7 +83,14 @@ DEFAULT_STAFF_ALIASES = {
     "AIstaff_ApplicationPackSender": "Omar",
     "AIstaff_FollowUpController": "Lina",
     "AIstaff_CRMController": "Noah",
+    "AIstaff_SEOManager": "Sofia",
+    "AIstaff_SEOSourceAnalyst": "Tess",
     "AIstaff_SEOExpert": "Nora",
+    "AIstaff_CaseStudyMapper": "Cora",
+    "AIstaff_SEOContentWriter": "Hermes",
+    "AIstaff_InternalLinkBuilder": "Iris",
+    "AIstaff_SEOQAAnalyst": "Vera",
+    "AIstaff_WordPressPublisher": "Priya",
 }
 
 FABRIC_COLLECTION_LABELS = {
@@ -2340,7 +2347,10 @@ def windmill_seo_staff_flow() -> dict[str, Any]:
         seo_flow_stage_module("tess_source_review", "Source Text Review", "AIstaff_SEOSourceAnalyst", "Tess", "source_review", "Read transcript/source material and extract reusable points."),
         seo_flow_stage_module("nora_seo_expert_analysis", "SEO Expert Analysis", "AIstaff_SEOExpert", "Nora", "seo_expert_analysis", "Use active SEO lanes such as Search Console, Analytics, Keyword Planner, GCP, local exports, and SEO research tools; report missing lanes and choose the right analysis template."),
         seo_flow_stage_module("cora_evidence_map", "Case Study And Evidence Map", "AIstaff_CaseStudyMapper", "Cora", "evidence_map", "Map proof, examples, references, and claims that need support."),
-        seo_flow_stage_module("iris_seo_qa", "Internal Links And SEO QA", "AIstaff_InternalLinkBuilder", "Iris", "seo_qa", "Check links, metadata, duplicate risk, and quality gates."),
+        seo_flow_stage_module("hermes_content_brief", "SEO Brief And Draft", "AIstaff_SEOContentWriter", "Hermes", "content_brief", "Create the SEO brief, draft outline, article angle, and metadata inputs from approved evidence."),
+        seo_flow_stage_module("iris_internal_links", "Internal Link Plan", "AIstaff_InternalLinkBuilder", "Iris", "internal_linking", "Suggest relevant internal links, anchors, and content inventory gaps before publishing."),
+        seo_flow_stage_module("vera_seo_qa", "SEO QA Review", "AIstaff_SEOQAAnalyst", "Vera", "seo_qa", "Check metadata, duplicate risk, content quality, references, and publishing readiness."),
+        seo_flow_stage_module("priya_wordpress_handoff", "WordPress Draft Handoff", "AIstaff_WordPressPublisher", "Priya", "wordpress_handoff", "Prepare WordPress/Make.com draft handoff and block external action until approval."),
         {
             "id": "sofia_approval_package",
             "summary": "Sofia - Approval-Ready WordPress Package",
@@ -3311,6 +3321,7 @@ def department_staff_ids_from_fabric(fabric: dict[str, Any], department: dict[st
             "AIstaff_SEOSourceAnalyst",
             "AIstaff_SEOExpert",
             "AIstaff_CaseStudyMapper",
+            "AIstaff_SEOContentWriter",
             "AIstaff_InternalLinkBuilder",
             "AIstaff_SEOQAAnalyst",
             "AIstaff_WordPressPublisher",
