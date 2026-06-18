@@ -1,11 +1,9 @@
 name: Deploy AI Department to Google Cloud
 
 on:
-  pull_request:
+  push:
     branches:
       - main
-    types:
-      - closed
   workflow_dispatch:
 
 permissions:
@@ -25,9 +23,8 @@ env:
 
 jobs:
   deploy:
-    name: Deploy merged PR
+    name: Deploy main
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
 
     steps:
       - name: Checkout

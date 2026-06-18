@@ -66,9 +66,10 @@ GitHub Actions deploys merged PRs to the VM through `.github/workflows/deploy-ai
 
 Trigger behavior:
 
-- Runs when a pull request into `main` is closed and `merged == true`.
+- Runs on every `push` to `main`.
+- A merged pull request deploys because GitHub creates a trusted push to `main`.
 - Can also be run manually from GitHub Actions with `workflow_dispatch`.
-- Does not deploy unmerged or closed-without-merge PRs.
+- Does not deploy from the `pull_request` event itself, because fork/PR contexts may not receive the GitHub OIDC token required for Google Cloud authentication.
 
 The workflow:
 
