@@ -6273,6 +6273,541 @@ function DepartmentOperationsExplorer({ dashboard, fabric, department, runOne, o
   );
 }
 
+const SEO_STAGE_WORKSPACE_STORAGE_KEY = "worldbcSeoStageWorkspaceDraft.v1";
+
+function seoWorkspaceStorageKey(departmentId = "") {
+  return `${SEO_STAGE_WORKSPACE_STORAGE_KEY}:${departmentId || "default"}`;
+}
+
+function loadSeoWorkspaceDraft(departmentId = "") {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(seoWorkspaceStorageKey(departmentId)) || "null");
+    if (stored && typeof stored === "object") return { byStage: stored.byStage || {}, savedAt: stored.savedAt || "" };
+  } catch (error) {
+    console.warn(error);
+  }
+  return { byStage: {}, savedAt: "" };
+}
+
+function seoWorkspaceReadiness(stage = {}) {
+  const state = normalizedText(stage.readinessState || stage.readiness || "");
+  if (state) return String(stage.readinessState || stage.readiness).replace(/_/g, " ");
+  const lanes = [...((stage.stage || {}).lanes || []), ...((stage.laneAdapters || []).map(row => row.id || row.objectId || ""))].join(" ");
+  const gates = ((stage.stage || {}).qualityGates || (stage.stage || {}).requiredQualityGates || []).join(" ");
+  if (normalizedText(lanes).includes("search console") || normalizedText(lanes).includes("google analytics")) return "Needs setup";
+  if (normalizedText(gates).includes("publish approval")) return "Needs approval";
+  return "Ready";
+}
+
+function seoWorkspaceTone(value = "") {
+  const text = normalizedText(value);
+  if (text.includes("block") || text.includes("missing") || text.includes("inactive")) return "danger";
+  if (text.includes("approval") || text.includes("setup") || text.includes("need")) return "warn";
+  if (text.includes("ready") || text.includes("active")) return "success";
+  return "neutral";
+}
+
+function seoWorkspaceMode(stageId = "") {
+  return String(stageId || "")
+    .replace(/^stage_/, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    || "stage";
+}
+
+function seoWorkspaceStageGoal(stage = {}, recipe = {}, capability = {}) {
+  const row = stage.stage || stage;
+  return row.goal || row.purpose || row.summary || recipe.summary || capability.summary || stage.nextAction || "Run this SEO department stage with manager-ready evidence and next actions.";
+}
+
+function seoWorkspaceStageDetail(stage = {}, recipe = {}, capability = {}) {
+  const row = stage.stage || stage;
+  const staffId = (stage.staff || {}).id || row.ownerStaff || recipe.ownerStaff || capability.ownerStaff || "AIstaff_SEOManager";
+  const staff = staffProfile(staffId);
+  const summary = row.summary || recipe.summary || capability.summary || "This stage belongs to the WorldBC SEO demand engine workflow.";
+  const next = stage.nextAction || row.nextAction || "Route the result to Sofia for review and approval.";
+  return `${staff.label} owns this step. ${summary} Next action: ${next}`;
+}
+
+function seoWorkspaceListIds(rows = []) {
+  return uniqueValues((rows || []).map(row => {
+    if (!row) return "";
+    if (typeof row === "string") return row;
+    return row.id || row.objectId || row.label || "";
+  }));
+}
+
+function defaultSeoWorkspaceStages() {
+  const recipes = {
+    recipe_seo_source_intake: ["Read Source Text And Extract Department Requirements", "seo_source_intake", "SEO Source And Transcript Intake"],
+    recipe_seo_data_analysis: ["Analyze Search Performance By Website", "seo_data_analysis", "SEO Data Analysis"],
+    recipe_seo_keyword_strategy: ["Rank Reoptimization And New Content Opportunities", "seo_keyword_strategy", "SEO Keyword Strategy"],
+    recipe_seo_case_study_mapping: ["Map Case Studies To Keywords", "seo_case_study_mapping", "SEO Case Study Mapping"],
+    recipe_seo_content_generation: ["Generate SEO Briefs And Article Drafts", "seo_content_generation", "SEO Brief And Article Draft Generation"],
+    recipe_seo_internal_linking: ["Build Internal Link Plan", "seo_internal_linking", "SEO Internal Linking"],
+    recipe_seo_publishing_ops: ["Prepare And Publish With Approval", "seo_publishing_ops", "SEO Publishing Ops"],
+    recipe_seo_performance_learning: ["Track SEO Performance And Learn", "seo_performance_learning", "SEO Performance Learning Loop"],
+  };
+  const rows = [
+    ["stage_read_transcript", "Read Transcript", "AIstaff_SEOSourceAnalyst", "recipe_seo_source_intake", "Ready", "Turn pasted transcripts, lessons, briefs, and source notes into evidence the SEO department can use downstream.", "Confirm source text is available, then extract reusable requirements and evidence gaps.", ["lane_local_transcript_reader"], ["gate_source_text_extract_complete"], ["source_summary", "extracted_terms", "claim_map", "missing_context"]],
+    ["stage_extract_requirements", "Extract Operating Requirements", "AIstaff_SEOSourceAnalyst", "recipe_seo_source_intake", "Needs source", "Convert source notes into workflow, staff, tools, datasets, outputs, and quality gate requirements.", "Ask Sofia for missing source text or approve the requirement extraction.", ["lane_ai_reasoning"], ["gate_safe_routing"], ["workflow_requirements", "missing_inputs", "routing_notes"]],
+    ["stage_connect_search_console", "Connect Search Console", "AIstaff_SEOExpert", "recipe_seo_data_analysis", "Needs setup", "Connect or verify the Search Console source for the target website.", "Connect Search Console or upload a validated export.", ["lane_search_console_api"], ["gate_search_console_connected"], ["search_console_source_status"]],
+    ["stage_analyze_clicks_impressions", "Analyze Clicks And Impressions", "AIstaff_SEOExpert", "recipe_seo_data_analysis", "Needs setup", "Read Search Console and Analytics evidence to find query and page movement.", "Connect Search Console or upload an export before live analysis.", ["lane_search_console_api", "lane_google_analytics_api"], ["gate_keyword_opportunity_evidence"], ["data_sources_used", "missing_sources", "keyword_opportunities"]],
+    ["stage_find_half_ranked_keywords", "Find Half-Ranked Keywords", "AIstaff_SEOExpert", "recipe_seo_keyword_strategy", "Needs setup", "Find keywords with useful impressions and under-optimized ranking positions.", "Prepare a ranked opportunity set for Sofia.", ["lane_search_console_api"], ["gate_keyword_opportunity_evidence"], ["ranked_keyword_opportunities"]],
+    ["stage_prioritize_opportunities", "Prioritize Opportunities", "AIstaff_SEOExpert", "recipe_seo_keyword_strategy", "Ready", "Prioritize reoptimization and new content opportunities by evidence, effort, and business fit.", "Send the priority list to Cora for case-study mapping.", ["lane_ai_reasoning"], ["gate_keyword_opportunity_evidence"], ["priority_keyword_queue"]],
+    ["stage_select_case_study", "Select Case Study", "AIstaff_CaseStudyMapper", "recipe_seo_case_study_mapping", "Ready", "Select relevant first-hand proof and data for each keyword or content angle.", "Map the strongest WorldBC proof to the selected keyword.", ["lane_local_transcript_reader", "lane_ai_reasoning"], ["gate_case_study_specificity"], ["case_study_match"]],
+    ["stage_generate_content_brief", "Generate Content Brief", "AIstaff_SEOContentWriter", "recipe_seo_content_generation", "Needs approval", "Create an SEO brief from keyword, source evidence, and matched case-study proof.", "Prepare the brief and route to Sofia before drafting.", ["lane_seo_content_worker"], ["gate_case_study_specificity", "gate_seo_metadata_check"], ["seo_content_brief"]],
+    ["stage_generate_article_drafts", "Generate Article Drafts", "AIstaff_SEOContentWriter", "recipe_seo_content_generation", "Needs approval", "Generate SEO article drafts from approved keyword and case-study evidence.", "Prepare article drafts and route them through Vera and Sofia before WordPress handoff.", ["lane_seo_content_worker"], ["gate_content_not_generic", "gate_seo_metadata_check"], ["seo_article_drafts"]],
+    ["stage_crawl_existing_content", "Crawl Existing Content", "AIstaff_InternalLinkBuilder", "recipe_seo_internal_linking", "Needs setup", "Find relevant existing pages and anchors for internal linking before publishing.", "Prepare an internal link plan for the draft.", ["lane_internal_link_crawler"], ["gate_internal_links_check"], ["internal_link_plan"]],
+    ["stage_prepare_wordpress_payload", "Prepare WordPress Payload", "AIstaff_WordPressPublisher", "recipe_seo_publishing_ops", "Needs approval", "Prepare WordPress title, HTML, excerpt, categories, tags, slug, and checklist.", "Create an approval-ready WordPress payload for Sofia and Iman.", ["lane_wordpress_publisher"], ["gate_publish_approval"], ["wordpress_publish_package"]],
+    ["stage_trigger_make_or_publish", "Trigger Make.com Or Publish", "AIstaff_WordPressPublisher", "recipe_seo_publishing_ops", "Blocked", "Trigger Make.com or publish only after explicit human approval.", "Wait for Iman approval before calling the publishing automation.", ["lane_make_com_automation", "lane_wordpress_publisher"], ["gate_publish_approval", "gate_post_publish_url_logged"], ["published_url_log"]],
+    ["stage_collect_post_publish_metrics", "Collect Post-Publish Metrics", "AIstaff_SEOExpert", "recipe_seo_performance_learning", "Needs setup", "Collect rankings, clicks, impressions, and engagement after publishing.", "Collect post-publish metrics once a URL is logged.", ["lane_search_console_api", "lane_google_analytics_api"], ["gate_post_publish_url_logged"], ["post_publish_metrics"]],
+    ["stage_create_learning_report", "Create Learning Report", "AIstaff_SEOExpert", "recipe_seo_performance_learning", "Ready", "Create learning notes for the next SEO cycle from post-publish performance.", "Prepare the learning report for Sofia.", ["lane_ai_reasoning"], ["gate_keyword_opportunity_evidence"], ["seo_learning_report"]],
+  ];
+  return rows.map(([id, label, ownerStaff, recipeId, readiness, goal, nextAction, lanes, qualityGates, outputs]) => ({
+    id,
+    label,
+    ownerStaff,
+    staffAlias: staffProfile(ownerStaff).label,
+    staffTitle: staffJobTitle(ownerStaff),
+    recipeId,
+    recipeLabel: (recipes[recipeId] || [recipeId])[0],
+    capabilityId: (recipes[recipeId] || ["", "seo"])[1],
+    capabilityLabel: (recipes[recipeId] || ["", "", "SEO"])[2],
+    readiness,
+    goal,
+    detail: `${staffProfile(ownerStaff).label} owns this step. ${goal} Next action: ${nextAction}`,
+    nextAction,
+    lanes,
+    skills: ["staff_skill_thinking_analyst", "staff_skill_report_maker"],
+    qualityGates,
+    outputs,
+    script: {
+      windmillPath: "u/admin/seo_demand_engine_worldbc_staff_stage_v2",
+      mode: seoWorkspaceMode(id),
+      inputContract: "sourceText, topic, keyword evidence, case-study context, staffContext, approvals",
+      outputContract: "stageId, staffId, status, evidence, missingInputs, nextAction, approvalRequest",
+    },
+  }));
+}
+
+function buildSeoWorkspaceStages(fabric = {}, department = {}, scenario = {}) {
+  if (!((fabric.recipes || []).length)) fabric = activeFabric();
+  const capabilityLookup = byId(fabric.capabilities || []);
+  const recipeLookup = byId(fabric.recipes || []);
+  const scenarioStages = (scenario.stages || []).filter(stage => {
+    const row = stage.stage || {};
+    const blob = normalizedText([row.id, row.label, row.capabilityId, row.recipeId, (stage.staff || {}).id].join(" "));
+    return blob.includes("seo") || blob.includes("wordpress") || blob.includes("content") || departmentHasSeoWork(department);
+  });
+  if (scenarioStages.length) {
+    return scenarioStages.map((stage, index) => {
+      const row = stage.stage || {};
+      const recipe = recipeLookup[row.recipeId] || {};
+      const capability = capabilityLookup[row.capabilityId] || {};
+      const staffId = (stage.staff || {}).id || row.ownerStaff || recipe.ownerStaff || capability.ownerStaff || "AIstaff_SEOManager";
+      const lanes = uniqueValues([...(row.lanes || []), ...seoWorkspaceListIds(stage.laneAdapters || [])]);
+      const skills = uniqueValues([...(row.skills || []), ...seoWorkspaceListIds(stage.skillPacks || [])]);
+      const qualityGates = uniqueValues([...(row.qualityGates || row.requiredQualityGates || []), ...seoWorkspaceListIds(stage.qualityGates || [])]);
+      return {
+        id: row.id || `seo_stage_${index + 1}`,
+        label: row.label || `SEO Stage ${index + 1}`,
+        ownerStaff: staffId,
+        staffAlias: staffProfile(staffId).label,
+        staffTitle: staffJobTitle(staffId),
+        recipeId: row.recipeId || recipe.id || "",
+        recipeLabel: row.recipeLabel || recipe.label || "",
+        capabilityId: row.capabilityId || recipe.capabilityId || capability.id || "",
+        capabilityLabel: row.capabilityLabel || capability.label || "",
+        readiness: seoWorkspaceReadiness(stage),
+        goal: seoWorkspaceStageGoal(stage, recipe, capability),
+        detail: seoWorkspaceStageDetail(stage, recipe, capability),
+        nextAction: stage.nextAction || row.nextAction || "Prepare a manager-ready result for Sofia.",
+        lanes,
+        skills,
+        qualityGates,
+        outputs: uniqueValues([...(row.outputs || []), ...(recipe.outputs || []), ...(capability.outputs || [])]),
+        script: {
+          windmillPath: "u/admin/seo_demand_engine_worldbc_staff_stage_v2",
+          mode: seoWorkspaceMode(row.id),
+          inputContract: "sourceText, topic, keyword evidence, case-study context, staffContext, approvals",
+          outputContract: "stageId, staffId, status, evidence, missingInputs, nextAction, approvalRequest",
+        },
+      };
+    });
+  }
+  const recipeStages = (fabric.recipes || [])
+    .filter(recipe => normalizedText([recipe.id, recipe.capabilityId, recipe.label, recipe.summary].join(" ")).includes("seo"))
+    .flatMap(recipe => (recipe.stages || []).map((stage, index) => {
+      const capability = capabilityLookup[recipe.capabilityId] || {};
+      const staffId = stage.ownerStaff || recipe.ownerStaff || capability.ownerStaff || "AIstaff_SEOManager";
+      return {
+        id: stage.id || `${recipe.id}_stage_${index + 1}`,
+        label: stage.label || `SEO Stage ${index + 1}`,
+        ownerStaff: staffId,
+        staffAlias: staffProfile(staffId).label,
+        staffTitle: staffJobTitle(staffId),
+        recipeId: recipe.id,
+        recipeLabel: recipe.label,
+        capabilityId: recipe.capabilityId || "",
+        capabilityLabel: capability.label || "",
+        readiness: seoWorkspaceReadiness({ stage }),
+        goal: seoWorkspaceStageGoal(stage, recipe, capability),
+        detail: seoWorkspaceStageDetail(stage, recipe, capability),
+        nextAction: "Prepare this stage output and route it to Sofia for review.",
+        lanes: stage.lanes || [],
+        skills: stage.skills || [],
+        qualityGates: stage.qualityGates || stage.requiredQualityGates || [],
+        outputs: uniqueValues([...(stage.outputs || []), ...(recipe.outputs || []), ...(capability.outputs || [])]),
+        script: {
+          windmillPath: "u/admin/seo_demand_engine_worldbc_staff_stage_v2",
+          mode: seoWorkspaceMode(stage.id),
+          inputContract: "sourceText, topic, keyword evidence, case-study context, staffContext, approvals",
+          outputContract: "stageId, staffId, status, evidence, missingInputs, nextAction, approvalRequest",
+        },
+      };
+    }));
+  return recipeStages.length ? recipeStages : defaultSeoWorkspaceStages();
+}
+
+function SeoStageWorkspacePanel({ fabric = {}, department = {}, openTaskDialog }) {
+  const [activeTab, setActiveTab] = useState("workspace");
+  const [selectedStageId, setSelectedStageId] = useState("");
+  const [draftState, setDraftState] = useState(() => loadSeoWorkspaceDraft(department.id));
+  const [scenarioState, setScenarioState] = useState({ loading: true, scenario: null, error: "" });
+  const [newGate, setNewGate] = useState("");
+  const [newLane, setNewLane] = useState("");
+  const [newSkill, setNewSkill] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+
+  useEffect(() => {
+    setDraftState(loadSeoWorkspaceDraft(department.id));
+    setSaveMessage("");
+  }, [department.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadScenario() {
+      if (!department.id) {
+        setScenarioState({ loading: false, scenario: null, error: "" });
+        return;
+      }
+      setScenarioState({ loading: true, scenario: null, error: "" });
+      try {
+        const scenario = await api(`/api/p4/scenario-map?departmentId=${encodeURIComponent(department.id)}`, { timeoutMs: 4500 });
+        if (!cancelled) setScenarioState({ loading: false, scenario, error: "" });
+      } catch (error) {
+        if (!cancelled) setScenarioState({ loading: false, scenario: null, error: error.message || String(error) });
+      }
+    }
+    loadScenario();
+    return () => { cancelled = true; };
+  }, [department.id]);
+
+  const laneLookup = byId(fabric.laneAdapters || []);
+  const skillLookup = byId(fabric.skillPacks || []);
+  const stages = useMemo(() => buildSeoWorkspaceStages(fabric, department, scenarioState.scenario || {}), [fabric, department.id, scenarioState.scenario]);
+  const stageIds = stages.map(stage => stage.id).join("|");
+  const selectedBaseStage = stages.find(stage => stage.id === selectedStageId) || stages[0] || null;
+  const selectedDraft = selectedBaseStage ? ((draftState.byStage || {})[selectedBaseStage.id] || {}) : {};
+  const selectedStage = selectedBaseStage ? {
+    ...selectedBaseStage,
+    ...selectedDraft,
+    script: { ...(selectedBaseStage.script || {}), ...((selectedDraft && selectedDraft.script) || {}) },
+  } : null;
+
+  useEffect(() => {
+    if (!stages.length) return;
+    if (!stages.some(stage => stage.id === selectedStageId)) setSelectedStageId(stages[0].id);
+  }, [stageIds, selectedStageId]);
+
+  function updateSelectedStage(patch) {
+    if (!selectedStage) return;
+    setSaveMessage("");
+    setDraftState(current => ({
+      ...current,
+      byStage: {
+        ...(current.byStage || {}),
+        [selectedStage.id]: {
+          ...((current.byStage || {})[selectedStage.id] || {}),
+          ...patch,
+        },
+      },
+    }));
+  }
+
+  function updateScript(patch) {
+    if (!selectedStage) return;
+    const currentScript = (((draftState.byStage || {})[selectedStage.id] || {}).script) || {};
+    updateSelectedStage({ script: { ...currentScript, ...patch } });
+  }
+
+  function addListValue(key, value, reset) {
+    if (!selectedStage || !value) return;
+    updateSelectedStage({ [key]: uniqueValues([...(selectedStage[key] || []), value]) });
+    if (reset) reset("");
+  }
+
+  function removeListValue(key, value) {
+    if (!selectedStage) return;
+    updateSelectedStage({ [key]: (selectedStage[key] || []).filter(item => item !== value) });
+  }
+
+  function saveDraft() {
+    const next = { ...draftState, savedAt: new Date().toISOString() };
+    window.localStorage.setItem(seoWorkspaceStorageKey(department.id), JSON.stringify(next));
+    setDraftState(next);
+    setSaveMessage("Workspace draft saved.");
+  }
+
+  function resetDraft() {
+    window.localStorage.removeItem(seoWorkspaceStorageKey(department.id));
+    setDraftState({ byStage: {}, savedAt: "" });
+    setSaveMessage("Workspace draft reset.");
+  }
+
+  function renderChipList(key, values = []) {
+    return values.length ? h("div", { className: "seo-stage-chip-list" },
+      values.map(value => h("span", { className: "seo-stage-chip", key: `${key}-${value}` },
+        h("span", null, promptRuleLabel(value)),
+        h("button", { type: "button", title: "Remove", onClick: () => removeListValue(key, value) }, icon("x"))
+      ))
+    ) : h("p", { className: "muted" }, "No items assigned yet.");
+  }
+
+  function renderWorkspaceTab() {
+    return h("div", { className: "seo-stage-workspace-grid" },
+      h("section", { className: "seo-stage-form-stack" },
+        h(Field, { label: "Goal of this step" }, h(Textarea, { value: selectedStage.goal || "", rows: 5, onChange: event => updateSelectedStage({ goal: event.target.value }) })),
+        h(Field, { label: "Step detail" }, h(Textarea, { value: selectedStage.detail || "", rows: 8, onChange: event => updateSelectedStage({ detail: event.target.value }) })),
+        h(Field, { label: "Next action" }, h(Input, { value: selectedStage.nextAction || "", onChange: event => updateSelectedStage({ nextAction: event.target.value }) }))
+      ),
+      h("aside", { className: "seo-stage-side-stack" },
+        h("article", { className: "seo-stage-info-panel" },
+          h("p", { className: "eyebrow" }, "Step summary"),
+          h(DetailList, { rows: [
+            { label: "Capability", value: selectedStage.capabilityLabel || selectedStage.capabilityId },
+            { label: "Recipe", value: selectedStage.recipeLabel || selectedStage.recipeId },
+            { label: "Assigned staff", value: h(StaffChip, { staffId: selectedStage.ownerStaff }), raw: true },
+            { label: "Outputs", value: (selectedStage.outputs || []).map(promptRuleLabel).join(", ") || "Manager-ready result", length: 260 },
+          ] })
+        ),
+        h("article", { className: "seo-stage-info-panel" },
+          h("p", { className: "eyebrow" }, "Quality gates"),
+          renderChipList("qualityGates", selectedStage.qualityGates || []),
+          h("div", { className: "seo-stage-add-row" },
+            h(Input, { value: newGate, placeholder: "gate_new_check", onChange: event => setNewGate(event.target.value) }),
+            h(Button, { variant: "outline", size: "icon", title: "Add quality gate", onClick: () => addListValue("qualityGates", newGate.trim(), setNewGate) }, icon("plus"))
+          )
+        )
+      )
+    );
+  }
+
+  function renderLanesTab() {
+    const laneOptions = Object.values(laneLookup).filter(row => normalizedText([row.id, row.label, row.routeType].join(" ")).includes("seo") || (selectedStage.lanes || []).includes(row.id));
+    return h("div", { className: "seo-stage-table-stack" },
+      h("div", { className: "seo-stage-tab-head" },
+        h("div", null, h("h3", null, "Data lanes used in this step"), h("p", null, "Saved as stage-level lane assignments for this department workspace draft.")),
+        h("div", { className: "seo-stage-add-row" },
+          h(Select, { value: newLane, onChange: event => setNewLane(event.target.value), "aria-label": "Add lane" },
+            h("option", { value: "" }, "Add lane"),
+            laneOptions.map(row => h("option", { key: row.id, value: row.id }, row.label || row.id))
+          ),
+          h(Button, { variant: "outline", onClick: () => addListValue("lanes", newLane, setNewLane) }, icon("plus"), "Add")
+        )
+      ),
+      h("div", { className: "seo-stage-table-wrap" },
+        h("table", { className: "seo-stage-table" },
+          h("thead", null, h("tr", null, h("th", null, "Lane"), h("th", null, "Route type"), h("th", null, "Data handled"), h("th", null, "Status"), h("th", null))),
+          h("tbody", null, (selectedStage.lanes || []).map(id => {
+            const lane = laneLookup[id] || { id, label: promptRuleLabel(id), routeType: "custom lane", status: "Draft" };
+            const dataHandled = namesFromIds([...(lane.connections || []), ...(lane.databases || []), ...(lane.aiSupport || [])], byId([...(fabric.connections || []), ...(fabric.databases || []), ...(fabric.aiModels || [])]), lane.data || "Stage data");
+            return h("tr", { key: id },
+              h("td", null, h("strong", null, lane.label || id), h("small", null, id)),
+              h("td", null, lane.routeType || lane.type || "tool/data route"),
+              h("td", null, dataHandled),
+              h("td", null, h(Badge, { tone: seoWorkspaceTone(lane.status || "Ready") }, lane.status || "Ready")),
+              h("td", null, h(Button, { variant: "outline", onClick: () => removeListValue("lanes", id) }, "Remove"))
+            );
+          }))
+        )
+      )
+    );
+  }
+
+  function renderSkillsTab() {
+    const skillOptions = Object.values(skillLookup).filter(row => normalizedText([row.id, row.label, row.summary].join(" ")).includes("seo") || (selectedStage.skills || []).includes(row.id));
+    return h("div", { className: "seo-stage-table-stack" },
+      h("div", { className: "seo-stage-tab-head" },
+        h("div", null, h("h3", null, "Skills used in this step"), h("p", null, "Skills resolve the behavior and guardrails for the assigned staff at this stage.")),
+        h("div", { className: "seo-stage-add-row" },
+          h(Select, { value: newSkill, onChange: event => setNewSkill(event.target.value), "aria-label": "Add skill" },
+            h("option", { value: "" }, "Add skill"),
+            skillOptions.map(row => h("option", { key: row.id, value: row.id }, row.label || row.id))
+          ),
+          h(Button, { variant: "outline", onClick: () => addListValue("skills", newSkill, setNewSkill) }, icon("plus"), "Add")
+        )
+      ),
+      h("div", { className: "seo-stage-skill-grid" },
+        (selectedStage.skills || []).length ? (selectedStage.skills || []).map(id => {
+          const skill = skillLookup[id] || { id, label: promptRuleLabel(id), summary: "Custom stage skill." };
+          return h("article", { className: "seo-stage-skill-card", key: id },
+            h("div", null, h("strong", null, skill.label || id), h("small", null, skill.scope || skill.id || "Stage skill")),
+            h("p", null, skill.rule || skill.summary || "Skill rule for this SEO stage."),
+            h(Button, { variant: "outline", onClick: () => removeListValue("skills", id) }, "Remove")
+          );
+        }) : h("p", { className: "muted" }, "No skill packs are assigned yet.")
+      )
+    );
+  }
+
+  function renderScriptTab() {
+    const script = selectedStage.script || {};
+    return h("div", { className: "seo-stage-script-grid" },
+      h("section", { className: "seo-stage-form-stack" },
+        h(Field, { label: "Windmill script path" }, h(Input, { value: script.windmillPath || "", onChange: event => updateScript({ windmillPath: event.target.value }) })),
+        h(Field, { label: "Stage mode" }, h(Input, { value: script.mode || "", onChange: event => updateScript({ mode: event.target.value }) })),
+        h("div", { className: "seo-stage-two-col" },
+          h(Field, { label: "Input contract" }, h(Textarea, { value: script.inputContract || "", rows: 6, onChange: event => updateScript({ inputContract: event.target.value }) })),
+          h(Field, { label: "Output contract" }, h(Textarea, { value: script.outputContract || "", rows: 6, onChange: event => updateScript({ outputContract: event.target.value }) }))
+        )
+      ),
+      h("aside", { className: "seo-stage-info-panel" },
+        h("p", { className: "eyebrow" }, `${selectedStage.staffAlias} in this step`),
+        h("h3", null, selectedStage.staffAlias),
+        h("p", null, selectedStage.staffTitle),
+        h("div", { className: "seo-stage-note-box" },
+          h("strong", null, "Script responsibility"),
+          h("p", null, `${selectedStage.staffAlias} prepares structured evidence, missing inputs, and the next action for Sofia before any external automation runs.`)
+        )
+      )
+    );
+  }
+
+  function renderSettingsTab() {
+    const preview = {
+      departmentId: department.id,
+      stageId: selectedStage.id,
+      stageProfile: {
+        label: selectedStage.label,
+        readiness: selectedStage.readiness,
+        ownerStaff: selectedStage.ownerStaff,
+        staffAlias: selectedStage.staffAlias,
+        capabilityId: selectedStage.capabilityId,
+        recipeId: selectedStage.recipeId,
+        lanes: selectedStage.lanes,
+        skills: selectedStage.skills,
+        qualityGates: selectedStage.qualityGates,
+        script: selectedStage.script,
+      },
+    };
+    return h("div", { className: "seo-stage-script-grid" },
+      h("section", { className: "seo-stage-form-stack" },
+        h("div", { className: "seo-stage-two-col" },
+          h(Field, { label: "Stage name" }, h(Input, { value: selectedStage.label || "", onChange: event => updateSelectedStage({ label: event.target.value }) })),
+          h(Field, { label: "Readiness" }, h(Select, { value: selectedStage.readiness || "Ready", onChange: event => updateSelectedStage({ readiness: event.target.value }) },
+            ["Ready", "Needs source", "Needs setup", "Needs approval", "Blocked", "Draft"].map(item => h("option", { key: item, value: item }, item))
+          ))
+        ),
+        h("div", { className: "seo-stage-two-col" },
+          h(Field, { label: "Staff display name" }, h(Input, { value: selectedStage.staffAlias || "", onChange: event => updateSelectedStage({ staffAlias: event.target.value }) })),
+          h(Field, { label: "Staff job title" }, h(Input, { value: selectedStage.staffTitle || "", onChange: event => updateSelectedStage({ staffTitle: event.target.value }) }))
+        ),
+        h("div", { className: "seo-stage-two-col" },
+          h(Field, { label: "Capability ID" }, h(Input, { value: selectedStage.capabilityId || "", onChange: event => updateSelectedStage({ capabilityId: event.target.value }) })),
+          h(Field, { label: "Owner staff ID" }, h(Input, { value: selectedStage.ownerStaff || "", onChange: event => updateSelectedStage({ ownerStaff: event.target.value }) }))
+        )
+      ),
+      h("aside", { className: "seo-stage-info-panel" },
+        h("p", { className: "eyebrow" }, "Write preview"),
+        h("pre", { className: "seo-stage-json-preview" }, JSON.stringify(preview, null, 2)),
+        h(Button, { variant: "outline", onClick: resetDraft }, icon("refresh"), "Reset workspace draft")
+      )
+    );
+  }
+
+  if (scenarioState.loading && !stages.length) {
+    return h("section", { className: "seo-stage-workspace-shell" },
+      h(EmptyState, { title: "Loading SEO stage workspace", body: "Resolving WorldBC SEO stages, staff, tools, and readiness." })
+    );
+  }
+  if (!selectedStage) {
+    return h("section", { className: "seo-stage-workspace-shell" },
+      h(EmptyState, { title: "No SEO stages", body: "This department does not have SEO stages resolved yet." })
+    );
+  }
+
+  const tabs = [
+    ["workspace", "Step workspace"],
+    ["lanes", "Data lanes"],
+    ["skills", "Skills"],
+    ["script", `${selectedStage.staffAlias || "Staff"} script`],
+    ["settings", "Settings"],
+  ];
+  const savedText = draftState.savedAt ? `Saved ${new Date(draftState.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Unsaved workspace draft";
+
+  return h("section", { className: "seo-stage-workspace-shell" },
+    h("div", { className: "seo-stage-banner" },
+      h("div", null,
+        h("p", { className: "eyebrow" }, "Stage workspace"),
+        h("h2", null, selectedStage.label),
+        h("p", null, selectedStage.goal)
+      ),
+      h("div", { className: "seo-stage-banner-actions" },
+        h(Badge, { tone: seoWorkspaceTone(selectedStage.readiness) }, selectedStage.readiness),
+        h(Button, { onClick: saveDraft }, icon("save"), "Save step"),
+        h(Button, { variant: "secondary", onClick: () => openTaskDialog && openTaskDialog({ assignedTo: "AIstaff_SEOManager", taskType: "SEO Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), "Message Sofia")
+      )
+    ),
+    h("div", { className: "seo-stage-meta-row" },
+      h("span", null, `Department: ${department.id || "department_seo_demand_engine"}`),
+      h("span", null, `Recipe: ${selectedStage.recipeId || "recipe"}`),
+      h("span", null, `Owner: ${selectedStage.staffAlias || staffProfile(selectedStage.ownerStaff).label}`),
+      h("span", null, saveMessage || savedText),
+      scenarioState.error ? h("span", { className: "warn" }, "Using catalog fallback") : null
+    ),
+    h("div", { className: "seo-stage-layout" },
+      h("aside", { className: "seo-stage-rail" },
+        h("div", { className: "seo-stage-rail-head" },
+          h("div", null, h("p", { className: "eyebrow" }, "Workflow stages"), h("span", null, `${stages.length} configured`)),
+          h(Badge, null, "SEO")
+        ),
+        h("div", { className: "seo-stage-rail-list" },
+          stages.map(stage => h("button", {
+            key: stage.id,
+            type: "button",
+            className: cn("seo-stage-row", stage.id === selectedStage.id && "active"),
+            onClick: () => { setSelectedStageId(stage.id); setActiveTab("workspace"); },
+          },
+            h("span", null, h("strong", null, stage.label), h(Badge, { tone: seoWorkspaceTone(((draftState.byStage || {})[stage.id] || {}).readiness || stage.readiness) }, ((draftState.byStage || {})[stage.id] || {}).readiness || stage.readiness)),
+            h("small", null, `${stage.staffAlias} / ${stage.capabilityId || "seo"}`)
+          ))
+        )
+      ),
+      h("div", { className: "seo-stage-main-panel" },
+        h("div", { className: "seo-stage-tabs", role: "tablist", "aria-label": "SEO stage workspace tabs" },
+          tabs.map(([id, label]) => h("button", {
+            key: id,
+            type: "button",
+            role: "tab",
+            "aria-selected": activeTab === id,
+            className: cn("seo-stage-tab", activeTab === id && "active"),
+            onClick: () => setActiveTab(id),
+          }, label))
+        ),
+        h("div", { className: "seo-stage-panel" },
+          activeTab === "lanes" ? renderLanesTab()
+            : activeTab === "skills" ? renderSkillsTab()
+            : activeTab === "script" ? renderScriptTab()
+            : activeTab === "settings" ? renderSettingsTab()
+            : renderWorkspaceTab()
+        )
+      )
+    )
+  );
+}
+
 function DepartmentIndexView({ dashboard, setView, selectedDepartmentContextId = "", onDepartmentSelect, onRefresh }) {
   const [departmentStatusOverrides, setDepartmentStatusOverrides] = useState({});
   const [departmentListTab, setDepartmentListTab] = useState("active");
@@ -6406,6 +6941,7 @@ function ApplicationsView({ dashboard, rows, labels, filters, setFilters, viewMo
   const displayedDepartmentRows = departmentListTab === "archived" ? archivedDepartmentRows : departmentListTab === "construction" ? constructionDepartmentRows : activeDepartmentRows;
   const selectedDepartment = departmentRows.find(row => row.id === selectedDepartmentId) || displayedDepartmentRows[0] || currentDepartment;
   const workObjectLabel = departmentWorkObjectLabel(selectedDepartment);
+  const isSeoDepartment = departmentHasSeoWork(selectedDepartment);
   const relatedRows = departmentHasTenderWork(selectedDepartment) ? rows : [];
   const openExplorerTab = tab => {
     if (tab) window.sessionStorage.setItem("departmentExplorerTab", tab);
@@ -6424,13 +6960,14 @@ function ApplicationsView({ dashboard, rows, labels, filters, setFilters, viewMo
   const tabs = [
     ["overview", "Overview"],
     ["work", workObjectLabel],
+    ...(isSeoDepartment ? [["workflow", "Stage Workspace"]] : []),
     ["automation", "Automation"],
     ["resources", "Tools"],
     ["staff", "Staff"],
     ["settings", "Settings"],
     ["reports", "Reports"],
     ...(showDeveloperSurfaces ? [
-      ["workflow", "Workflow"],
+      ...(isSeoDepartment ? [] : [["workflow", "Workflow"]]),
       ["admin", "Developer Settings"],
     ] : []),
   ];
@@ -6457,13 +6994,14 @@ function ApplicationsView({ dashboard, rows, labels, filters, setFilters, viewMo
 
   useEffect(() => {
     if (showDeveloperSurfaces) return;
+    if (isSeoDepartment && activeTab === "workflow") return;
     if (!["workflow", "admin"].includes(activeTab)) return;
     setActiveTab("overview");
     if (selectedDepartment && selectedDepartment.id) {
       storeDepartmentWorkspaceTarget(selectedDepartment.id, "overview");
       if (onDepartmentWorkspaceTabChange) onDepartmentWorkspaceTabChange("overview");
     }
-  }, [activeTab, showDeveloperSurfaces, selectedDepartment.id]);
+  }, [activeTab, showDeveloperSurfaces, isSeoDepartment, selectedDepartment.id]);
 
   function selectDepartment(row, tab = "overview") {
     if (!row || !row.id) return;
@@ -6547,6 +7085,20 @@ function ApplicationsView({ dashboard, rows, labels, filters, setFilters, viewMo
         ) : null
       }),
       h(CardContent, null,
+        h("div", { className: "department-workspace-tabs", role: "tablist", "aria-label": "Department workspace sections" },
+          tabs.map(([key, label]) => h("button", {
+            key,
+            type: "button",
+            role: "tab",
+            "aria-selected": activeTab === key,
+            className: cn("department-workspace-tab", activeTab === key && "active"),
+            onClick: () => {
+              setActiveTab(key);
+              storeDepartmentWorkspaceTarget(selectedDepartment.id, key);
+              if (onDepartmentWorkspaceTabChange) onDepartmentWorkspaceTabChange(key);
+            },
+          }, label))
+        ),
         activeTab === "overview" ? h("div", { className: "department-workspace-panel" },
           h("div", { className: "overview-info-grid" }, cards.map(([label, value, detail]) =>
             h("article", { className: "overview-info-card", key: label },
@@ -6565,6 +7117,7 @@ function ApplicationsView({ dashboard, rows, labels, filters, setFilters, viewMo
             h("div", { className: "department-focus-grid" },
               [
                 ["work", workObjectLabel, "Open department cases, tasks, and project work.", "file"],
+                ...(isSeoDepartment ? [["workflow", "Stage Workspace", "Open SEO stages, lanes, scripts, gates, and staff ownership.", "kanban"]] : []),
                 ["explorer", "Department Explorer", "Inspect staff, tools, data, automation, and the operating model.", "user"],
                 ["settings", "Settings", "Edit department identity, goals, language, and organization context.", "settings"],
                 ["reports", "Reports", "Review department results, activity, and progress.", "chart"],
@@ -6613,19 +7166,22 @@ function ApplicationsView({ dashboard, rows, labels, filters, setFilters, viewMo
           })
         ) : null,
         activeTab === "workflow" ? h("div", { className: "department-workspace-panel" },
-          h("div", { className: "department-workflow-summary" },
-            APPLICATION_STAGES.map((stage, index) =>
-              h("article", { className: "department-workflow-step", key: stage },
-                h("span", null, index + 1),
-                h("strong", null, stage),
-                h("p", null, index === 0 ? "New case intake and basic facts." : index === 1 ? "Tender document review and missing-file detection." : index === 2 ? "Eligibility, fit, and bid/no-bid signal." : "Routed department work step.")
+          isSeoDepartment ? h(SeoStageWorkspacePanel, { fabric, department: selectedDepartment, openTaskDialog })
+            : h(Fragment, null,
+              h("div", { className: "department-workflow-summary" },
+                APPLICATION_STAGES.map((stage, index) =>
+                  h("article", { className: "department-workflow-step", key: stage },
+                    h("span", null, index + 1),
+                    h("strong", null, stage),
+                    h("p", null, index === 0 ? "New case intake and basic facts." : index === 1 ? "Tender document review and missing-file detection." : index === 2 ? "Eligibility, fit, and bid/no-bid signal." : "Routed department work step.")
+                  )
+                )
+              ),
+              h("div", { className: "overview-inline-actions" },
+                h(Button, { onClick: () => openExplorerTab("workflow") }, "Open Workflow Canvas"),
+                h(Button, { variant: "secondary", onClick: () => openExplorerTab("scenario") }, "Open Scenario Explorer")
               )
             )
-          ),
-          h("div", { className: "overview-inline-actions" },
-            h(Button, { onClick: () => openExplorerTab("workflow") }, "Open Workflow Canvas"),
-            h(Button, { variant: "secondary", onClick: () => openExplorerTab("scenario") }, "Open Scenario Explorer")
-          )
         ) : null,
         activeTab === "settings" ? h("div", { className: "department-workspace-panel" },
           h(DepartmentSettingsWorkspacePanel, { department: selectedDepartment, fabric, onSaved: handleDepartmentIdentitySaved })
