@@ -10010,8 +10010,146 @@ function scenarioOutputsForStaff(scenarioStages = [], capabilities = [], recipes
   return uniqueRows([...stageOutputs, ...capabilityOutputs, ...recipeOutputs], row => `${row.meta}-${row.title}`);
 }
 
+const SEO_STAGE_PROFILE_STAFF_IDS = [
+  "AIstaff_SEOManager",
+  "AIstaff_SEOSourceAnalyst",
+  "AIstaff_SEOExpert",
+  "AIstaff_CaseStudyMapper",
+  "AIstaff_SEOContentWriter",
+  "AIstaff_InternalLinkBuilder",
+  "AIstaff_SEOQAAnalyst",
+  "AIstaff_WordPressPublisher",
+];
+
+function isSeoStageProfileStaff(staffId = "") {
+  return SEO_STAGE_PROFILE_STAFF_IDS.includes(String(staffId || ""));
+}
+
+function defaultSeoProfileOnlySubtasks() {
+  const manager = "AIstaff_SEOManager";
+  const qa = "AIstaff_SEOQAAnalyst";
+  return [
+    {
+      id: "stage_seo_manager_intake",
+      label: "SEO Manager Intake",
+      ownerStaff: manager,
+      staffAlias: staffProfile(manager).label,
+      staffTitle: staffJobTitle(manager),
+      recipeId: "recipe_seo_manager_supervision",
+      recipeLabel: "Manage SEO Demand Engine Work",
+      capabilityId: "seo_manager_supervision",
+      capabilityLabel: "SEO Manager Supervision",
+      readiness: "Ready",
+      goal: "Receive Iman's SEO request, clarify the content objective, and decide which specialist owns the next stage.",
+      detail: "Sofia checks the request, confirms the target website/topic, records missing context, and chooses the next AI staff member.",
+      nextAction: "Confirm topic, source material, target website, and approval expectations before routing.",
+      lanes: ["lane_ai_reasoning"],
+      skills: ["staff_skill_thinking_analyst", "department_skill_approval_policy"],
+      qualityGates: ["gate_safe_routing"],
+      outputs: ["manager_intake_summary", "staff_routing_decision"],
+    },
+    {
+      id: "stage_seo_manager_approval_package",
+      label: "Review Approval Package",
+      ownerStaff: manager,
+      staffAlias: staffProfile(manager).label,
+      staffTitle: staffJobTitle(manager),
+      recipeId: "recipe_seo_manager_supervision",
+      recipeLabel: "Manage SEO Demand Engine Work",
+      capabilityId: "seo_manager_supervision",
+      capabilityLabel: "SEO Manager Supervision",
+      readiness: "Needs approval",
+      goal: "Collect specialist outputs into one approval-ready package before WordPress or Make.com actions.",
+      detail: "Sofia verifies evidence, QA results, publishing risk, and open decisions before asking Iman for approval.",
+      nextAction: "Ask Iman to approve, revise, or hold the publishing handoff.",
+      lanes: ["lane_ai_reasoning", "lane_wordpress_publisher"],
+      skills: ["staff_skill_report_maker", "department_skill_approval_policy"],
+      qualityGates: ["gate_publish_approval"],
+      outputs: ["seo_approval_package", "manager_next_action"],
+    },
+    {
+      id: "stage_seo_qa_review",
+      label: "Review SEO Draft Checklist",
+      ownerStaff: qa,
+      staffAlias: staffProfile(qa).label,
+      staffTitle: staffJobTitle(qa),
+      recipeId: "recipe_seo_quality_review",
+      recipeLabel: "Review SEO Draft Quality",
+      capabilityId: "seo_quality_review",
+      capabilityLabel: "SEO Quality Review",
+      readiness: "Needs approval",
+      goal: "Check article drafts against the SEO metadata, originality, structure, and publishing safety checklist.",
+      detail: "Vera reviews titles, excerpts, headings, internal links, claims, case-study specificity, WordPress HTML, categories, tags, and open risks.",
+      nextAction: "Return fixes to Hermes or approve the draft for Sofia's publishing package.",
+      lanes: ["lane_seo_content_worker", "lane_wordpress_publisher"],
+      skills: ["staff_skill_file_qa", "staff_skill_report_maker"],
+      qualityGates: ["gate_content_not_generic", "gate_seo_metadata_check", "gate_publish_approval"],
+      outputs: ["seo_qa_report", "approved_or_returned_draft"],
+    },
+  ].map(stage => ({
+    ...stage,
+    script: {
+      windmillPath: "u/admin/seo_demand_engine_worldbc_staff_stage_v2",
+      mode: seoWorkspaceMode(stage.id),
+      inputContract: "stage output, SEO draft, metadata, links, staffContext, approval expectations",
+      outputContract: "stageId, staffId, status, QA findings, missingInputs, nextAction, approvalRequest",
+    },
+  }));
+}
+
+function seoProfileSubtasksForStaff(staffId = "", scenarioStages = []) {
+  const scenarioByStageId = byId((scenarioStages || []).map(stage => ({
+    id: (stage.stage || {}).id,
+    readinessState: stage.readinessState,
+    nextAction: stage.nextAction,
+    stage: stage.stage || {},
+  })));
+  return [...defaultSeoWorkspaceStages(), ...defaultSeoProfileOnlySubtasks()]
+    .filter(stage => stage.ownerStaff === staffId)
+    .map(stage => {
+      const scenarioStage = scenarioByStageId[stage.id] || {};
+      return {
+        ...stage,
+        readiness: scenarioStage.readinessState ? String(scenarioStage.readinessState).replace(/_/g, " ") : stage.readiness,
+        nextAction: scenarioStage.nextAction || stage.nextAction,
+        goal: (scenarioStage.stage || {}).goal || stage.goal,
+        detail: (scenarioStage.stage || {}).detail || stage.detail,
+      };
+    });
+}
+
+function seoProfileStageGroupsForStaff(staffId = "", scenarioStages = []) {
+  const groups = new Map();
+  seoProfileSubtasksForStaff(staffId, scenarioStages).forEach(subtask => {
+    const key = subtask.recipeId || subtask.capabilityId || subtask.id;
+    const current = groups.get(key) || {
+      id: key,
+      label: subtask.recipeLabel || subtask.capabilityLabel || subtask.label,
+      capabilityId: subtask.capabilityId,
+      capabilityLabel: subtask.capabilityLabel,
+      ownerStaff: staffId,
+      assignedDuty: `${staffProfile(staffId).label} is responsible for this stage, owns its subtasks, uses the mapped lanes and skills, and sends Sofia a manager-ready result with blockers and next actions.`,
+      goal: subtask.goal,
+      description: subtask.detail,
+      lanes: [],
+      skills: [],
+      qualityGates: [],
+      outputs: [],
+      subtasks: [],
+    };
+    current.lanes = uniqueValues([...current.lanes, ...(subtask.lanes || [])]);
+    current.skills = uniqueValues([...current.skills, ...(subtask.skills || [])]);
+    current.qualityGates = uniqueValues([...current.qualityGates, ...(subtask.qualityGates || [])]);
+    current.outputs = uniqueValues([...current.outputs, ...(subtask.outputs || [])]);
+    current.subtasks.push(subtask);
+    groups.set(key, current);
+  });
+  return Array.from(groups.values());
+}
+
 function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog, setSelectedStaffId, p4State = {}, managerStaffId = "AIstaff_Manager" }) {
-  const [activeTab, setActiveTab] = useState("overview");
+  const isSeoProfile = isSeoStageProfileStaff(staffId);
+  const [activeTab, setActiveTab] = useState(() => isSeoProfile ? "scenario" : "overview");
   const [profileVersion, setProfileVersion] = useState(0);
   const scenario = p4State.scenario || {};
   const scenarioStages = scenarioStagesForStaff(scenario, staffId);
@@ -10032,7 +10170,7 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
     ["contact", "Contact"],
     ["organization", "Organization"],
     ["responsibilities", "Roles"],
-    ["scenario", "Scenario stages"],
+    ["scenario", isSeoProfile ? "Stages & subtasks" : "Scenario stages"],
     ["steps", "Work steps"],
     ["skill", "Skill file"],
     ["quality", "QAs"],
@@ -10043,6 +10181,9 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
     ["learning", "Learned skills"],
     ["settings", "Settings"],
   ];
+  useEffect(() => {
+    setActiveTab(isSeoStageProfileStaff(staffId) ? "scenario" : "overview");
+  }, [staffId]);
   return h(Card, { className: "staff-profile-panel" },
     h(CardContent, null,
       h(StaffProfileHero, { dashboard, fabric, staffId, runOne, openTaskDialog, managerStaffId }),
@@ -10061,7 +10202,11 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
         ))
       ) : null,
       activeTab === "responsibilities" ? h(ProfileResponsibilitiesTab, { fabric, staffId, capabilities, scenarioStages, showDeveloperSurfaces }) : null,
-      activeTab === "scenario" ? h(ProfileScenarioTab, { scenario, staffId, scenarioStages }) : null,
+      activeTab === "scenario" ? (
+        isSeoProfile
+          ? h(SeoStaffStageDutiesTab, { staffId, scenarioStages })
+          : h(ProfileScenarioTab, { scenario, staffId, scenarioStages })
+      ) : null,
       activeTab === "steps" ? h(ProfileWorkStepsTab, { recipes, stages, scenarioStages, showDeveloperSurfaces }) : null,
       activeTab === "skill" ? h(ProfileSkillFileTab, { staffId }) : null,
       activeTab === "tools" ? h(ProfileToolsTab, { fabric, staffId, profileVersion, onChange: () => setProfileVersion(profileVersion + 1), lanes, connections, databases, aiRows, scenario, scenarioStages }) : null,
@@ -10081,6 +10226,112 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
           h("p", { className: "muted" }, "No learned skill recorded for this staff yet.")
       ) : null,
       activeTab === "settings" ? h(ProfileSettingsTab, { key: staffId, staffId, fabric, onSave: () => setProfileVersion(profileVersion + 1) }) : null
+    )
+  );
+}
+
+function SeoProfileChipList({ label, values = [] }) {
+  return h("div", { className: "seo-profile-chip-block" },
+    h("span", null, label),
+    values.length ? h("div", { className: "profile-chip-list" },
+      values.map(value => h("span", { className: "profile-chip", key: `${label}-${value}` }, promptRuleLabel(value)))
+    ) : h("p", { className: "muted" }, "None mapped.")
+  );
+}
+
+function SeoStaffStageDutiesTab({ staffId, scenarioStages = [] }) {
+  const groups = seoProfileStageGroupsForStaff(staffId, scenarioStages);
+  const [selectedStageId, setSelectedStageId] = useState((groups[0] || {}).id || "");
+
+  useEffect(() => {
+    const firstId = (groups[0] || {}).id || "";
+    if (!groups.some(group => group.id === selectedStageId)) setSelectedStageId(firstId);
+  }, [staffId, groups.map(group => group.id).join("|"), selectedStageId]);
+
+  if (!groups.length) {
+    return h(ProfileSection, { title: "Stages And Subtasks", body: "Stage duties assigned to this SEO staff member." },
+      h(EmptyState, { title: "No SEO stage assigned", body: "This SEO staff profile exists, but no stage duty is currently assigned to it." })
+    );
+  }
+
+  const selectedStage = groups.find(group => group.id === selectedStageId) || groups[0];
+  const firstReadiness = (selectedStage.subtasks[0] || {}).readiness || "Ready";
+  return h(ProfileSection, {
+    title: "Stages And Subtasks",
+    body: `${staffProfile(staffId).label} owns the stage duties below. Each stage has subtasks with their own goal, detail, next action, and mapped lanes/skills.`
+  },
+    h("div", { className: "seo-profile-stage-layout" },
+      h("aside", { className: "seo-profile-stage-list" },
+        h("div", { className: "seo-profile-stage-list-head" },
+          h("p", { className: "eyebrow" }, "Assigned stages"),
+          h("strong", null, `${groups.length} stage${groups.length === 1 ? "" : "s"}`)
+        ),
+        groups.map(group => h("button", {
+          key: group.id,
+          type: "button",
+          className: cn("seo-profile-stage-button", selectedStage.id === group.id && "active"),
+          onClick: () => setSelectedStageId(group.id),
+        },
+          h("span", null, h("strong", null, group.label), h(Badge, { tone: seoWorkspaceTone((group.subtasks[0] || {}).readiness || "Ready") }, (group.subtasks[0] || {}).readiness || "Ready")),
+          h("small", null, `${group.subtasks.length} subtask${group.subtasks.length === 1 ? "" : "s"} | ${group.capabilityLabel || group.capabilityId || "SEO capability"}`)
+        ))
+      ),
+      h("section", { className: "seo-profile-stage-detail" },
+        h("div", { className: "seo-profile-stage-head" },
+          h("div", null,
+            h("p", { className: "eyebrow" }, "Stage duty"),
+            h("h3", null, selectedStage.label),
+            h("p", null, selectedStage.description || "Executable SEO department stage.")
+          ),
+          h(Badge, { tone: seoWorkspaceTone(firstReadiness) }, firstReadiness)
+        ),
+        h("div", { className: "seo-profile-stage-summary" },
+          h("article", null,
+            h("span", null, "Stage goal"),
+            h("p", null, selectedStage.goal || "Complete the assigned SEO stage.")
+          ),
+          h("article", null,
+            h("span", null, "Duty assigned to staff"),
+            h("p", null, selectedStage.assignedDuty)
+          ),
+          h("article", null,
+            h("span", null, "Stage description"),
+            h("p", null, selectedStage.description || "Stage details are inherited from the SEO department workflow.")
+          )
+        ),
+        h("div", { className: "seo-profile-route-grid" },
+          h(SeoProfileChipList, { label: "Stage lanes", values: selectedStage.lanes }),
+          h(SeoProfileChipList, { label: "Stage skills", values: selectedStage.skills }),
+          h(SeoProfileChipList, { label: "Stage quality gates", values: selectedStage.qualityGates })
+        ),
+        h("div", { className: "seo-profile-subtask-stack" },
+          h("div", { className: "profile-section-head" },
+            h("div", null,
+              h("h3", null, "Subtasks"),
+              h("p", null, "These are the steps the responsible AI staff must do inside this stage.")
+            )
+          ),
+          selectedStage.subtasks.map((subtask, index) => h("article", { className: "seo-profile-subtask-card", key: subtask.id },
+            h("div", { className: "seo-profile-subtask-head" },
+              h("div", null,
+                h("span", null, String(index + 1).padStart(2, "0")),
+                h("h4", null, subtask.label)
+              ),
+              h(Badge, { tone: seoWorkspaceTone(subtask.readiness) }, subtask.readiness || "Ready")
+            ),
+            h("div", { className: "seo-profile-subtask-fields" },
+              h("article", null, h("span", null, "Goal of this step"), h("p", null, subtask.goal || "Complete this step.")),
+              h("article", null, h("span", null, "Step detail"), h("p", null, subtask.detail || "Follow the stage rules and return structured evidence.")),
+              h("article", null, h("span", null, "Next action"), h("p", null, subtask.nextAction || "Send the result to Sofia for routing."))
+            ),
+            h("div", { className: "seo-profile-route-grid compact" },
+              h(SeoProfileChipList, { label: "Uses lanes", values: subtask.lanes }),
+              h(SeoProfileChipList, { label: "Uses skills", values: subtask.skills }),
+              h(SeoProfileChipList, { label: "Outputs", values: subtask.outputs })
+            )
+          ))
+        )
+      )
     )
   );
 }
