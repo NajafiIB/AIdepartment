@@ -10147,9 +10147,102 @@ function seoProfileStageGroupsForStaff(staffId = "", scenarioStages = []) {
   return Array.from(groups.values());
 }
 
+function defaultSeoLaneCatalog() {
+  return {
+    lane_local_transcript_reader: {
+      label: "Local Transcript Reader",
+      type: "local file/text intake",
+      status: "Local-ready",
+      data: "sourceText, transcript, articleText",
+    },
+    lane_ai_reasoning: {
+      label: "AI Reasoning",
+      type: "human-supervised AI worker",
+      status: "Local-ready",
+      data: "staffContext, source summary, routing notes",
+    },
+    lane_search_console_api: {
+      label: "Search Console API / Export",
+      type: "external analytics API",
+      status: "Needs setup",
+      data: "queries, pages, impressions, clicks, CTR, position",
+    },
+    lane_google_analytics_api: {
+      label: "Google Analytics API / Export",
+      type: "external analytics API",
+      status: "Needs setup",
+      data: "sessions, engagement, conversions, landing pages",
+    },
+    lane_seo_content_worker: {
+      label: "SEO Content Worker",
+      type: "human-supervised AI worker",
+      status: "Local-ready",
+      data: "brief, keyword evidence, case-study map",
+    },
+    lane_internal_link_crawler: {
+      label: "Internal Link Crawler",
+      type: "site content crawl",
+      status: "Needs setup",
+      data: "existing URLs, anchors, topical relevance, link gaps",
+    },
+    lane_wordpress_publisher: {
+      label: "WordPress Publisher",
+      type: "CMS publishing",
+      status: "Needs setup",
+      data: "title, content, excerpt, categories, tags, slug",
+    },
+    lane_make_com_automation: {
+      label: "Make.com Automation",
+      type: "external automation",
+      status: "Needs approval",
+      data: "approved payload, publish command, publish result",
+    },
+  };
+}
+
+function defaultSeoSkillCatalog() {
+  return {
+    staff_skill_thinking_analyst: {
+      label: "Thinking Analyst",
+      scope: "Staff template",
+      rule: "Analyze inputs, state missing data, and return structured evidence.",
+    },
+    staff_skill_file_qa: {
+      label: "File QA",
+      scope: "Staff template",
+      rule: "Check uploaded/source material before downstream staff rely on it.",
+    },
+    staff_skill_report_maker: {
+      label: "Report Maker",
+      scope: "Staff template",
+      rule: "Summarize evidence, blockers, confidence, and next action.",
+    },
+    department_skill_approval_policy: {
+      label: "Approval Policy",
+      scope: "Department",
+      rule: "Publishing and external automation require explicit human approval.",
+    },
+  };
+}
+
+function seoProfileStageReadiness(group = {}) {
+  const readinesses = (group.subtasks || []).map(subtask => normalizedText(subtask.readiness));
+  if (readinesses.some(value => value.includes("block"))) return "Blocked";
+  if (readinesses.some(value => value.includes("setup"))) return "Needs setup";
+  if (readinesses.some(value => value.includes("source"))) return "Needs source";
+  if (readinesses.some(value => value.includes("approval"))) return "Needs approval";
+  return ((group.subtasks || [])[0] || {}).readiness || "Ready";
+}
+
+function seoProfileUsedBySubtasks(stage = {}, key = "", id = "") {
+  return (stage.subtasks || [])
+    .filter(subtask => (subtask[key] || []).includes(id))
+    .map(subtask => subtask.label);
+}
+
 function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog, setSelectedStaffId, p4State = {}, managerStaffId = "AIstaff_Manager" }) {
   const isSeoProfile = isSeoStageProfileStaff(staffId);
-  const [activeTab, setActiveTab] = useState(() => isSeoProfile ? "scenario" : "overview");
+  const [activeTab, setActiveTab] = useState(() => isSeoProfile ? "workspace" : "overview");
   const [profileVersion, setProfileVersion] = useState(0);
   const scenario = p4State.scenario || {};
   const scenarioStages = scenarioStagesForStaff(scenario, staffId);
@@ -10165,12 +10258,18 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
   const learning = learnedSkillRows(dashboard, staffId);
   const openTasks = staffOpenTasks(dashboard, staffId).slice(0, 5);
   const worksWith = STAFF_WORKS_WITH[staffId] || ["AIstaff_Manager"];
-  const tabs = [
+  const tabs = isSeoProfile ? [
+    ["workspace", "Step workspace"],
+    ["lanes", "Data lanes"],
+    ["skills", "Skills"],
+    ["script", `${staffProfile(staffId).label} script`],
+    ["settings", "Settings"],
+  ] : [
     ["overview", "Overview"],
     ["contact", "Contact"],
     ["organization", "Organization"],
     ["responsibilities", "Roles"],
-    ["scenario", isSeoProfile ? "Stages & subtasks" : "Scenario stages"],
+    ["scenario", "Scenario stages"],
     ["steps", "Work steps"],
     ["skill", "Skill file"],
     ["quality", "QAs"],
@@ -10182,7 +10281,7 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
     ["settings", "Settings"],
   ];
   useEffect(() => {
-    setActiveTab(isSeoStageProfileStaff(staffId) ? "scenario" : "overview");
+    setActiveTab(isSeoStageProfileStaff(staffId) ? "workspace" : "overview");
   }, [staffId]);
   return h(Card, { className: "staff-profile-panel" },
     h(CardContent, null,
@@ -10190,9 +10289,10 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
       h("div", { className: "profile-tabs", role: "tablist", "aria-label": `${staffProfile(staffId).label} profile sections` }, tabs.map(([key, label]) =>
         h("button", { key, type: "button", role: "tab", "aria-selected": activeTab === key, className: cn("profile-tab", activeTab === key && "active"), onClick: () => setActiveTab(key) }, label)
       )),
-      activeTab === "overview" ? h(ProfileOverviewTab, { dashboard, fabric, staffId, openTasks, capabilities, learning }) : null,
-      activeTab === "contact" ? h(ProfileContactTab, { staffId }) : null,
-      activeTab === "organization" ? h(ProfileSection, { title: "Organization", body: "Reporting line and closest collaborators." },
+      isSeoProfile ? h(SeoStaffPrototypeProfileTabs, { staffId, scenarioStages, activeTab }) : null,
+      !isSeoProfile && activeTab === "overview" ? h(ProfileOverviewTab, { dashboard, fabric, staffId, openTasks, capabilities, learning }) : null,
+      !isSeoProfile && activeTab === "contact" ? h(ProfileContactTab, { staffId }) : null,
+      !isSeoProfile && activeTab === "organization" ? h(ProfileSection, { title: "Organization", body: "Reporting line and closest collaborators." },
         h(DetailList, { rows: [
           { label: "Reports to", value: staffReportsTo(staffId) ? h(StaffChip, { staffId: staffReportsTo(staffId) }) : "No one - department root", raw: true },
           { label: "Direct reports", value: staffId === HUMAN_STAFF_ID ? h(StaffChip, { staffId: managerStaffId }) : (staffId === managerStaffId || staffId === "AIstaff_Manager" ? "All specialist AI staff" : "None"), raw: true },
@@ -10201,19 +10301,15 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
           h(OrgPersonButton, { key: id, dashboard, fabric, staffId: id, selected: false, compact: true, onClick: () => setSelectedStaffId(id) })
         ))
       ) : null,
-      activeTab === "responsibilities" ? h(ProfileResponsibilitiesTab, { fabric, staffId, capabilities, scenarioStages, showDeveloperSurfaces }) : null,
-      activeTab === "scenario" ? (
-        isSeoProfile
-          ? h(SeoStaffStageDutiesTab, { staffId, scenarioStages })
-          : h(ProfileScenarioTab, { scenario, staffId, scenarioStages })
-      ) : null,
-      activeTab === "steps" ? h(ProfileWorkStepsTab, { recipes, stages, scenarioStages, showDeveloperSurfaces }) : null,
-      activeTab === "skill" ? h(ProfileSkillFileTab, { staffId }) : null,
-      activeTab === "tools" ? h(ProfileToolsTab, { fabric, staffId, profileVersion, onChange: () => setProfileVersion(profileVersion + 1), lanes, connections, databases, aiRows, scenario, scenarioStages }) : null,
-      activeTab === "data" ? h(ProfileDataAccessTab, { staffId, connections, databases, aiRows, scenario, scenarioStages, showDeveloperSurfaces }) : null,
-      activeTab === "outputs" ? h(ProfileOutputsTab, { staffId, capabilities, recipes, scenarioStages, showDeveloperSurfaces }) : null,
-      activeTab === "quality" ? h(ProfileQualityTab, { fabric, gates, scenarioStages, showDeveloperSurfaces }) : null,
-      activeTab === "messages" ? h(ProfileSection, { title: "Messages And Current Work", body: "Task threads are the official communication channel." },
+      !isSeoProfile && activeTab === "responsibilities" ? h(ProfileResponsibilitiesTab, { fabric, staffId, capabilities, scenarioStages, showDeveloperSurfaces }) : null,
+      !isSeoProfile && activeTab === "scenario" ? h(ProfileScenarioTab, { scenario, staffId, scenarioStages }) : null,
+      !isSeoProfile && activeTab === "steps" ? h(ProfileWorkStepsTab, { recipes, stages, scenarioStages, showDeveloperSurfaces }) : null,
+      !isSeoProfile && activeTab === "skill" ? h(ProfileSkillFileTab, { staffId }) : null,
+      !isSeoProfile && activeTab === "tools" ? h(ProfileToolsTab, { fabric, staffId, profileVersion, onChange: () => setProfileVersion(profileVersion + 1), lanes, connections, databases, aiRows, scenario, scenarioStages }) : null,
+      !isSeoProfile && activeTab === "data" ? h(ProfileDataAccessTab, { staffId, connections, databases, aiRows, scenario, scenarioStages, showDeveloperSurfaces }) : null,
+      !isSeoProfile && activeTab === "outputs" ? h(ProfileOutputsTab, { staffId, capabilities, recipes, scenarioStages, showDeveloperSurfaces }) : null,
+      !isSeoProfile && activeTab === "quality" ? h(ProfileQualityTab, { fabric, gates, scenarioStages, showDeveloperSurfaces }) : null,
+      !isSeoProfile && activeTab === "messages" ? h(ProfileSection, { title: "Messages And Current Work", body: "Task threads are the official communication channel." },
           openTasks.length ? openTasks.map(row => h(ProfileListItem, { key: row.taskId, title: row.taskType || row.taskId, body: row.nextAction || row.resultNotes || row.taskId, meta: displayStatus(row) })) :
           h("p", { className: "muted" }, "No open task visible for this staff."),
           h("div", { className: "profile-message-note" },
@@ -10221,11 +10317,11 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
             h("p", null, isHumanResponsible(staffId) ? "Human messages go to the AI Manager. The Manager allocates work to the team." : (staffId === managerStaffId || staffId === "AIstaff_Manager" ? "The Manager can communicate with Iman and with every specialist staff member." : "Specialist AI staff communicate with the AI Manager; the Manager decides whether Iman is needed."))
           )
       ) : null,
-      activeTab === "learning" ? h(ProfileSection, { title: "Learned Skills", body: "Approved or pending rules learned from closed task threads." },
+      !isSeoProfile && activeTab === "learning" ? h(ProfileSection, { title: "Learned Skills", body: "Approved or pending rules learned from closed task threads." },
           learning.length ? learning.slice(0, 5).map(row => h(LearnedSkillCard, { key: row.learningId, row, compact: true })) :
           h("p", { className: "muted" }, "No learned skill recorded for this staff yet.")
       ) : null,
-      activeTab === "settings" ? h(ProfileSettingsTab, { key: staffId, staffId, fabric, onSave: () => setProfileVersion(profileVersion + 1) }) : null
+      !isSeoProfile && activeTab === "settings" ? h(ProfileSettingsTab, { key: staffId, staffId, fabric, onSave: () => setProfileVersion(profileVersion + 1) }) : null
     )
   );
 }
@@ -10239,7 +10335,7 @@ function SeoProfileChipList({ label, values = [] }) {
   );
 }
 
-function SeoStaffStageDutiesTab({ staffId, scenarioStages = [] }) {
+function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab = "workspace" }) {
   const groups = seoProfileStageGroupsForStaff(staffId, scenarioStages);
   const [selectedStageId, setSelectedStageId] = useState((groups[0] || {}).id || "");
 
@@ -10249,88 +10345,244 @@ function SeoStaffStageDutiesTab({ staffId, scenarioStages = [] }) {
   }, [staffId, groups.map(group => group.id).join("|"), selectedStageId]);
 
   if (!groups.length) {
-    return h(ProfileSection, { title: "Stages And Subtasks", body: "Stage duties assigned to this SEO staff member." },
+    return h(ProfileSection, { title: "Step Workspace", body: "Stage duties assigned to this SEO staff member." },
       h(EmptyState, { title: "No SEO stage assigned", body: "This SEO staff profile exists, but no stage duty is currently assigned to it." })
     );
   }
 
   const selectedStage = groups.find(group => group.id === selectedStageId) || groups[0];
-  const firstReadiness = (selectedStage.subtasks[0] || {}).readiness || "Ready";
   return h(ProfileSection, {
-    title: "Stages And Subtasks",
-    body: `${staffProfile(staffId).label} owns the stage duties below. Each stage has subtasks with their own goal, detail, next action, and mapped lanes/skills.`
+    title: "Stage Workspace",
+    body: `${staffProfile(staffId).label} owns these assigned SEO stages. The workflow rows inside each stage are shown as subtasks with their own goal, detail, next action, lanes, and skills.`
   },
-    h("div", { className: "seo-profile-stage-layout" },
-      h("aside", { className: "seo-profile-stage-list" },
-        h("div", { className: "seo-profile-stage-list-head" },
-          h("p", { className: "eyebrow" }, "Assigned stages"),
-          h("strong", null, `${groups.length} stage${groups.length === 1 ? "" : "s"}`)
-        ),
-        groups.map(group => h("button", {
-          key: group.id,
-          type: "button",
-          className: cn("seo-profile-stage-button", selectedStage.id === group.id && "active"),
-          onClick: () => setSelectedStageId(group.id),
-        },
-          h("span", null, h("strong", null, group.label), h(Badge, { tone: seoWorkspaceTone((group.subtasks[0] || {}).readiness || "Ready") }, (group.subtasks[0] || {}).readiness || "Ready")),
-          h("small", null, `${group.subtasks.length} subtask${group.subtasks.length === 1 ? "" : "s"} | ${group.capabilityLabel || group.capabilityId || "SEO capability"}`)
-        ))
-      ),
-      h("section", { className: "seo-profile-stage-detail" },
-        h("div", { className: "seo-profile-stage-head" },
+    h("div", { className: "seo-prototype-profile-shell" },
+      h("aside", { className: "seo-prototype-stage-rail" },
+        h("div", { className: "seo-prototype-rail-head" },
           h("div", null,
-            h("p", { className: "eyebrow" }, "Stage duty"),
-            h("h3", null, selectedStage.label),
-            h("p", null, selectedStage.description || "Executable SEO department stage.")
-          ),
-          h(Badge, { tone: seoWorkspaceTone(firstReadiness) }, firstReadiness)
-        ),
-        h("div", { className: "seo-profile-stage-summary" },
-          h("article", null,
-            h("span", null, "Stage goal"),
-            h("p", null, selectedStage.goal || "Complete the assigned SEO stage.")
-          ),
-          h("article", null,
-            h("span", null, "Duty assigned to staff"),
-            h("p", null, selectedStage.assignedDuty)
-          ),
-          h("article", null,
-            h("span", null, "Stage description"),
-            h("p", null, selectedStage.description || "Stage details are inherited from the SEO department workflow.")
+            h("p", { className: "eyebrow" }, "Assigned stages"),
+            h("span", null, `${groups.length} configured`)
           )
         ),
-        h("div", { className: "seo-profile-route-grid" },
-          h(SeoProfileChipList, { label: "Stage lanes", values: selectedStage.lanes }),
-          h(SeoProfileChipList, { label: "Stage skills", values: selectedStage.skills }),
-          h(SeoProfileChipList, { label: "Stage quality gates", values: selectedStage.qualityGates })
-        ),
-        h("div", { className: "seo-profile-subtask-stack" },
-          h("div", { className: "profile-section-head" },
-            h("div", null,
-              h("h3", null, "Subtasks"),
-              h("p", null, "These are the steps the responsible AI staff must do inside this stage.")
-            )
+        h("div", { className: "seo-prototype-stage-list" }, groups.map(group => {
+          const readiness = seoProfileStageReadiness(group);
+          return h("button", {
+            key: group.id,
+            type: "button",
+            className: cn("seo-prototype-stage-row", group.id === selectedStage.id && "active"),
+            onClick: () => setSelectedStageId(group.id),
+          },
+            h("span", null,
+              h("strong", null, group.label),
+              h(Badge, { tone: seoWorkspaceTone(readiness) }, readiness)
+            ),
+            h("small", null, `${group.subtasks.length} workflow subtask${group.subtasks.length === 1 ? "" : "s"} / ${group.capabilityLabel || group.capabilityId || "SEO capability"}`)
+          );
+        }))
+      ),
+      h("section", { className: "seo-prototype-tab-panel" },
+        activeTab === "lanes" ? h(SeoPrototypeLanesTab, { selectedStage }) : null,
+        activeTab === "skills" ? h(SeoPrototypeSkillsTab, { selectedStage }) : null,
+        activeTab === "script" ? h(SeoPrototypeScriptTab, { staffId, selectedStage }) : null,
+        activeTab === "settings" ? h(SeoPrototypeSettingsTab, { staffId, selectedStage }) : null,
+        activeTab === "workspace" || !["lanes", "skills", "script", "settings"].includes(activeTab)
+          ? h(SeoPrototypeWorkspaceTab, { staffId, selectedStage })
+          : null
+      )
+    )
+  );
+}
+
+function SeoPrototypeReadOnlyField({ label, value = "", rows = 3 }) {
+  return h(Field, { label },
+    h(Textarea, {
+      value: value || "",
+      readOnly: true,
+      rows,
+      className: "seo-prototype-readonly-input",
+    })
+  );
+}
+
+function SeoPrototypeTabHeader({ title, body }) {
+  return h("div", { className: "seo-prototype-tab-head" },
+    h("h3", null, title),
+    body ? h("p", null, body) : null
+  );
+}
+
+function SeoPrototypeWorkspaceTab({ staffId, selectedStage }) {
+  const readiness = seoProfileStageReadiness(selectedStage);
+  return h("div", { className: "seo-prototype-tab-content" },
+    h(SeoPrototypeTabHeader, { title: selectedStage.label, body: selectedStage.goal || "Assigned SEO department stage." }),
+    h("div", { className: "seo-prototype-workspace-grid" },
+      h("section", { className: "seo-prototype-main-column" },
+        h(SeoPrototypeReadOnlyField, { label: "Stage goal", value: selectedStage.goal, rows: 4 }),
+        h(SeoPrototypeReadOnlyField, { label: "Stage description", value: selectedStage.description, rows: 5 }),
+        h(SeoPrototypeReadOnlyField, { label: "Duty assigned to staff", value: selectedStage.assignedDuty, rows: 4 }),
+        h("div", { className: "seo-prototype-subtask-section" },
+          h("div", { className: "seo-prototype-section-title" },
+            h("p", { className: "eyebrow" }, "Workflow stages"),
+            h("h3", null, "Subtasks in this stage"),
+            h("p", null, "Each workflow row is a subtask the assigned AI staff must complete inside this stage.")
           ),
-          selectedStage.subtasks.map((subtask, index) => h("article", { className: "seo-profile-subtask-card", key: subtask.id },
-            h("div", { className: "seo-profile-subtask-head" },
+          selectedStage.subtasks.map((subtask, index) => h("article", { className: "seo-prototype-subtask-card", key: subtask.id },
+            h("div", { className: "seo-prototype-subtask-head" },
               h("div", null,
                 h("span", null, String(index + 1).padStart(2, "0")),
-                h("h4", null, subtask.label)
+                h("strong", null, subtask.label)
               ),
               h(Badge, { tone: seoWorkspaceTone(subtask.readiness) }, subtask.readiness || "Ready")
             ),
-            h("div", { className: "seo-profile-subtask-fields" },
-              h("article", null, h("span", null, "Goal of this step"), h("p", null, subtask.goal || "Complete this step.")),
-              h("article", null, h("span", null, "Step detail"), h("p", null, subtask.detail || "Follow the stage rules and return structured evidence.")),
-              h("article", null, h("span", null, "Next action"), h("p", null, subtask.nextAction || "Send the result to Sofia for routing."))
+            h("div", { className: "seo-prototype-subtask-fields" },
+              h(SeoPrototypeReadOnlyField, { label: "Goal of this step", value: subtask.goal, rows: 4 }),
+              h(SeoPrototypeReadOnlyField, { label: "Step detail", value: subtask.detail, rows: 4 }),
+              h(SeoPrototypeReadOnlyField, { label: "Next action", value: subtask.nextAction, rows: 3 })
             ),
-            h("div", { className: "seo-profile-route-grid compact" },
+            h("div", { className: "seo-prototype-route-grid" },
               h(SeoProfileChipList, { label: "Uses lanes", values: subtask.lanes }),
               h(SeoProfileChipList, { label: "Uses skills", values: subtask.skills }),
               h(SeoProfileChipList, { label: "Outputs", values: subtask.outputs })
             )
           ))
         )
+      ),
+      h("aside", { className: "seo-prototype-summary-stack" },
+        h("div", { className: "seo-prototype-summary-card" },
+          h("p", { className: "eyebrow" }, "Stage summary"),
+          h(DetailList, { rows: [
+            { label: "Readiness", value: h(Badge, { tone: seoWorkspaceTone(readiness) }, readiness), raw: true },
+            { label: "Capability", value: selectedStage.capabilityLabel || selectedStage.capabilityId },
+            { label: "Recipe", value: selectedStage.label },
+            { label: "Assigned staff", value: `${staffProfile(staffId).label} - ${staffJobTitle(staffId)}` },
+            { label: "Outputs", value: selectedStage.outputs.join(", "), length: 260 },
+          ] })
+        ),
+        h("div", { className: "seo-prototype-summary-card" },
+          h("p", { className: "eyebrow" }, "Stage lanes and skills"),
+          h(SeoProfileChipList, { label: "Stage lanes", values: selectedStage.lanes }),
+          h(SeoProfileChipList, { label: "Stage skills", values: selectedStage.skills }),
+          h(SeoProfileChipList, { label: "Stage quality gates", values: selectedStage.qualityGates })
+        )
+      )
+    )
+  );
+}
+
+function SeoPrototypeLanesTab({ selectedStage }) {
+  const laneCatalog = defaultSeoLaneCatalog();
+  return h("div", { className: "seo-prototype-tab-content" },
+    h(SeoPrototypeTabHeader, { title: "Data lanes used in this stage", body: "Stage-level lanes are inherited by the workflow subtasks that need them." }),
+    h("table", { className: "seo-prototype-mini-table" },
+      h("thead", null, h("tr", null,
+        h("th", null, "Lane"),
+        h("th", null, "Route type"),
+        h("th", null, "Data handled"),
+        h("th", null, "Status"),
+        h("th", null, "Used by subtasks")
+      )),
+      h("tbody", null, (selectedStage.lanes || []).map(id => {
+        const lane = laneCatalog[id] || { label: promptRuleLabel(id), type: "custom route", data: "custom data", status: "Draft" };
+        const usedBy = seoProfileUsedBySubtasks(selectedStage, "lanes", id);
+        return h("tr", { key: id },
+          h("td", null, h("strong", null, lane.label), h("small", null, id)),
+          h("td", null, lane.type),
+          h("td", null, lane.data),
+          h("td", null, h(Badge, { tone: seoWorkspaceTone(lane.status) }, lane.status)),
+          h("td", null, usedBy.length ? usedBy.join(", ") : "Stage-level only")
+        );
+      }))
+    )
+  );
+}
+
+function SeoPrototypeSkillsTab({ selectedStage }) {
+  const skillCatalog = defaultSeoSkillCatalog();
+  return h("div", { className: "seo-prototype-tab-content" },
+    h(SeoPrototypeTabHeader, { title: "Skills used in this stage", body: "Skills define the behavior, guardrails, and reporting style for the assigned staff and its subtasks." }),
+    h("div", { className: "seo-prototype-skill-grid" }, (selectedStage.skills || []).map(id => {
+      const skill = skillCatalog[id] || { label: promptRuleLabel(id), scope: "Custom", rule: "Custom skill rule." };
+      const usedBy = seoProfileUsedBySubtasks(selectedStage, "skills", id);
+      return h("article", { className: "seo-prototype-skill-card", key: id },
+        h("div", null,
+          h("strong", null, skill.label),
+          h("span", null, skill.scope)
+        ),
+        h("p", null, skill.rule),
+        h("small", null, `Used by: ${usedBy.length ? usedBy.join(", ") : "stage duty"}`)
+      );
+    }))
+  );
+}
+
+function SeoPrototypeScriptTab({ staffId, selectedStage }) {
+  const script = ((selectedStage.subtasks || [])[0] || {}).script || {};
+  return h("div", { className: "seo-prototype-tab-content" },
+    h(SeoPrototypeTabHeader, { title: `${staffProfile(staffId).label} script`, body: "Windmill execution contract for this staff-owned stage and its workflow subtasks." }),
+    h("div", { className: "seo-prototype-script-grid" },
+      h("section", { className: "seo-prototype-main-column" },
+        h(Field, { label: "Windmill script path" }, h(Input, { value: script.windmillPath || "u/admin/seo_demand_engine_worldbc_staff_stage_v2", readOnly: true })),
+        h(Field, { label: "Stage mode" }, h(Input, { value: script.mode || seoWorkspaceMode(selectedStage.id), readOnly: true })),
+        h("div", { className: "seo-prototype-two-col" },
+          h(SeoPrototypeReadOnlyField, { label: "Input contract", value: script.inputContract || "stage, subtasks, staffContext, approvals", rows: 5 }),
+          h(SeoPrototypeReadOnlyField, { label: "Output contract", value: script.outputContract || "stageId, staffId, status, evidence, missingInputs, nextAction", rows: 5 })
+        )
+      ),
+      h("aside", { className: "seo-prototype-summary-card" },
+        h("p", { className: "eyebrow" }, `${staffProfile(staffId).label} in this stage`),
+        h("h3", null, staffProfile(staffId).label),
+        h("p", null, staffJobTitle(staffId)),
+        h("div", { className: "seo-prototype-duty-box" },
+          h("strong", null, "Script responsibility"),
+          h("p", null, selectedStage.assignedDuty)
+        )
+      )
+    )
+  );
+}
+
+function SeoPrototypeSettingsTab({ staffId, selectedStage }) {
+  const readiness = seoProfileStageReadiness(selectedStage);
+  return h("div", { className: "seo-prototype-tab-content" },
+    h(SeoPrototypeTabHeader, { title: "Settings", body: "Read-only source view for the staff stage profile that would be written to the department model." }),
+    h("div", { className: "seo-prototype-settings-grid" },
+      h("section", { className: "seo-prototype-main-column" },
+        h("div", { className: "seo-prototype-two-col" },
+          h(Field, { label: "Stage name" }, h(Input, { value: selectedStage.label, readOnly: true })),
+          h(Field, { label: "Readiness" }, h(Input, { value: readiness, readOnly: true }))
+        ),
+        h("div", { className: "seo-prototype-two-col" },
+          h(Field, { label: "Staff display name" }, h(Input, { value: staffProfile(staffId).label, readOnly: true })),
+          h(Field, { label: "Staff job title" }, h(Input, { value: staffJobTitle(staffId), readOnly: true }))
+        ),
+        h("div", { className: "seo-prototype-two-col" },
+          h(Field, { label: "Capability ID" }, h(Input, { value: selectedStage.capabilityId || "", readOnly: true })),
+          h(Field, { label: "Owner staff ID" }, h(Input, { value: staffId, readOnly: true }))
+        )
+      ),
+      h("aside", { className: "seo-prototype-summary-card" },
+        h("p", { className: "eyebrow" }, "DB write preview"),
+        h("pre", { className: "seo-prototype-json-preview" }, JSON.stringify({
+          staffId,
+          stageId: selectedStage.id,
+          stageProfile: {
+            label: selectedStage.label,
+            goal: selectedStage.goal,
+            description: selectedStage.description,
+            duty: selectedStage.assignedDuty,
+            lanes: selectedStage.lanes,
+            skills: selectedStage.skills,
+            qualityGates: selectedStage.qualityGates,
+            subtasks: selectedStage.subtasks.map(subtask => ({
+              id: subtask.id,
+              label: subtask.label,
+              goal: subtask.goal,
+              detail: subtask.detail,
+              nextAction: subtask.nextAction,
+              lanes: subtask.lanes,
+              skills: subtask.skills,
+            })),
+          },
+        }, null, 2))
       )
     )
   );
