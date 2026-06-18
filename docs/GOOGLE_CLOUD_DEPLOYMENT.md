@@ -8,10 +8,27 @@ This app is deployed as a lightweight Python/React control plane on a Compute En
 - VM: `ai-department-vm`
 - Zone: `europe-central2-a`
 - Disk: 80 GB `pd-balanced`
+- Static IP: `34.116.169.217`
+- Public URL: `https://deptest.apastrof.com/`
 - App path: `/opt/ai-department`
 - Runtime data: `/var/lib/ai-department/swiss_planner_local.db`
 - Service: `ai-department.service`
 - Local app port: `8765`
+- Nginx hostname: `deptest.apastrof.com`
+- TLS: Let's Encrypt via Certbot, auto-renewed by `certbot.timer`
+
+## DNS
+
+Create this DNS record:
+
+```text
+Type: A
+Host: deptest
+Value: 34.116.169.217
+TTL: Automatic or 300 seconds
+```
+
+The IP has been promoted to a static Google Cloud regional address named `ai-department-ip`.
 
 ## Runtime Environment
 
@@ -39,6 +56,8 @@ Use Google Secret Manager for long-lived API keys and inject them into this envi
 sudo systemctl status ai-department
 sudo systemctl restart ai-department
 sudo journalctl -u ai-department -f
+sudo certbot certificates
+sudo systemctl status certbot.timer
 ```
 
 ## Deployment Notes
