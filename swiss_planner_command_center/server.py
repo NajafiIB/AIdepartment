@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import mimetypes
 import os
 import re
@@ -25,7 +26,7 @@ from services import local_runtime
 APP_DIR = Path(__file__).resolve().parent
 ROOT_DIR = APP_DIR.parent
 RUNNER_FILE = ROOT_DIR / "run_swiss_planner_bridge.cmd"
-HOST = "127.0.0.1"
+HOST = os.environ.get("AI_DEPARTMENT_HOST") or "127.0.0.1"
 PORT = int(os.environ.get("AI_DEPARTMENT_PORT") or os.environ.get("PORT") or "8765")
 BRIDGE_CALL_LOCK = threading.Lock()
 BRIDGE_HTTP_TIMEOUT_SECONDS = 240
@@ -158,10 +159,13 @@ def bridge_disabled_response(action: str | None = None) -> dict:
     }
 
 
-def local_dashboard_or_empty(message: str = "") -> dict:
-    snapshot = local_store.load_dashboard_snapshot()
+def local_dashboard_or_empty(message: str = "", *, full_fabric: bool = False, fast: bool = False) -> dict:
+    snapshot = local_store.load_dashboard_snapshot(full_fabric=full_fabric, fast=fast)
     if not snapshot:
         snapshot = local_store.empty_dashboard(message or "No local dashboard snapshot yet.")
+        snapshot["capabilityFabric"] = local_store.dashboard_capability_fabric(full=full_fabric)
+        if fast:
+            snapshot["localSync"] = local_store.local_status(fast=True, snapshot_payload=snapshot)
     snapshot.setdefault("localSync", {})
     snapshot["localSync"]["crmSyncEnabled"] = bridge_enabled()
     snapshot["localSync"]["crmSyncStatus"] = "legacy-apps-script" if bridge_enabled() else "local-runtime"
@@ -266,8 +270,20 @@ def process_queue_row_with_preflight(queue_id: str) -> dict:
     }
 
 
+def strict_json_safe(value):
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(key): strict_json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [strict_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [strict_json_safe(item) for item in value]
+    return value
+
+
 def json_response(handler: BaseHTTPRequestHandler, payload: dict, status: int = 200) -> None:
-    raw = json.dumps(payload, default=str).encode("utf-8")
+    raw = json.dumps(strict_json_safe(payload), default=str, allow_nan=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Cache-Control", "no-store")
@@ -294,6 +310,10 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         params = dict(urllib.parse.parse_qsl(query, keep_blank_values=True))
 
+        if path.rstrip("/") == "/api/platform-admin/form-schemas":
+            json_response(self, local_store.platform_admin_form_payload())
+            return
+
         if path == "/api/bridge-info":
             if not bridge_enabled():
                 json_response(
@@ -314,14 +334,16 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
         if path == "/api/dashboard":
             run_audit = params.get("runAudit", "false").lower() == "true"
             force_sync = params.get("sync", "false").lower() == "true"
+            full_fabric = params.get("fullFabric", "false").lower() in {"1", "true", "yes"}
+            fast_dashboard = params.get("fast", "true").lower() not in {"0", "false", "no"} and not run_audit and not force_sync
             if bridge_enabled() and (run_audit or force_sync):
                 local_store.sync_from_sheet(bridge_request, run_audit=run_audit)
             elif run_audit or force_sync:
                 local_runtime.local_health_cycle()
-            snapshot = local_dashboard_or_empty("CRM sync is disabled; using the local dashboard only.")
-            if not local_store.load_dashboard_snapshot() and bridge_enabled():
+            snapshot = local_dashboard_or_empty("CRM sync is disabled; using the local dashboard only.", full_fabric=full_fabric, fast=fast_dashboard)
+            if not local_store.load_dashboard_snapshot(full_fabric=full_fabric, fast=fast_dashboard) and bridge_enabled():
                 sync_result = local_store.sync_from_sheet(bridge_request, run_audit=False)
-                snapshot = local_dashboard_or_empty(sync_result.get("error", "No local dashboard snapshot yet."))
+                snapshot = local_dashboard_or_empty(sync_result.get("error", "No local dashboard snapshot yet."), full_fabric=full_fabric, fast=fast_dashboard)
             json_response(self, snapshot)
             return
 
@@ -331,6 +353,10 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
 
         if path == "/api/platform-admin/catalogs":
             json_response(self, local_store.platform_admin_catalogs())
+            return
+
+        if path == "/api/platform-admin/form-schemas":
+            json_response(self, local_store.platform_admin_form_payload())
             return
 
         if path == "/api/platform-admin/export-manifest":
@@ -359,8 +385,42 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
             json_response(self, local_store.p4_readiness(params.get("departmentId", "")))
             return
 
+        if path == "/api/p4/scenario-map":
+            json_response(self, local_store.p4_scenario_map(params.get("departmentId", "")))
+            return
+
         if path == "/api/workspace-profile":
             json_response(self, {"ok": True, "workspaceProfile": local_store.workspace_profile()})
+            return
+
+        if path == "/api/department-identity":
+            json_response(self, local_store.department_business_identity(params.get("departmentId", "")))
+            return
+
+        if path == "/api/department-goals":
+            json_response(self, local_store.department_goals(params.get("departmentId", "")))
+            return
+
+        if path == "/api/department-staff-assignments":
+            json_response(self, local_store.list_department_staff_assignments(params.get("departmentId", "")))
+            return
+
+        if path == "/api/windmill/status":
+            json_response(self, {"ok": True, "windmill": local_store.windmill_status()})
+            return
+
+        if path == "/api/orchestration/status":
+            json_response(self, {"ok": True, "orchestration": local_store.orchestration_status(params.get("departmentId", ""))})
+            return
+
+        if path == "/api/activity-runs":
+            json_response(
+                self,
+                local_store.list_activity_runs(
+                    department_id=params.get("departmentId", ""),
+                    limit=int(params.get("limit") or 50),
+                ),
+            )
             return
 
         if path == "/api/communications":
@@ -631,8 +691,68 @@ class CommandCenterHandler(BaseHTTPRequestHandler):
             json_response(self, local_store.update_workspace_profile(body))
             return
 
+        if path == "/api/department-identity":
+            json_response(self, local_store.update_department_business_identity(body))
+            return
+
+        if path == "/api/department-goal":
+            json_response(self, local_store.upsert_department_goal(body))
+            return
+
+        if path == "/api/department-staff-assignment":
+            json_response(self, local_store.upsert_department_staff_assignment(body))
+            return
+
+        if path == "/api/windmill/test-connection":
+            json_response(self, local_store.test_windmill_connection(body))
+            return
+
+        if path == "/api/windmill/provision-starter-activities":
+            json_response(self, local_store.provision_windmill_starter_activities(body))
+            return
+
+        if path == "/api/windmill/cleanup-old-assets":
+            json_response(self, local_store.cleanup_old_windmill_and_activity_runs(body))
+            return
+
+        if path == "/api/orchestration/start":
+            json_response(self, local_store.start_orchestration(body))
+            return
+
+        if path == "/api/orchestration/step":
+            json_response(self, local_store.step_orchestration(body))
+            return
+
+        if path == "/api/orchestration/resume":
+            json_response(self, local_store.step_orchestration(body))
+            return
+
+        if path == "/api/activity/request":
+            json_response(self, local_store.request_activity(body))
+            return
+
+        if path == "/api/activity/approve":
+            json_response(self, local_store.approve_activity(body))
+            return
+
+        if path == "/api/activity/run":
+            json_response(self, local_store.run_activity(body))
+            return
+
         if path == "/api/platform-admin/create-department":
             json_response(self, local_store.create_department_from_template(body))
+            return
+
+        if path == "/api/department-status":
+            json_response(self, local_store.set_department_status(body))
+            return
+
+        if path == "/api/connection-config":
+            json_response(self, local_store.update_connection_config(body))
+            return
+
+        if path == "/api/connection-test":
+            json_response(self, local_store.test_connection_config(body))
             return
 
         if path == "/api/p4/provisioning-snapshot":
@@ -825,7 +945,8 @@ def main() -> None:
     local_store.start_hourly_sync(runtime_call)
     local_store.start_autopilot_loop(runtime_call)
     local_store.start_local_worker_loop()
-    webbrowser.open(url)
+    if os.environ.get("AI_DEPARTMENT_OPEN_BROWSER", "true").lower() not in {"0", "false", "no"}:
+        threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
     server.serve_forever()
 
 

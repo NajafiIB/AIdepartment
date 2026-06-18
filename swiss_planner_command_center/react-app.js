@@ -89,6 +89,7 @@ const DEFAULT_STAFF_ALIASES = {
   AIstaff_ApplicationPackSender: "Omar",
   AIstaff_FollowUpController: "Lina",
   AIstaff_CRMController: "Noah",
+  AIstaff_SEOExpert: "Nora",
 };
 
 const APPLICATION_STAGES = [
@@ -104,33 +105,64 @@ const APPLICATION_STAGES = [
 
 const NAV_ITEMS = [
   ["overview", "Overview"],
-  ["wikis", "Wikis"],
-  ["platform-admin", "Platform Admin"],
-  ["explorer", "Department Explorer"],
-  ["applications", "Leads"],
+  ["applications", "Departments"],
   ["work", "Tasks"],
   ["email", "Email Alpha"],
-  ["reports", "Reports"],
   ["settings", "Settings"],
 ];
 const NAV_KEYS = NAV_ITEMS.map(([key]) => key);
+const INTERNAL_ROUTE_KEYS = [...NAV_KEYS, "explorer", "reports"];
+const DEPARTMENT_EXPLORER_DEPARTMENT_KEY = "departmentExplorerDepartmentId";
+const DEPARTMENT_WORKSPACE_TAB_KEY = "departmentWorkspaceTab";
+const LEGACY_VIEW_ALIASES = {
+  "platform-admin": "explorer",
+  wikis: "applications",
+};
+
+function initialDepartmentExplorerTabFromStorage() {
+  const stored = window.sessionStorage.getItem("departmentExplorerTab") || "";
+  if (stored) {
+    window.sessionStorage.removeItem("departmentExplorerTab");
+    return stored;
+  }
+  const hash = String(window.location.hash || "").replace(/^#/, "");
+  return hash === "platform-admin" ? "admin" : "org";
+}
 
 function initialViewFromHash() {
   const hash = String(window.location.hash || "").replace(/^#/, "");
-  return NAV_KEYS.includes(hash) ? hash : "overview";
+  const canonical = LEGACY_VIEW_ALIASES[hash] || hash;
+  if (hash === "platform-admin") window.sessionStorage.setItem("departmentExplorerTab", "admin");
+  return INTERNAL_ROUTE_KEYS.includes(canonical) ? canonical : "overview";
 }
 
 const NAV_ICONS = {
   overview: "chart",
-  wikis: "book",
-  "platform-admin": "database",
-  explorer: "user",
-  applications: "file",
+  applications: "database",
   work: "send",
   email: "mail",
-  reports: "database",
   settings: "shield",
 };
+
+const DEPARTMENT_WORKSPACE_SECTIONS = [
+  ["overview", "Dashboard", "chart"],
+  ["work", "Work", "file"],
+  ["explorer", "Department Explorer", "user"],
+  ["reports", "Reports", "chart"],
+  ["settings", "Settings", "settings"],
+];
+
+function departmentWorkspaceSectionLabel(tab = "overview", department = {}) {
+  if (tab === "work") return departmentWorkObjectLabel(department);
+  if (["automation", "resources", "staff"].includes(tab)) return "Department Explorer";
+  const match = DEPARTMENT_WORKSPACE_SECTIONS.find(([key]) => key === tab);
+  return match ? match[1] : "Dashboard";
+}
+
+function departmentWorkspaceSectionIcon(tab = "overview") {
+  const match = DEPARTMENT_WORKSPACE_SECTIONS.find(([key]) => key === tab);
+  return match ? match[2] : "chart";
+}
 
 const TASK_CATEGORIES = [
   "Human Decision",
@@ -614,6 +646,12 @@ function icon(name) {
       h("path", { key: 1, d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" }),
       h("path", { key: 2, d: "m9 12 2 2 4-4" }),
     ],
+    check: [h("path", { key: 1, d: "M20 6 9 17l-5-5" })],
+    alert: [
+      h("path", { key: 1, d: "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" }),
+      h("path", { key: 2, d: "M12 9v4" }),
+      h("path", { key: 3, d: "M12 17h.01" }),
+    ],
     search: [
       h("circle", { key: 1, cx: "11", cy: "11", r: "8" }),
       h("path", { key: 2, d: "m21 21-4.3-4.3" }),
@@ -989,14 +1027,14 @@ function pageHeaderForView(view, labels = {}, context = {}) {
   const navMap = Object.fromEntries(NAV_ITEMS);
   if (view === "application-detail") {
     const title = (labels.applications && labels.applications[context.applicationId] && labels.applications[context.applicationId].label) || friendlyId(context.applicationId) || "Lead";
-    return { crumbs: [APP_NAME, "Leads"], title };
+    return { crumbs: [APP_NAME, "Departments", "Projects / Cases"], title };
   }
   if (view === "opportunity-detail") {
     const title = (labels.opportunities && labels.opportunities[context.opportunityId] && labels.opportunities[context.opportunityId].label) || friendlyId(context.opportunityId) || "Tender Case";
-    return { crumbs: [APP_NAME, "Leads"], title };
+    return { crumbs: [APP_NAME, "Departments", "Tender Case"], title };
   }
   if (view === "university-detail") {
-    return { crumbs: [APP_NAME, "Leads"], title: context.universityName || "Tender Source" };
+    return { crumbs: [APP_NAME, "Departments", "Tender Source"], title: context.universityName || "Tender Source" };
   }
   return {
     crumbs: [APP_NAME],
@@ -1592,6 +1630,8 @@ function App() {
   const [selectedApplicationId, setSelectedApplicationId] = useState("");
   const [selectedOpportunityId, setSelectedOpportunityId] = useState("");
   const [selectedExplorerStaffId, setSelectedExplorerStaffId] = useState("");
+  const [selectedDepartmentContextId, setSelectedDepartmentContextId] = useState(() => window.sessionStorage.getItem(DEPARTMENT_EXPLORER_DEPARTMENT_KEY) || "");
+  const [departmentWorkspaceTabState, setDepartmentWorkspaceTabState] = useState(() => window.sessionStorage.getItem(DEPARTMENT_WORKSPACE_TAB_KEY) || "overview");
   const [materialReady, setMaterialReady] = useState(Boolean(window.__MATERIAL_WEB_READY__));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem("swissPlannerSidebarCollapsed") === "true");
 
@@ -1606,9 +1646,11 @@ function App() {
   }
 
   function setView(nextView) {
-    setViewState(nextView);
-    if (NAV_KEYS.includes(nextView) && window.location.hash !== `#${nextView}`) {
-      window.history.replaceState(null, "", `#${nextView}`);
+    const canonical = LEGACY_VIEW_ALIASES[nextView] || nextView;
+    if (nextView === "platform-admin") window.sessionStorage.setItem("departmentExplorerTab", "admin");
+    setViewState(canonical);
+    if (NAV_KEYS.includes(canonical) && window.location.hash !== `#${canonical}`) {
+      window.history.replaceState(null, "", `#${canonical}`);
     }
   }
 
@@ -1616,8 +1658,15 @@ function App() {
     if (busy && !force && !runAudit) return;
     setStatus(runAudit ? "Refreshing local dashboard..." : "Loading the local dashboard view...");
     try {
-      const result = await api(`/api/dashboard?limit=60&runAudit=${runAudit ? "true" : "false"}`);
+      const fullFabric = showDeveloperSurfaces ? "&fullFabric=1" : "";
+      const result = await api(`/api/dashboard?limit=60&runAudit=${runAudit ? "true" : "false"}${fullFabric}`);
       setDashboard(result);
+      const departmentRows = ownedDepartmentRowsFromDashboard(result);
+      const currentDepartment = currentDepartmentFromRows(departmentRows, window.sessionStorage.getItem(DEPARTMENT_EXPLORER_DEPARTMENT_KEY) || selectedDepartmentContextId);
+      if (currentDepartment && currentDepartment.id && !window.sessionStorage.getItem(DEPARTMENT_EXPLORER_DEPARTMENT_KEY)) {
+        storeDepartmentWorkspaceTarget(currentDepartment.id, departmentWorkspaceTabState || "overview");
+        setSelectedDepartmentContextId(currentDepartment.id);
+      }
       const sync = result.localSync || {};
       const crmStatus = sync.crmSyncEnabled
         ? `CRM sync: ${sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "pending"}`
@@ -1859,13 +1908,37 @@ function App() {
     setView("explorer");
   }
 
+  function setDepartmentContext(departmentId = "", tab = "") {
+    if (departmentId) setSelectedDepartmentContextId(departmentId);
+    if (tab) setDepartmentWorkspaceTabState(tab);
+    storeDepartmentWorkspaceTarget(departmentId || selectedDepartmentContextId, tab || departmentWorkspaceTabState || "overview");
+  }
+
+  function openDepartmentWorkspace(tab = "overview") {
+    const departmentId = selectedDepartmentContextId || ((currentDepartmentFromRows(ownedDepartmentRowsFromDashboard(dashboard || {})) || {}).id || "");
+    setDepartmentContext(departmentId, tab);
+    setView("applications");
+  }
+
+  function openDepartmentExplorerTab(tab = "workflow") {
+    const departmentId = selectedDepartmentContextId || ((currentDepartmentFromRows(ownedDepartmentRowsFromDashboard(dashboard || {})) || {}).id || "");
+    setDepartmentContext(departmentId, departmentWorkspaceTabState || "overview");
+    window.sessionStorage.setItem("departmentExplorerTab", tab);
+    setView("explorer");
+  }
+
   function openTaskDialog(prefill = {}) {
-    const assignedTo = prefill.assignedTo || prefill.staff || "AIstaff_Manager";
+    const departmentForTask = selectedDepartmentForNav || currentDepartmentFromRows(ownedDepartmentRowsFromDashboard(dashboard || {})) || {};
+    const assignedTo = prefill.assignedTo || prefill.staff || departmentForTask.aiManager || "AIstaff_Manager";
     const defaultTaskType = assignedTo === "AIstaff_Manager" ? "Manager Guidance" : "Research";
     setTaskDialog({
       assignedTo,
       taskType: prefill.taskType || defaultTaskType,
       taskCategory: prefill.taskCategory || taskCategory(prefill),
+      departmentId: prefill.departmentId || departmentForTask.id || "",
+      departmentLabel: prefill.departmentLabel || departmentForTask.label || "",
+      departmentPurpose: prefill.departmentPurpose || departmentForTask.purpose || "",
+      departmentManagerId: prefill.departmentManagerId || departmentForTask.aiManager || "AIstaff_Manager",
       entityId: prefill.entityId || "",
       relatedApplicationId: prefill.relatedApplicationId || prefill.applicationId || "",
       runAfter: "",
@@ -1892,9 +1965,11 @@ function App() {
     const data = taskDialog || {};
     const completionCriteria = "Task completed or blocked with clear result.";
     const needsCodex = taskNeedsCodex({ ...data, completionCriteria });
-    const isManagerMessage = data.assignedTo === "AIstaff_Manager" && data.taskType === "Manager Guidance";
+    const managerId = data.departmentManagerId || "AIstaff_Manager";
+    const isManagerMessage = data.assignedTo === managerId && data.taskType === "Manager Guidance";
+    const useLegacyManagerBrain = isManagerMessage && managerId === "AIstaff_Manager";
     await runBusy("Saving task...", async () => {
-      if (isManagerMessage) {
+      if (useLegacyManagerBrain) {
         const result = await api("/api/manager-request", {
           method: "POST",
           body: JSON.stringify({
@@ -1921,6 +1996,8 @@ function App() {
         createdBy: "Command Center",
         sourceStaff: "Human_Iman",
         targetStaff: data.assignedTo,
+        departmentId: data.departmentId,
+        departmentLabel: data.departmentLabel,
         entityId: data.entityId,
         relatedApplicationId: data.relatedApplicationId,
         priority: data.priority,
@@ -1956,16 +2033,39 @@ function App() {
     }, "decision:save", "Saving...");
   }
 
-  const activeNav = ["university-detail", "application-detail", "opportunity-detail"].includes(view) ? "applications" : view;
+  const activeNav = ["university-detail", "application-detail", "opportunity-detail", "explorer", "reports"].includes(view) ? "applications" : view;
+  const ownedDepartmentsForNav = ownedDepartmentRowsFromDashboard(dashboard || {});
+  const selectedDepartmentForNav = currentDepartmentFromRows(ownedDepartmentsForNav, selectedDepartmentContextId);
+  const hasDepartmentContext = Boolean(selectedDepartmentForNav && selectedDepartmentForNav.id);
+  const departmentNavTab = view === "applications" ? departmentWorkspaceTabState : "";
+  const showDeveloperSurfaces = typeof window !== "undefined" && (
+    window.location.search.includes("developer=1") || window.location.search.includes("debugAutomation=1")
+  );
+  const renderView = !showDeveloperSurfaces && view === "explorer" ? "applications" : view;
   const autopilot = (dashboard && dashboard.localSync && dashboard.localSync.autopilot) || {};
   const autopilotEnabled = autopilot.enabled !== false;
-  const pageHeader = pageHeaderForView(view, labels, {
+  const basePageHeader = pageHeaderForView(view, labels, {
     applicationId: selectedApplicationId,
     opportunityId: selectedOpportunityId,
     universityName: (UNIVERSITY_REFERENCES[selectedUniversityKey] && UNIVERSITY_REFERENCES[selectedUniversityKey].name) || friendlyId(selectedUniversityKey),
   });
+  const pageHeader = renderView === "applications" && hasDepartmentContext
+    ? {
+        crumbs: [APP_NAME, selectedDepartmentForNav.label || "Department"],
+        title: departmentWorkspaceSectionLabel(departmentWorkspaceTabState || "overview", selectedDepartmentForNav),
+      }
+    : renderView === "overview"
+    ? { crumbs: [APP_NAME], title: "Departments" }
+    : basePageHeader;
   document.title = `${pageHeader.title} - ${APP_NAME}`;
   window.__SWISS_PLANNER_ACTION_STATE__ = { busy, actionKey: busyAction, label: busyLabel || "Running..." };
+
+  function switchDepartmentFromHeader(event) {
+    const departmentId = event.target.value;
+    if (!departmentId) return;
+    setDepartmentContext(departmentId, "overview");
+    setView("applications");
+  }
 
   return h("div", { className: cn("app-shell react-shell", materialReady && "material-web-enhanced", sidebarCollapsed && "sidebar-collapsed") },
     h("aside", { className: "sidebar" },
@@ -1974,13 +2074,49 @@ function App() {
         h("div", { className: "brand-copy" }, h("p", { className: "eyebrow" }, APP_SHORT_NAME), h("h1", null, "AI Department")),
         h(Button, { className: "sidebar-toggle", variant: "ghost", size: "icon", onClick: () => setSidebarCollapsed(!sidebarCollapsed), title: sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar", "aria-label": sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar" }, sidebarCollapsed ? icon("list") : icon("x"))
       ),
-      h("nav", { className: "side-nav", "aria-label": "Dashboard navigation" }, NAV_ITEMS.map(([key, label]) =>
-        h("button", { key, className: cn("nav-item", activeNav === key && "active"), onClick: () => setView(key), title: label, "aria-label": label },
-          h("span", { className: "nav-icon" }, icon(NAV_ICONS[key] || "file")),
-          h("span", { className: "nav-label" }, label),
-          key === "work" ? h("span", { className: cn("nav-count", Number(summary.openTasks || 0) === 0 && "is-empty") }, Number(summary.openTasks || 0)) : null
+      h("nav", { className: "side-nav", "aria-label": "Dashboard navigation" },
+        h("button", { className: cn("nav-item", activeNav === "overview" && "active"), onClick: () => setView("overview"), title: "Overview", "aria-label": "Overview" },
+          h("span", { className: "nav-icon" }, icon("chart")),
+          h("span", { className: "nav-label" }, "Home")
+        ),
+        h("button", { className: "nav-item", onClick: () => openTaskDialog({ assignedTo: (selectedDepartmentForNav && selectedDepartmentForNav.aiManager) || "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }), title: "Messages", "aria-label": "Messages" },
+          h("span", { className: "nav-icon" }, icon("send")),
+          h("span", { className: "nav-label" }, "Messages")
+        ),
+        h("button", { className: cn("nav-item", activeNav === "settings" && "active"), onClick: () => setView("settings"), title: "Settings", "aria-label": "Settings" },
+          h("span", { className: "nav-icon" }, icon("shield")),
+          h("span", { className: "nav-label" }, "Settings")
+        ),
+        hasDepartmentContext ? h(Fragment, null,
+          h("div", { className: "side-nav-separator" }),
+          h("div", { className: "side-department-context" },
+            h("span", null, "Selected Department"),
+            h("strong", null, selectedDepartmentForNav.label || selectedDepartmentForNav.id),
+            h(Badge, { tone: departmentStatusTone(selectedDepartmentForNav, selectedDepartmentForNav.isCurrentDepartment ? selectedDepartmentForNav.id : "") }, departmentStatusLabel(selectedDepartmentForNav, selectedDepartmentForNav.isCurrentDepartment ? selectedDepartmentForNav.id : ""))
+          ),
+          [
+            ...DEPARTMENT_WORKSPACE_SECTIONS.map(([key, label, iconName]) => [
+              key,
+              key === "work" ? departmentWorkObjectLabel(selectedDepartmentForNav) : label,
+              iconName,
+              () => openDepartmentWorkspace(key),
+              activeNav === "applications" && (departmentNavTab === key || (key === "explorer" && ["automation", "resources", "staff"].includes(departmentNavTab))),
+            ]),
+            ...(showDeveloperSurfaces ? [
+              ["workflow", "Workflow Canvas", "chart", () => openDepartmentExplorerTab("workflow"), view === "explorer"],
+            ] : []),
+          ].map(([key, label, iconName, onClick, active]) =>
+            h("button", { key, className: cn("nav-item", active && "active"), onClick, title: label, "aria-label": label },
+              h("span", { className: "nav-icon" }, icon(iconName)),
+              h("span", { className: "nav-label" }, label),
+              key === "work" ? h("span", { className: cn("nav-count", Number(summary.openTasks || 0) === 0 && "is-empty") }, Number(summary.openTasks || 0)) : null
+            )
+          )
+        ) : h("button", { className: cn("nav-item", activeNav === "applications" && "active"), onClick: () => setView("applications"), title: "Departments", "aria-label": "Departments" },
+          h("span", { className: "nav-icon" }, icon("database")),
+          h("span", { className: "nav-label" }, "Departments")
         )
-      )),
+      ),
       h("div", { className: "sidebar-footer" }, h("span", { className: "status-dot" }), h("span", null, "Local command center"))
     ),
     h("main", { className: "workspace" },
@@ -1995,23 +2131,30 @@ function App() {
           h("h2", null, pageHeader.title)
         ),
         h("div", { className: "top-actions" },
-          h(Button, { onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }), title: "Send a natural-language instruction to Alex. Alex will route specialist work safely." }, icon("send"), "Message Alex")
+          hasDepartmentContext ? h("label", { className: "department-switcher", title: "Switch department" },
+            h("span", null, "Department"),
+            h("select", { value: selectedDepartmentForNav.id || "", onChange: switchDepartmentFromHeader },
+              ownedDepartmentsForNav.map(row => h("option", { key: row.id, value: row.id }, row.label || row.id))
+            )
+          ) : null,
+          h(Button, {
+            onClick: () => openTaskDialog({ assignedTo: (selectedDepartmentForNav && selectedDepartmentForNav.aiManager) || "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }),
+            title: `Send a natural-language instruction to ${departmentManagerDisplayName(selectedDepartmentForNav || {})}. The AI manager will route specialist work safely.`,
+          }, icon("send"), `Message ${departmentManagerDisplayName(selectedDepartmentForNav || {})}`)
         )
       ),
       h("section", { className: "status-line" }, status),
       !dashboard ? h(LoadingView) : h(Fragment, null,
-        view === "overview" ? h(OverviewView, { dashboard, summary, runOne, runLocalWorkerOnce, useTestWorkerCommand, openTaskDialog, runAutopilotCycle, setAutopilot, autopilotEnabled, setView }) : null,
-        view === "wikis" ? h(WikisView, { setView, openTaskDialog }) : null,
-        view === "platform-admin" ? h(PlatformAdminView, { dashboard }) : null,
-        view === "explorer" ? h(DepartmentExplorerView, { dashboard, runOne, openTaskDialog, setView, selectedStaffRequest: selectedExplorerStaffId }) : null,
-        view === "applications" ? h(ApplicationsView, { rows: dashboard.applications || [], labels, filters: applicationFilters, setFilters: setApplicationFilters, viewMode: applicationsView, setViewMode: setApplicationsView, runOne, openTaskDialog, openRef, openUniversity }) : null,
-        view === "work" ? h(WorkView, { dashboard, tasks: allTasks, labels, filters: taskFilters, setFilters: setTaskFilters, runOne, startProjectStepAction, snoozeTask, reassignTask, snoozeFollowUp, processQueueRow, approveEmail, runEmailSafetyCheck, setDecisionDialog, openTaskDialog, openRef, openUniversity, openStaffProfile }) : null,
-        view === "email" ? h(EmailView, { dashboard, processQueueRow, approveEmail, runEmailSafetyCheck, openRef, openUniversity }) : null,
-        view === "reports" ? h(ReportsView, { dashboard, approveSkillUpdate, runOne, snoozeFollowUp, setView, openTaskDialog, openRef }) : null,
-        view === "settings" ? h(SettingsView, { dashboard }) : null,
-        view === "university-detail" ? h(UniversityDetail, { dashboard, universityKey: selectedUniversityKey, setView, openRef }) : null,
-        view === "application-detail" ? h(ApplicationDetail, { dashboard, labels, appId: selectedApplicationId, setView, runOne, openTaskDialog, openRef, openUniversity }) : null,
-        view === "opportunity-detail" ? h(OpportunityDetail, { dashboard, labels, opportunityId: selectedOpportunityId, setView, openRef, openUniversity }) : null
+        renderView === "overview" ? h(DepartmentIndexView, { dashboard, setView, selectedDepartmentContextId, onDepartmentSelect: (departmentId, tab = "overview") => { setDepartmentContext(departmentId, tab); setView("applications"); }, onRefresh: () => loadDashboard(false, true) }) : null,
+        renderView === "explorer" ? h(DepartmentExplorerView, { dashboard, runOne, openTaskDialog, setView, selectedStaffRequest: selectedExplorerStaffId }) : null,
+        renderView === "applications" ? h(ApplicationsView, { dashboard, rows: dashboard.applications || [], labels, filters: applicationFilters, setFilters: setApplicationFilters, viewMode: applicationsView, setViewMode: setApplicationsView, runOne, snoozeFollowUp, approveSkillUpdate, openTaskDialog, openRef, openUniversity, setView, selectedDepartmentContextId, activeDepartmentTab: departmentWorkspaceTabState, onDepartmentContextChange: id => setDepartmentContext(id, window.sessionStorage.getItem(DEPARTMENT_WORKSPACE_TAB_KEY) || departmentWorkspaceTabState || "overview"), onDepartmentWorkspaceTabChange: tab => setDepartmentWorkspaceTabState(tab), onRefresh: () => loadDashboard(false, true) }) : null,
+        renderView === "work" ? h(WorkView, { dashboard, tasks: allTasks, labels, filters: taskFilters, setFilters: setTaskFilters, runOne, startProjectStepAction, snoozeTask, reassignTask, snoozeFollowUp, processQueueRow, approveEmail, runEmailSafetyCheck, setDecisionDialog, openTaskDialog, openRef, openUniversity, openStaffProfile }) : null,
+        renderView === "email" ? h(EmailView, { dashboard, processQueueRow, approveEmail, runEmailSafetyCheck, openRef, openUniversity }) : null,
+        renderView === "reports" ? h(ReportsView, { dashboard, approveSkillUpdate, runOne, snoozeFollowUp, setView, openTaskDialog, openRef }) : null,
+        renderView === "settings" ? h(SettingsView, { dashboard }) : null,
+        renderView === "university-detail" ? h(UniversityDetail, { dashboard, universityKey: selectedUniversityKey, setView, openRef }) : null,
+        renderView === "application-detail" ? h(ApplicationDetail, { dashboard, labels, appId: selectedApplicationId, setView, runOne, openTaskDialog, openRef, openUniversity }) : null,
+        renderView === "opportunity-detail" ? h(OpportunityDetail, { dashboard, labels, opportunityId: selectedOpportunityId, setView, openRef, openUniversity }) : null
       )
     ),
     taskDialog ? h(TaskDialog, { value: taskDialog, setValue: setTaskDialog, onClose: () => setTaskDialog(null), onSubmit: submitTask, staff: dashboard ? dashboard.staff || [] : [] }) : null,
@@ -2024,8 +2167,9 @@ function LoadingView() {
   return h("section", { className: "metrics" }, [1, 2, 3, 4].map(i => h("div", { key: i, className: "metric skeleton" }, h("span", { className: "value" }, " "), h("span", { className: "label" }, "Loading"))));
 }
 
-function PlatformAdminView({ dashboard }) {
+function PlatformAdminView({ dashboard, embedded = false }) {
   const [tab, setTab] = useState("installedDepartments");
+  const [focusTarget, setFocusTarget] = useState(null);
   const [payload, setPayload] = useState({ loading: true, error: "", catalogs: null, manifest: null });
   const fabric = fabricOrFallback(dashboard);
   const fallbackCatalogs = {
@@ -2035,6 +2179,15 @@ function PlatformAdminView({ dashboard }) {
     laneAdapters: fabric.lanes || [],
     scopedSkills: [...(fabric.platformSafetySkills || []), ...(fabric.departmentSkills || []), ...(fabric.staffTemplateSkills || []), ...(fabric.laneAdapterSkills || [])],
     workflowTemplates: fabric.recipes || [],
+    capabilities: fabric.capabilities || [],
+    connections: fabric.connections || [],
+    databases: fabric.databases || [],
+    aiSupport: fabric.aiSupport || [],
+    qualityGates: fabric.qualityGates || [],
+    automations: fabric.automations || [],
+    compatibilityRules: fabric.compatibilityRules || [],
+    formSchemas: fabric.formSchemas || [],
+    enumSets: fabric.enumSets || [],
     senderIdentities: [],
   };
   const catalogs = (payload.catalogs && payload.catalogs.catalogs) || fallbackCatalogs;
@@ -2049,6 +2202,15 @@ function PlatformAdminView({ dashboard }) {
   const summary = (payload.catalogs && payload.catalogs.summary) || Object.fromEntries(Object.entries(catalogs).map(([key, rows]) => [key, (rows || []).length]));
   const p4Summary = (payload.catalogs && payload.catalogs.p4Summary) || Object.fromEntries(Object.entries(p4Catalogs).map(([key, rows]) => [key, (rows || []).length]));
   const validation = (payload.catalogs && payload.catalogs.validation) || { errors: fabric.errors || [], errorCount: (fabric.errors || []).length };
+  const adminCatalogs = {
+    ...fabric,
+    ...catalogs,
+    p4Catalogs,
+    formSchemas: (payload.catalogs && payload.catalogs.formSchemas) || {},
+    enumOptions: (payload.catalogs && payload.catalogs.enumOptions) || {},
+    referenceIndexes: (payload.catalogs && payload.catalogs.referenceIndexes) || {},
+    editableCollections: (payload.catalogs && payload.catalogs.editableCollections) || [],
+  };
   const tabs = [
     ["installedDepartments", "Installed Departments"],
     ["staffTemplates", "AI Staff Blueprints"],
@@ -2057,9 +2219,42 @@ function PlatformAdminView({ dashboard }) {
     ["stageTemplates", "Stage Templates"],
     ["departmentPackages", "Department Packages"],
     ["laneAdapters", "Lane Adapters"],
+    ["capabilities", "Capabilities"],
+    ["connections", "Connections"],
+    ["databases", "Databases"],
+    ["aiSupport", "AI Support"],
+    ["qualityGates", "Quality Gates"],
+    ["automations", "Automations"],
+    ["compatibilityRules", "Compatibility Rules"],
+    ["formSchemas", "Form Schemas"],
+    ["enumSets", "Enum Sets"],
     ["senderIdentities", "Sender Identities"],
     ["exportManifest", "Export Manifests"],
   ];
+
+  function openCatalogReference(collection, id) {
+    const targetTab = {
+      lanes: "laneAdapters",
+      recipes: "stageTemplates",
+      departmentTemplates: "departmentPackages",
+      staffArchetypes: "staffTemplates",
+      platformSafetySkills: "skillPacks",
+      departmentSkills: "skillPacks",
+      staffTemplateSkills: "skillPacks",
+      laneAdapterSkills: "skillPacks",
+      capabilities: "capabilities",
+      connections: "connections",
+      databases: "databases",
+      aiSupport: "aiSupport",
+      qualityGates: "qualityGates",
+      automations: "automations",
+      compatibilityRules: "compatibilityRules",
+      formSchemas: "formSchemas",
+      enumSets: "enumSets",
+    }[collection] || collection;
+    setTab(targetTab);
+    setFocusTarget({ tab: targetTab, collection, id, nonce: Date.now() });
+  }
 
   async function loadPlatformAdmin() {
     setPayload(current => ({ ...current, loading: true, error: "" }));
@@ -2078,12 +2273,29 @@ function PlatformAdminView({ dashboard }) {
     loadPlatformAdmin();
   }, []);
 
-  return h("section", { className: "platform-admin-view chart-enter" },
+  useEffect(() => {
+    const raw = window.sessionStorage.getItem("platformAdminFocus");
+    if (!raw) return;
+    try {
+      const target = JSON.parse(raw);
+      if (target && target.tab) {
+        setTab(target.tab);
+        setFocusTarget({ ...target, nonce: Date.now() });
+      }
+    } catch (error) {
+      // Ignore malformed focus hints; the admin catalog still loads normally.
+    }
+    window.sessionStorage.removeItem("platformAdminFocus");
+  }, []);
+
+  return h("section", { className: cn("platform-admin-view chart-enter", embedded && "embedded-admin") },
     h(Card, { className: "settings-hero" },
       h(CardHeader, {
-        eyebrow: "Platform Admin / Developer Control Plane",
-        title: "AI Department Template Governance",
-        description: "Reusable blueprints, staff templates, lane adapters, scoped skills, workflow templates, and export manifests are governed here. Workspace users configure installed runtime instances elsewhere.",
+        eyebrow: embedded ? "Department Explorer -> Admin Catalogs" : "Platform Admin / Developer Control Plane",
+        title: embedded ? "Admin Catalogs" : "AI Department Template Governance",
+        description: embedded
+          ? "Govern reusable packages, staff blueprints, skill packs, stage templates, lanes, tools, data, and schemas from the same Department Explorer workspace."
+          : "Reusable blueprints, staff templates, lane adapters, scoped skills, workflow templates, and export manifests are governed here. Workspace users configure installed runtime instances elsewhere.",
         action: h("div", { className: "panel-actions" },
           h(Badge, { tone: validation.errorCount ? "danger" : "success" }, validation.errorCount ? `${validation.errorCount} validation issue(s)` : "Zero fabric errors"),
           h(Button, { actionKey: "platform-admin:refresh", variant: "outline", onClick: loadPlatformAdmin }, icon("refresh"), "Refresh")
@@ -2091,47 +2303,47 @@ function PlatformAdminView({ dashboard }) {
       }),
       h(CardContent, null,
         payload.error ? h("div", { className: "form-error" }, payload.error) : null,
-        h("div", { className: "designer-summary-strip" },
-          h("span", null, h("strong", null, summary.installedDepartments || 0), "Installed"),
-          h("span", null, h("strong", null, p4Summary.departmentPackages || summary.departmentBlueprints || 0), "Packages"),
-          h("span", null, h("strong", null, p4Summary.staffBlueprints || summary.staffTemplates || 0), "Staff blueprints"),
-          h("span", null, h("strong", null, p4Summary.skillPacks || summary.scopedSkills || 0), "Skill packs"),
-          h("span", null, h("strong", null, p4Summary.toolDataContracts || 0), "Tool/data contracts"),
-          h("span", null, h("strong", null, p4Summary.stageTemplates || summary.workflowTemplates || 0), "Stage templates")
-        ),
         h("div", { className: "settings-tabs", role: "tablist", "aria-label": "Platform Admin catalogs" }, tabs.map(([key, label]) =>
           h("button", { key, type: "button", role: "tab", "aria-selected": tab === key, className: cn("settings-tab", tab === key && "active"), onClick: () => setTab(key) },
             h("span", null, label),
-            key !== "exportManifest" ? h("small", null, p4Summary[key] || summary[key] || 0) : null
+            key !== "exportManifest" ? h("small", null, p4Summary[key] || summary[key] || ((adminCatalogs[key] || []).length) || 0) : null
           )
         ))
       )
     ),
-    h(CreateDepartmentPanel, { catalogs, onCreated: loadPlatformAdmin }),
-    tab === "exportManifest"
+    tab === "installedDepartments"
+      ? h(PlatformInstalledDepartmentsPanel, { rows: catalogs.installedDepartments || [], blueprints: catalogs.departmentBlueprints || [], loading: payload.loading, onRefresh: loadPlatformAdmin })
+      : tab === "exportManifest"
       ? h(PlatformExportManifestPanel, { manifest: payload.manifest })
       : tab === "staffTemplates"
-        ? h(PlatformStaffTemplatesPanel, { rows: p4Catalogs.staffBlueprints || catalogs.staffTemplates || [], catalogs: { ...catalogs, p4Catalogs }, loading: payload.loading, onRefresh: loadPlatformAdmin })
+        ? h(PlatformStaffTemplatesPanel, { rows: p4Catalogs.staffBlueprints || catalogs.staffTemplates || [], catalogs: adminCatalogs, loading: payload.loading, onRefresh: loadPlatformAdmin, focusTarget })
       : ["skillPacks", "toolDataContracts", "stageTemplates", "departmentPackages"].includes(tab)
-        ? h(PlatformP4LibraryPanel, { rows: p4Catalogs[tab] || [], catalogKey: tab, loading: payload.loading })
+        ? h(PlatformP4LibraryPanel, { rows: p4Catalogs[tab] || [], catalogKey: tab, catalogs: adminCatalogs, loading: payload.loading, onRefresh: loadPlatformAdmin, focusTarget, onOpenReference: openCatalogReference })
       : tab === "laneAdapters"
-        ? h(PlatformP4LibraryPanel, { rows: p4Catalogs.laneAdapters || catalogs.laneAdapters || [], catalogKey: "laneAdapters", loading: payload.loading })
-      : h(PlatformCatalogPanel, { rows: catalogs[tab] || [], catalogKey: tab, loading: payload.loading })
+        ? h(PlatformP4LibraryPanel, { rows: p4Catalogs.laneAdapters || catalogs.laneAdapters || [], catalogKey: "laneAdapters", catalogs: adminCatalogs, loading: payload.loading, onRefresh: loadPlatformAdmin, focusTarget, onOpenReference: openCatalogReference })
+      : h(PlatformCatalogPanel, { rows: catalogs[tab] || adminCatalogs[tab] || [], catalogKey: tab, catalogs: adminCatalogs, loading: payload.loading, onRefresh: loadPlatformAdmin, focusTarget, onOpenReference: openCatalogReference })
   );
 }
 
-function CreateDepartmentPanel({ catalogs, onCreated }) {
-  const blueprints = catalogs.departmentBlueprints || [];
-  const installed = catalogs.installedDepartments || [];
+function PlatformInstalledDepartmentsPanel({ rows, blueprints, loading, onRefresh }) {
   const defaultBlueprint = (blueprints.find(row => row.id === "template_sales_research_department_sample") || blueprints[0] || {}).id || "";
+  const [selectedId, setSelectedId] = useState("");
+  const [mode, setMode] = useState("table");
+  const [wizardStep, setWizardStep] = useState("setup");
   const [form, setForm] = useState({
     sourceTemplateId: defaultBlueprint,
     departmentLabel: "",
     departmentPurpose: "",
     projectTypes: "",
     aiManagerAlias: "Alex",
+    humanManager: "Human_Iman",
+    defaultLanguage: "English",
+    approvalPolicy: "External emails, tender submissions, learning updates, and incomplete lead closure require Iman approval.",
+    activeConnections: "CRM local snapshot, Tender files, Task threads, Automation engine",
+    approvedDatasets: "Leads, Companies, Contacts, Supplier database, Vendor lists, Products, Qualifications",
   });
-  const [state, setState] = useState({ busy: false, error: "", message: "", created: null });
+  const [state, setState] = useState({ busy: false, error: "", message: "" });
+  const selected = rows.find(row => row.id === selectedId) || rows[0] || null;
 
   useEffect(() => {
     if (!form.sourceTemplateId && defaultBlueprint) {
@@ -2139,13 +2351,64 @@ function CreateDepartmentPanel({ catalogs, onCreated }) {
     }
   }, [defaultBlueprint]);
 
+  useEffect(() => {
+    if (!selectedId && rows.length) setSelectedId(rows[0].id);
+  }, [rows.length, selectedId]);
+
   function update(key, value) {
     setForm(current => ({ ...current, [key]: value }));
   }
 
-  async function submit(event) {
+  function startAdd() {
+    setMode("add");
+    setState({ busy: false, error: "", message: "" });
+    setForm({
+      sourceTemplateId: defaultBlueprint,
+      departmentLabel: "",
+      departmentPurpose: "",
+      projectTypes: "",
+      aiManagerAlias: "Alex",
+      humanManager: "Human_Iman",
+      defaultLanguage: "English",
+      approvalPolicy: "External emails, tender submissions, learning updates, and incomplete lead closure require Iman approval.",
+      activeConnections: "CRM local snapshot, Tender files, Task threads, Automation engine",
+      approvedDatasets: "Leads, Companies, Contacts, Supplier database, Vendor lists, Products, Qualifications",
+    });
+  }
+
+  function startWizard() {
+    startAdd();
+    setMode("wizard");
+    setWizardStep("setup");
+  }
+
+  function openDetail(rowId) {
+    setSelectedId(rowId);
+    setMode("detail");
+    setState({ busy: false, error: "", message: "" });
+  }
+
+  function startEdit() {
+    if (!selected) return;
+    setMode("edit");
+    setState({ busy: false, error: "", message: "" });
+    setForm({
+      sourceTemplateId: selected.templateId || defaultBlueprint,
+      departmentLabel: selected.label || "",
+      departmentPurpose: selected.purpose || "",
+      projectTypes: listForUi(selected.projectTypes).join(", "),
+      aiManagerAlias: selected.aiManagerAlias || "Alex",
+      humanManager: selected.humanManager || "Human_Iman",
+      defaultLanguage: selected.defaultLanguage || "English",
+      approvalPolicy: selected.approvalPolicy || "External emails, tender submissions, learning updates, and incomplete lead closure require Iman approval.",
+      activeConnections: listForUi(selected.activeConnections).join(", ") || "CRM local snapshot, Tender files, Task threads, Automation engine",
+      approvedDatasets: listForUi(selected.approvedDatasets).join(", ") || "Leads, Companies, Contacts, Supplier database, Vendor lists, Products, Qualifications",
+    });
+  }
+
+  async function submitAdd(event) {
     event.preventDefault();
-    setState({ busy: true, error: "", message: "", created: null });
+    setState({ busy: true, error: "", message: "" });
     try {
       const result = await api("/api/platform-admin/create-department", {
         method: "POST",
@@ -2155,28 +2418,151 @@ function CreateDepartmentPanel({ catalogs, onCreated }) {
         busy: false,
         error: "",
         message: result.alreadyExists ? "This department already exists in the local fabric." : "Department installed locally.",
-        created: result.department || null,
       });
-      if (!result.alreadyExists) {
-        setForm(current => ({ ...current, departmentLabel: "", departmentPurpose: "", projectTypes: "" }));
-      }
-      await onCreated();
+      setMode("table");
+      await onRefresh();
     } catch (error) {
-      setState({ busy: false, error: error.message || String(error), message: "", created: null });
+      setState({ busy: false, error: error.message || String(error), message: "" });
     }
   }
 
-  return h(Card, { className: "designer-section-card create-department-panel" },
+  async function saveEdit(event) {
+    event.preventDefault();
+    if (!selected) return;
+    setState({ busy: true, error: "", message: "" });
+    try {
+      const item = {
+        ...selected,
+        label: form.departmentLabel,
+        purpose: form.departmentPurpose,
+        projectTypes: listForUi(form.projectTypes),
+        humanManager: form.humanManager,
+        aiManagerAlias: form.aiManagerAlias,
+        defaultLanguage: form.defaultLanguage,
+        approvalPolicy: form.approvalPolicy,
+        activeConnections: listForUi(form.activeConnections),
+        approvedDatasets: listForUi(form.approvedDatasets),
+        updatedBy: "Platform Admin",
+      };
+      await api("/api/fabric-object", {
+        method: "POST",
+        body: JSON.stringify({ collection: "departments", item, reason: "Updated from Installed Departments table.", updatedBy: "Platform Admin" }),
+      });
+      setState({ busy: false, error: "", message: "Department updated." });
+      setMode("table");
+      await onRefresh();
+    } catch (error) {
+      setState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
+  async function duplicateSelected() {
+    if (!selected) return;
+    setState({ busy: true, error: "", message: "" });
+    try {
+      await api("/api/platform-admin/create-department", {
+        method: "POST",
+        body: JSON.stringify({
+          sourceTemplateId: selected.templateId || defaultBlueprint,
+          departmentLabel: `${selected.label || "AI Department"} Copy`,
+          departmentPurpose: selected.purpose || "",
+          projectTypes: listForUi(selected.projectTypes).join(", "),
+          aiManagerAlias: selected.aiManagerAlias || "Alex",
+          humanManager: selected.humanManager || "Human_Iman",
+          defaultLanguage: selected.defaultLanguage || "English",
+          approvalPolicy: selected.approvalPolicy || "",
+          activeConnections: listForUi(selected.activeConnections).join(", "),
+          approvedDatasets: listForUi(selected.approvedDatasets).join(", "),
+        }),
+      });
+      setState({ busy: false, error: "", message: "Department duplicated." });
+      await onRefresh();
+    } catch (error) {
+      setState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
+  async function archiveSelected() {
+    if (!selected) return;
+    setState({ busy: true, error: "", message: "" });
+    try {
+      await api("/api/fabric-object/archive", {
+        method: "POST",
+        body: JSON.stringify({ collection: "departments", objectId: selected.id, reason: "Archived from Installed Departments table.", updatedBy: "Platform Admin" }),
+      });
+      setState({ busy: false, error: "", message: "Department archived." });
+      await onRefresh();
+    } catch (error) {
+      setState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
+  return h(Card, { className: "designer-section-card admin-table-manager" },
     h(CardHeader, {
-      eyebrow: "Create / Clone Department",
-      title: "Install A New Local AI Department",
-      description: "Clone a governed blueprint into a workspace department instance. Staff templates, lane adapters, and locked safety skills remain governed by Platform Admin.",
-      action: h(Badge, { tone: "neutral" }, `${installed.length || 0} installed`)
+      eyebrow: "Platform Admin Table",
+      title: "Installed Departments",
+      description: "Manage one table only: installed AI Department instances.",
+      action: h("div", { className: "panel-actions" },
+        h(Button, { variant: "secondary", onClick: startWizard }, icon("plus"), "New Department Wizard"),
+        h(Button, { variant: "outline", onClick: startAdd }, "Quick Add"),
+        h(Button, { variant: "outline", onClick: startEdit, disabled: !selected }, "Edit"),
+        h(Button, { variant: "outline", onClick: duplicateSelected, disabled: !selected || state.busy }, "Duplicate"),
+        h(Button, { variant: "outline", onClick: archiveSelected, disabled: !selected || state.busy }, "Archive")
+      )
     }),
     h(CardContent, null,
-      h("form", { className: "create-department-form", onSubmit: submit },
+      state.error ? h("div", { className: "form-error" }, state.error) : null,
+      state.message ? h("div", { className: "designer-status" }, state.message) : null,
+      mode === "wizard" ? h(NewDepartmentWizard, {
+        form,
+        update,
+        blueprints,
+        state,
+        wizardStep,
+        setWizardStep,
+        onSubmit: submitAdd,
+        onCancel: () => setMode("table"),
+      }) : mode === "table" ? h(AdminDataTable, {
+        rows,
+        loading,
+        selectedId,
+        onSelect: openDetail,
+        columns: [
+          ["label", "Department"],
+          ["id", "ID"],
+          ["templateId", "Blueprint"],
+          ["status", "Status"],
+          ["humanManager", "Human Manager"],
+          ["aiManager", "AI Manager"],
+        ],
+      }) : mode === "detail" && selected ? h("section", { className: "admin-detail-view p4-library-detail" },
+        h("div", { className: "staff-detail-head" },
+          h("div", null,
+            h("p", { className: "eyebrow" }, selected.id),
+            h("h3", null, selected.label || "Installed Department"),
+            h("p", null, selected.purpose || "Installed runtime AI Department instance.")
+          ),
+          h("div", { className: "panel-actions" },
+            h(Button, { variant: "outline", onClick: () => setMode("table") }, "Back to Table"),
+            h(Button, { variant: "secondary", onClick: startEdit, disabled: !selected }, "Edit")
+          )
+        ),
+        h(DetailList, { rows: [
+          { label: "Template", value: selected.templateId },
+          { label: "Status", value: selected.status },
+          { label: "Human manager", value: selected.humanManager ? h(StaffChip, { staffId: selected.humanManager }) : "", raw: Boolean(selected.humanManager) },
+          { label: "AI manager", value: selected.aiManager ? h(StaffChip, { staffId: selected.aiManager }) : "", raw: Boolean(selected.aiManager) },
+          { label: "AI manager alias", value: selected.aiManagerAlias },
+          { label: "Project types", value: listForUi(selected.projectTypes).join(", ") },
+          { label: "Default language", value: selected.defaultLanguage },
+          { label: "Approval policy", value: selected.approvalPolicy },
+          { label: "Active connections", value: listForUi(selected.activeConnections).join(", ") },
+          { label: "Approved datasets", value: listForUi(selected.approvedDatasets).join(", ") },
+        ] }),
+        h("pre", { className: "manifest-preview compact" }, jsonPretty(selected).slice(0, 5000))
+      ) : h("form", { className: "create-department-form", onSubmit: mode === "edit" ? saveEdit : submitAdd },
         h(Field, { label: "Source blueprint" },
-          h(Select, { value: form.sourceTemplateId, onChange: event => update("sourceTemplateId", event.target.value) },
+          h(Select, { value: form.sourceTemplateId, disabled: mode === "edit", onChange: event => update("sourceTemplateId", event.target.value) },
             blueprints.map(row => h("option", { key: row.id, value: row.id }, row.label || row.id))
           )
         ),
@@ -2195,6 +2581,20 @@ function CreateDepartmentPanel({ catalogs, onCreated }) {
             placeholder: "Alex",
           })
         ),
+        h(Field, { label: "Human manager" },
+          h(Select, { value: form.humanManager, onChange: event => update("humanManager", event.target.value) },
+            h("option", { value: "Human_Iman" }, "Iman"),
+            h("option", { value: "Human_Manager" }, "Human Manager"),
+            h("option", { value: "Human_Admin" }, "Workspace Admin")
+          )
+        ),
+        h(Field, { label: "Default language" },
+          h(Select, { value: form.defaultLanguage, onChange: event => update("defaultLanguage", event.target.value) },
+            h("option", { value: "English" }, "English"),
+            h("option", { value: "Arabic" }, "Arabic"),
+            h("option", { value: "English + Arabic" }, "English + Arabic")
+          )
+        ),
         h(Field, { label: "Project types" },
           h(Input, {
             value: form.projectTypes,
@@ -2210,24 +2610,205 @@ function CreateDepartmentPanel({ catalogs, onCreated }) {
             placeholder: "What work should this AI Department manage?",
           })
         ),
+        h(Field, { label: "Approval policy", className: "create-department-wide" },
+          h(Textarea, {
+            value: form.approvalPolicy,
+            onChange: event => update("approvalPolicy", event.target.value),
+            rows: 3,
+            placeholder: "Which actions require approval before execution?",
+          })
+        ),
+        h(Field, { label: "Active connections", className: "create-department-wide" },
+          h(Textarea, {
+            value: form.activeConnections,
+            onChange: event => update("activeConnections", event.target.value),
+            rows: 3,
+            placeholder: "CRM local snapshot, Tender files, Task threads, Automation engine",
+          })
+        ),
+        h(Field, { label: "Approved datasets", className: "create-department-wide" },
+          h(Textarea, {
+            value: form.approvedDatasets,
+            onChange: event => update("approvedDatasets", event.target.value),
+            rows: 3,
+            placeholder: "Leads, Companies, Contacts, Supplier database, Vendor lists",
+          })
+        ),
         h("div", { className: "create-department-actions create-department-wide" },
-          h(Button, { type: "submit", pending: state.busy, pendingLabel: "Creating..." }, icon("plus"), "Create department"),
-          state.message ? h(Badge, { tone: "success" }, state.message) : null,
-          state.error ? h("span", { className: "form-error" }, state.error) : null
+          h(Button, { type: "submit", pending: state.busy, pendingLabel: mode === "edit" ? "Saving..." : "Creating..." }, mode === "edit" ? "Save changes" : "Create department"),
+          h(Button, { type: "button", variant: "outline", onClick: () => setMode("table") }, "Cancel")
+        )
+      )
+    )
+  );
+}
+
+function NewDepartmentWizard({ form, update, blueprints, state, wizardStep, setWizardStep, onSubmit, onCancel }) {
+  const steps = [
+    ["setup", "1", "Setup", "Blueprint, name, and purpose"],
+    ["manager", "2", "Manager", "Human owner and AI Manager"],
+    ["resources", "3", "Resources", "Connections and data"],
+    ["review", "4", "Review", "Confirm and create"],
+  ];
+  const currentIndex = Math.max(0, steps.findIndex(([key]) => key === wizardStep));
+  const selectedBlueprint = blueprints.find(row => row.id === form.sourceTemplateId) || blueprints[0] || {};
+  const canContinue = wizardStep !== "setup" || Boolean(String(form.departmentLabel || "").trim());
+
+  function goTo(index) {
+    if (index < 0 || index >= steps.length) return;
+    setWizardStep(steps[index][0]);
+  }
+
+  function next() {
+    if (!canContinue) return;
+    goTo(currentIndex + 1);
+  }
+
+  const reviewRows = [
+    { label: "Source blueprint", value: selectedBlueprint.label || form.sourceTemplateId || "No blueprint selected" },
+    { label: "Department name", value: form.departmentLabel || "Not set" },
+    { label: "Purpose", value: form.departmentPurpose || "Not set" },
+    { label: "Project types", value: form.projectTypes || "Not set" },
+    { label: "AI Manager alias", value: form.aiManagerAlias || "Alex" },
+    { label: "Human manager", value: form.humanManager || "Human_Iman" },
+    { label: "Default language", value: form.defaultLanguage || "English" },
+    { label: "Approval policy", value: form.approvalPolicy || "Not set" },
+    { label: "Active connections", value: form.activeConnections || "Not set" },
+    { label: "Approved datasets", value: form.approvedDatasets || "Not set" },
+  ];
+
+  return h("form", { className: "department-wizard", onSubmit },
+    h("div", { className: "wizard-stepper", role: "tablist", "aria-label": "New department wizard steps" },
+      steps.map(([key, number, label, description], index) =>
+        h("button", {
+          key,
+          type: "button",
+          className: ["wizard-step", wizardStep === key ? "active" : "", index < currentIndex ? "complete" : ""].filter(Boolean).join(" "),
+          onClick: () => canContinue || index <= currentIndex ? goTo(index) : null,
+        },
+          h("span", { className: "wizard-step-number" }, number),
+          h("strong", null, label),
+          h("small", null, description)
+        )
+      )
+    ),
+    wizardStep === "setup" ? h("section", { className: "wizard-grid" },
+      h(Field, { label: "Source blueprint" },
+        h(Select, { value: form.sourceTemplateId, onChange: event => update("sourceTemplateId", event.target.value) },
+          blueprints.map(row => h("option", { key: row.id, value: row.id }, row.label || row.id))
         )
       ),
-      state.created ? h("div", { className: "designer-status" },
-        `${state.created.label || state.created.id} is installed. ID: ${state.created.id}`
-      ) : null,
-      installed.length ? h("div", { className: "installed-department-list" }, installed.slice(0, 6).map(row =>
-        h("article", { key: row.id, className: "installed-department-row" },
-          h("div", null,
-            h("strong", null, row.label || row.id),
-            h("small", null, `${row.status || "Active"} | Blueprint: ${row.blueprintId || row.templateId || "not set"}`)
-          ),
-          h(AccessBadge, { value: row.accessSummary || "workspace_editable" })
+      h(Field, { label: "Department name" },
+        h(Input, {
+          value: form.departmentLabel,
+          onChange: event => update("departmentLabel", event.target.value),
+          placeholder: "Example: Vendor Compliance AI Department",
+          required: true,
+        })
+      ),
+      h(Field, { label: "Project types", className: "wide" },
+        h(Input, {
+          value: form.projectTypes,
+          onChange: event => update("projectTypes", event.target.value),
+          placeholder: "Lead review, supplier qualification, tender package",
+        })
+      ),
+      h(Field, { label: "Purpose", className: "wide" },
+        h(Textarea, {
+          value: form.departmentPurpose,
+          onChange: event => update("departmentPurpose", event.target.value),
+          rows: 4,
+          placeholder: "What work should this department own?",
+        })
+      ),
+      h("div", { className: "wizard-summary-card wide" },
+        h("p", { className: "eyebrow" }, "Selected blueprint"),
+        h("strong", null, selectedBlueprint.label || selectedBlueprint.id || "No blueprint selected"),
+        h("p", null, selectedBlueprint.purpose || "This blueprint will be duplicated into a new installed department that can be configured separately.")
+      )
+    ) : null,
+    wizardStep === "manager" ? h("section", { className: "wizard-grid" },
+      h(Field, { label: "AI Manager alias" },
+        h(Input, {
+          value: form.aiManagerAlias,
+          onChange: event => update("aiManagerAlias", event.target.value),
+          placeholder: "Alex",
+        })
+      ),
+      h(Field, { label: "Human manager" },
+        h(Select, { value: form.humanManager, onChange: event => update("humanManager", event.target.value) },
+          h("option", { value: "Human_Iman" }, "Iman"),
+          h("option", { value: "Human_Manager" }, "Human Manager"),
+          h("option", { value: "Human_Admin" }, "Workspace Admin")
         )
-      )) : null
+      ),
+      h(Field, { label: "Default language" },
+        h(Select, { value: form.defaultLanguage, onChange: event => update("defaultLanguage", event.target.value) },
+          h("option", { value: "English" }, "English"),
+          h("option", { value: "Arabic" }, "Arabic"),
+          h("option", { value: "English + Arabic" }, "English + Arabic")
+        )
+      ),
+      h(Field, { label: "Approval policy", className: "wide" },
+        h(Textarea, {
+          value: form.approvalPolicy,
+          onChange: event => update("approvalPolicy", event.target.value),
+          rows: 4,
+          placeholder: "Which actions require approval before the department can execute?",
+        })
+      )
+    ) : null,
+    wizardStep === "resources" ? h("section", { className: "wizard-grid" },
+      h(Field, { label: "Active connections", className: "wide" },
+        h(Textarea, {
+          value: form.activeConnections,
+          onChange: event => update("activeConnections", event.target.value),
+          rows: 4,
+          placeholder: "CRM local snapshot, Tender files, Email drafts, Task threads",
+        })
+      ),
+      h(Field, { label: "Approved datasets", className: "wide" },
+        h(Textarea, {
+          value: form.approvedDatasets,
+          onChange: event => update("approvedDatasets", event.target.value),
+          rows: 4,
+          placeholder: "Leads, Companies, Contacts, Supplier database, Vendor lists",
+        })
+      ),
+      h("div", { className: "wizard-summary-card wide" },
+        h("p", { className: "eyebrow" }, "How this will be used"),
+        h("p", null, "These defaults become department-level context. Later, each stage resolves the exact lane, tool, and dataset before execution.")
+      )
+    ) : null,
+    wizardStep === "review" ? h("section", { className: "wizard-review-grid" },
+      reviewRows.map(row => h("div", { key: row.label, className: "wizard-summary-card" },
+        h("p", { className: "eyebrow" }, row.label),
+        h("p", null, row.value)
+      ))
+    ) : null,
+    h("div", { className: "wizard-actions" },
+      h("div", { className: "panel-actions" },
+        h(Button, { type: "button", variant: "outline", onClick: onCancel }, "Cancel"),
+        h(Button, { type: "button", variant: "outline", onClick: () => goTo(currentIndex - 1), disabled: currentIndex === 0 }, "Back")
+      ),
+      wizardStep === "review"
+        ? h(Button, { type: "submit", pending: state.busy, pendingLabel: "Creating..." }, icon("plus"), "Create department")
+        : h(Button, { type: "button", onClick: next, disabled: !canContinue }, "Next")
+    )
+  );
+}
+
+function AdminDataTable({ rows, columns, selectedId, onSelect, loading }) {
+  if (loading && !rows.length) return h("p", { className: "muted" }, "Loading table...");
+  if (!rows.length) return h(EmptyState, { title: "No records", body: "Use Add to create the first record in this table." });
+  return h("div", { className: "admin-data-table-wrap" },
+    h("table", { className: "admin-data-table" },
+      h("thead", null, h("tr", null, columns.map(([, label]) => h("th", { key: label }, label)))),
+      h("tbody", null, rows.map(row =>
+        h("tr", { key: row.id || row.label, className: selectedId === row.id && "selected", onClick: () => onSelect(row.id) },
+          columns.map(([key]) => h("td", { key }, shortText(Array.isArray(row[key]) ? row[key].join(", ") : (row[key] || ""), key === "id" || key === "templateId" ? 90 : 160)))
+        )
+      ))
     )
   );
 }
@@ -2235,6 +2816,7 @@ function CreateDepartmentPanel({ catalogs, onCreated }) {
 function PlatformStaffTemplatesPanel({ rows, catalogs, loading, onRefresh }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  const [viewMode, setViewMode] = useState("table");
   const [detailTab, setDetailTab] = useState("overview");
   const [draft, setDraft] = useState(null);
   const [saveState, setSaveState] = useState({ busy: false, error: "", message: "" });
@@ -2245,8 +2827,11 @@ function PlatformStaffTemplatesPanel({ rows, catalogs, loading, onRefresh }) {
   const selected = (rows || []).find(row => row.id === selectedId) || filteredRows[0] || rows[0] || null;
   const tabs = [
     ["overview", "Overview"],
-    ["capabilities", "Capabilities"],
+    ["promptRules", "Prompt Rules"],
+    ["model", "Model & Budget"],
+    ["analysis", "Analysis Templates"],
     ["tools", "Tools & Connections"],
+    ["fallbacks", "Tool Fallbacks"],
     ["datasets", "Datasets"],
     ["instructions", "Instructions"],
     ["input", "Input Contract"],
@@ -2280,7 +2865,8 @@ function PlatformStaffTemplatesPanel({ rows, catalogs, loading, onRefresh }) {
       "workspaceEditable", "status", "version", "roleType", "defaultDepartmentFamilies", "riskTier", "whenToUse",
       "defaultStageResponsibility", "supportedWorkflowStages", "capabilitiesAllowed", "capabilitiesNotAllowed", "supportedTaskTypes",
       "requiredLanesTools", "requiredDatasets", "optionalDatasets", "workspaceProvidedDatasets", "missingDataBehavior",
-      "instructionLayers", "inputContract", "outputContractDetail", "qaGuardrails", "retryPolicy", "versionLog", "validationState"
+      "instructionLayers", "inputContract", "outputContractDetail", "qaGuardrails", "retryPolicy", "versionLog", "validationState",
+      "modelTiers", "analysisTemplates", "toolFallbackMatrix"
     ];
     return Object.fromEntries(allowed.filter(key => value && value[key] !== undefined).map(key => [key, value[key]]));
   }
@@ -2305,6 +2891,86 @@ function PlatformStaffTemplatesPanel({ rows, catalogs, loading, onRefresh }) {
     }
   }
 
+  async function addStaffTemplate() {
+    const id = `archetype_custom_${Date.now()}`;
+    setSaveState({ busy: true, error: "", message: "" });
+    try {
+      await api("/api/fabric-object", {
+        method: "POST",
+        body: JSON.stringify({
+          collection: "staffArchetypes",
+          item: {
+            id,
+            label: "New AI Staff Blueprint",
+            purpose: "Describe the reusable staff role.",
+            roleType: "Staff",
+            status: "Draft",
+            version: "0.1.0",
+            allowedPluginFamilies: ["local_tasks"],
+            requiresApprovalFor: [],
+            outputContract: ["result_summary", "next_action"],
+            stopConditions: ["missing input"],
+            modelTiers: [
+              { id: "cheap", label: "Cheap", model: "gpt-5-mini", reasoningEffort: "low", useWhen: "Simple summaries and low-risk tasks." },
+              { id: "balanced", label: "Balanced", model: "gpt-5-mini", reasoningEffort: "medium", useWhen: "Normal production work." },
+              { id: "advanced", label: "Advanced", model: "higher reasoning model", reasoningEffort: "high", useWhen: "Complex strategy, review, or high-risk work." },
+            ],
+            analysisTemplates: [
+              { id: "default_analysis", label: "Default Analysis", requiredInputs: ["task_objective"], outputSections: ["summary", "recommendation", "next_action"] },
+            ],
+            toolFallbackMatrix: [
+              { condition: "Required connection missing", behavior: "Route a blocker to AI Manager and produce a limited result only if safe evidence is available." },
+            ],
+            workspaceEditable: true,
+          },
+          reason: "Created from AI Staff Blueprints table.",
+          updatedBy: "Platform Admin",
+        }),
+      });
+      setSelectedId(id);
+      setViewMode("detail");
+      setSaveState({ busy: false, error: "", message: "Staff blueprint created." });
+      await onRefresh();
+    } catch (error) {
+      setSaveState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
+  async function duplicateStaffTemplate() {
+    if (!selected) return;
+    const id = `${selected.id}_copy_${Date.now()}`;
+    const item = cleanStaffTemplateForSave({ ...selected, id, label: `${selected.label || "AI Staff Blueprint"} Copy`, status: "Draft", version: "0.1.0" });
+    setSaveState({ busy: true, error: "", message: "" });
+    try {
+      await api("/api/fabric-object", {
+        method: "POST",
+        body: JSON.stringify({ collection: "staffArchetypes", item, reason: "Duplicated from AI Staff Blueprints table.", updatedBy: "Platform Admin" }),
+      });
+      setSelectedId(id);
+      setViewMode("detail");
+      setSaveState({ busy: false, error: "", message: "Staff blueprint duplicated." });
+      await onRefresh();
+    } catch (error) {
+      setSaveState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
+  async function archiveStaffTemplate() {
+    if (!selected) return;
+    setSaveState({ busy: true, error: "", message: "" });
+    try {
+      await api("/api/fabric-object/archive", {
+        method: "POST",
+        body: JSON.stringify({ collection: "staffArchetypes", objectId: selected.id, reason: "Archived from AI Staff Blueprints table.", updatedBy: "Platform Admin" }),
+      });
+      setSaveState({ busy: false, error: "", message: "Staff blueprint archived." });
+      setViewMode("table");
+      await onRefresh();
+    } catch (error) {
+      setSaveState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
   if (loading && !rows.length) {
     return h(Card, { className: "designer-section-card" }, h(CardContent, null, h("p", { className: "muted" }, "Loading staff templates...")));
   }
@@ -2322,31 +2988,32 @@ function PlatformStaffTemplatesPanel({ rows, catalogs, loading, onRefresh }) {
       title: "AI Staff Templates",
       description: "Admin-governed reusable staff roles. Workspace users later inherit only the safe runtime preferences exposed by each template.",
       action: h("div", { className: "panel-actions" },
-        h(Badge, { tone: missingCount ? "warn" : "success" }, missingCount ? `${missingCount} validation note(s)` : "Template valid"),
-        h(Button, { variant: "secondary", onClick: saveDraft, pending: saveState.busy, pendingLabel: "Saving..." }, icon("save"), "Save admin draft")
+        h(Button, { variant: "secondary", onClick: addStaffTemplate, pending: saveState.busy, pendingLabel: "Adding..." }, icon("plus"), "Add"),
+        h(Button, { variant: "secondary", onClick: saveDraft, pending: saveState.busy, pendingLabel: "Saving..." }, icon("save"), "Save Edit")
+        , h(Button, { variant: "outline", onClick: duplicateStaffTemplate, disabled: !selected || saveState.busy }, "Duplicate")
+        , h(Button, { variant: "outline", onClick: archiveStaffTemplate, disabled: !selected || selected.locked || saveState.busy }, "Archive")
       )
     }),
     h(CardContent, null,
       saveState.error ? h("div", { className: "form-error" }, saveState.error) : null,
       saveState.message ? h("div", { className: "designer-status" }, saveState.message) : null,
-      h("div", { className: "staff-template-layout" },
-        h("aside", { className: "staff-template-list" },
-          h(Field, { label: "Search templates" }, h(Input, { value: query, onChange: event => setQuery(event.target.value), placeholder: "Outreach, QA, CRM, analyst..." })),
-          h("div", { className: "staff-template-cards" }, filteredRows.map(row =>
-            h("button", { key: row.id, type: "button", className: cn("staff-template-card", row.id === selected.id && "active"), onClick: () => { setSelectedId(row.id); setDetailTab("overview"); } },
-              h("span", { className: "staff-card-topline" },
-                h("strong", null, row.label || row.id),
-                h(Badge, { tone: row.status === "Deprecated" ? "danger" : row.status === "Draft" ? "warn" : "success" }, row.status || "Draft")
-              ),
-              h("small", null, row.roleType || "Staff"),
-              h("span", { className: "staff-card-meta" }, (row.defaultDepartmentFamilies || []).slice(0, 3).join(", ") || "Operations"),
-              h("span", { className: "staff-card-footer" },
-                h("span", null, `v${row.version || "1.0.0"}`),
-                h("span", null, `${row.riskTier || "Medium"} risk`)
-              )
-            )
-          ))
-        ),
+      viewMode === "table" ? h("div", { className: "p4-library-single" },
+        h(Field, { label: "Search this table" }, h(Input, { value: query, onChange: event => setQuery(event.target.value), placeholder: "Outreach, QA, CRM, analyst..." })),
+        h(AdminDataTable, {
+          rows: filteredRows,
+          loading,
+          selectedId,
+          onSelect: rowId => { setSelectedId(rowId); setDetailTab("overview"); setViewMode("detail"); },
+          columns: [
+            ["label", "Staff Blueprint"],
+            ["id", "ID"],
+            ["roleType", "Role"],
+            ["status", "Status"],
+            ["version", "Version"],
+            ["riskTier", "Risk"],
+          ],
+        })
+      ) : h("div", { className: "p4-library-single" },
         h("section", { className: "staff-template-detail" },
           h("div", { className: "staff-detail-head" },
             h("div", null,
@@ -2355,6 +3022,7 @@ function PlatformStaffTemplatesPanel({ rows, catalogs, loading, onRefresh }) {
               h("p", null, draft.purpose || selected.purpose)
             ),
             h("div", { className: "staff-detail-badges" },
+              h(Button, { variant: "outline", onClick: () => setViewMode("table") }, "Back to Table"),
               h(AccessBadge, { value: selected.accessSummary || "platform_locked" }),
               h(Badge, null, selected.roleType || "Staff"),
               h(Badge, { tone: (selected.riskTier || "").toLowerCase() === "high" ? "warn" : "neutral" }, `${selected.riskTier || "Medium"} risk`),
@@ -2366,8 +3034,11 @@ function PlatformStaffTemplatesPanel({ rows, catalogs, loading, onRefresh }) {
           )),
           h("div", { className: "staff-detail-body" },
             detailTab === "overview" ? h(StaffTemplateOverviewTab, { draft, updateDraft, updateDraftList }) : null,
-            detailTab === "capabilities" ? h(StaffTemplateCapabilitiesTab, { draft }) : null,
+            detailTab === "promptRules" ? h(StaffTemplatePromptRulesTab, { draft }) : null,
+            detailTab === "model" ? h(StaffTemplateModelBudgetTab, { draft, updateDraft }) : null,
+            detailTab === "analysis" ? h(StaffTemplateAnalysisTemplatesTab, { draft, updateDraft }) : null,
             detailTab === "tools" ? h(StaffTemplateToolsTab, { draft }) : null,
+            detailTab === "fallbacks" ? h(StaffTemplateFallbackMatrixTab, { draft, updateDraft }) : null,
             detailTab === "datasets" ? h(StaffTemplateDatasetsTab, { draft }) : null,
             detailTab === "instructions" ? h(StaffTemplateInstructionsTab, { draft }) : null,
             detailTab === "input" ? h(StaffTemplateContractTab, { title: "Input Contract", contract: draft.inputContract }) : null,
@@ -2395,6 +3066,132 @@ function listForUi(value) {
   return Array.isArray(value) ? value.filter(Boolean) : String(value || "").split(/[,;\n]+/).map(item => item.trim()).filter(Boolean);
 }
 
+function promptRuleLabel(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text
+    .replace(/[_\-]+/g, " ")
+    .replace(/\b\w/g, match => match.toUpperCase());
+}
+
+function toolFamilyLabel(value) {
+  const key = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+  const labels = {
+    appsheet_crm: "AppSheet CRM",
+    analytics_api: "Google Analytics / Analytics API",
+    attachment_verification: "Attachment Verification",
+    charts: "Charts And Visuals",
+    codex_worker_queue: "Codex Worker Queue",
+    crm_read: "CRM Lookup",
+    documents: "Document Maker / Reader",
+    email_queue: "Email Approval Queue",
+    files_read: "File And Tender Document Reader",
+    gmail_or_outlook: "Gmail Or Outlook Email Provider",
+    local_dashboard: "Local Dashboard",
+    local_packages: "Local Package Workspace",
+    local_sqlite: "Local SQLite Runtime Store",
+    local_tasks: "Local Tasks",
+    ocr_or_pdf_tools: "OCR / PDF Tools",
+    official_web_sources: "Official Web Sources",
+    reporting: "Report Maker",
+    gcp_read: "Google Cloud / BigQuery Read",
+    search_console_api: "Google Search Console API",
+    seo_research: "SEO Research Tools",
+    smtp_draft: "Local SMTP / .eml Draft",
+    spreadsheets: "Spreadsheets",
+    task_threads: "Task Threads",
+  };
+  return labels[key] || promptRuleLabel(value);
+}
+
+function toolFamilyMeaning(value) {
+  const key = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+  const meanings = {
+    appsheet_crm: "Can read or update CRM-style records through the configured AppSheet/CRM lane when policy allows it.",
+    analytics_api: "Can read engagement and traffic behavior through the assigned analytics provider when connected.",
+    attachment_verification: "Can check whether files are present, relevant, and safe before an outbound draft or package is approved.",
+    charts: "Can prepare chart-ready summaries for internal reports.",
+    codex_worker_queue: "Can create internal work items for a local worker; this does not contact external parties.",
+    crm_read: "Can inspect lead, company, contact, supplier, and project records available to the workspace.",
+    documents: "Can draft or review structured documents and tender package content.",
+    email_queue: "Can prepare email drafts and approval previews; sending still waits for approval.",
+    files_read: "Can read uploaded tender files, PDFs, spreadsheets, and evidence references.",
+    gmail_or_outlook: "Can use the active email provider lane only after the workspace has connected one and approval rules pass.",
+    local_dashboard: "Can read local operational status, KPIs, blockers, and queue health.",
+    local_packages: "Can work with locally prepared tender/package files.",
+    local_sqlite: "Can use local runtime tables for tasks, threads, outputs, queues, and logs.",
+    local_tasks: "Can create or update internal tasks routed through the AI Manager.",
+    ocr_or_pdf_tools: "Can extract text or evidence from scanned PDFs or document images when available.",
+    official_web_sources: "Can use official/public sources for research and evidence collection.",
+    reporting: "Can produce internal summaries, reports, and manager-ready status updates.",
+    gcp_read: "Can read approved Google Cloud project exports, BigQuery tables, or service-account-backed data references.",
+    search_console_api: "Can query Google Search Console performance data for verified properties assigned to the organization.",
+    seo_research: "Can use Ahrefs, Semrush, or equivalent SEO datasets when the organization has connected or uploaded them.",
+    smtp_draft: "Can create local draft files such as .eml; external sending is still supervised.",
+    spreadsheets: "Can read or prepare spreadsheet-style data, trackers, and import/export tables.",
+    task_threads: "Can create or update internal task threads; specialists still route human-facing communication through the manager.",
+  };
+  return meanings[key] || "Allowed tool category for this staff. The actual provider is resolved from active workspace connections and lane adapters.";
+}
+
+function datasetLabel(value) {
+  const key = String(value || "").trim().toLowerCase();
+  const normalized = key.replace(/[\s\-]+/g, "_");
+  const labels = {
+    active_crm_source_databases: "Active CRM / Source Databases",
+    approved_contacts_and_sender_identities: "Approved Contacts And Sender Identities",
+    approved_learned_improvements: "Approved Learned Improvements",
+    company_profile: "Company Profile",
+    crm_lead_or_project_record: "CRM Lead Or Project Record",
+    evidence_package: "Evidence Package",
+    previous_communication_history: "Previous Communication History",
+    recipient_contact_record: "Recipient / Contact Record",
+    source_files: "Source Files",
+    task_brief: "Task Brief",
+    workspace_preferences: "Workspace Preferences",
+  };
+  return labels[normalized] || promptRuleLabel(value);
+}
+
+function datasetMeaning(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[\s\-]+/g, "_");
+  const meanings = {
+    active_crm_source_databases: "Workspace settings or department settings must point this department to active CRM/source tables.",
+    approved_contacts_and_sender_identities: "Workspace settings must include approved contacts, sender identities, and communication preferences.",
+    approved_learned_improvements: "Approved learnings come from reviewed/accepted skill updates, not raw closed-thread notes.",
+    company_profile: "Company record should include identity, role, supplier/client status, and useful context.",
+    crm_lead_or_project_record: "A lead or project record must be attached before the staff can reason about scope, deadlines, or next steps.",
+    evidence_package: "Files, links, prior notes, or source excerpts that support the staff's recommendation.",
+    previous_communication_history: "Prior emails, thread messages, notes, or outreach attempts used to avoid duplicate or inconsistent communication.",
+    recipient_contact_record: "A contact record with name, company, role, and safe communication details.",
+    source_files: "Uploaded tender files, PDFs, spreadsheets, screenshots, or other project evidence.",
+    task_brief: "A clear manager-routed task describing objective, context, expected output, and constraints.",
+    workspace_preferences: "Workspace defaults such as company name, tone, language, sender identity, and approval preferences.",
+  };
+  return meanings[normalized] || "Information this staff needs. It becomes active when supplied by workspace settings, department settings, a lead/project record, uploaded files, CRM tables, or approved learning.";
+}
+
+function datasetActivation(value, type) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[\s\-]+/g, "_");
+  const activation = {
+    active_crm_source_databases: "Settings -> data sources / Department Explorer -> Connections & Databases.",
+    approved_contacts_and_sender_identities: "Workspace Settings -> business identity, contacts, sender identities.",
+    approved_learned_improvements: "Learning Library after human approval.",
+    company_profile: "Company table or lead-linked company record.",
+    crm_lead_or_project_record: "Lead/project action that starts the department workflow.",
+    evidence_package: "Project files, thread attachments, source links, or saved output evidence.",
+    previous_communication_history: "Communications log, email alpha log, or task-thread history.",
+    recipient_contact_record: "Contacts table or supplier/client contact selected for the lead.",
+    source_files: "Lead files, uploaded tender documents, or local file references.",
+    task_brief: "Manager-created task or project plan step.",
+    workspace_preferences: "Workspace Settings and Department Settings.",
+  };
+  if (activation[normalized]) return activation[normalized];
+  if (type === "workspace") return "Workspace Settings or Department Settings.";
+  if (type === "optional") return "Optional context; add through project files, notes, CRM, or learning when available.";
+  return "Attach it to the lead/project, enable the related connection, or ask the AI Manager to request the missing input.";
+}
+
 function StaffTemplateOverviewTab({ draft, updateDraft, updateDraftList }) {
   return h("div", { className: "staff-tab-grid" },
     h(Field, { label: "Staff name" }, h(Input, { value: draft.label || "", onChange: event => updateDraft("label", event.target.value) })),
@@ -2417,33 +3214,190 @@ function StaffTemplateOverviewTab({ draft, updateDraft, updateDraftList }) {
   );
 }
 
-function StaffTemplateCapabilitiesTab({ draft }) {
+function StaffTemplatePromptRulesTab({ draft }) {
   return h("div", { className: "staff-info-grid" },
-    h(StaffInfoPanel, { title: "Allowed Capabilities", items: draft.capabilitiesAllowed || draft.outputContract }),
-    h(StaffInfoPanel, { title: "Not Allowed / Stop Conditions", items: draft.capabilitiesNotAllowed || draft.stopConditions }),
-    h(StaffInfoPanel, { title: "Supported Task Types", items: draft.supportedTaskTypes || draft.outputContract }),
-    h(StaffInfoPanel, { title: "Approval Required For", items: draft.requiresApprovalFor })
+    h("article", { className: "staff-info-panel staff-wide" },
+      h("h4", null, "What These Values Mean"),
+      h("p", null, "These are staff skill and prompt-contract rules. They are not platform Capability records. They tell this AI staff how to behave, what to return, when to stop, and when approval is required.")
+    ),
+    h(StaffInfoPanel, { title: "This Staff May Return", items: draft.capabilitiesAllowed || draft.outputContract, format: "promptRule" }),
+    h(StaffInfoPanel, { title: "This Staff Must Stop Or Escalate When", items: draft.capabilitiesNotAllowed || draft.stopConditions, format: "promptRule" }),
+    h(StaffInfoPanel, { title: "Expected Response Sections", items: draft.supportedTaskTypes || draft.outputContract, format: "promptRule" }),
+    h(StaffInfoPanel, { title: "Needs Approval Before", items: draft.requiresApprovalFor, format: "promptRule" })
+  );
+}
+
+function updateJsonField(updateDraft, key, text) {
+  try {
+    updateDraft(key, JSON.parse(text || "null"));
+    return "";
+  } catch (error) {
+    return error.message || String(error);
+  }
+}
+
+function StaffTemplateJsonEditor({ title, description, fieldKey, value, updateDraft, placeholder }) {
+  const [text, setText] = useState(jsonPretty(value || []));
+  const [error, setError] = useState("");
+  useEffect(() => {
+    setText(jsonPretty(value || []));
+    setError("");
+  }, [fieldKey, JSON.stringify(value || [])]);
+  return h("article", { className: "staff-info-panel staff-wide" },
+    h("h4", null, title),
+    h("p", null, description),
+    error ? h("div", { className: "form-error" }, error) : null,
+    h(Textarea, { rows: 14, value: text, placeholder, onChange: event => setText(event.target.value) }),
+    h("div", { className: "panel-actions" },
+      h(Button, { type: "button", variant: "secondary", onClick: () => {
+        const nextError = updateJsonField(updateDraft, fieldKey, text);
+        setError(nextError);
+      } }, "Apply JSON")
+    )
+  );
+}
+
+function StaffTemplateModelBudgetTab({ draft, updateDraft }) {
+  const tiers = Array.isArray(draft.modelTiers) ? draft.modelTiers : [];
+  return h("div", { className: "staff-table-list" },
+    h("article", { className: "staff-info-panel" },
+      h("h4", null, "Model And Budget Logic"),
+      h("p", null, "A staff template can define multiple reasoning levels. A department or project can choose cheap, balanced, or advanced without changing the staff's core skills."),
+      tiers.length ? h("div", { className: "staff-table-list compact" }, tiers.map(tier =>
+        h("article", { key: tier.id || tier.label, className: "staff-tool-row" },
+          h("div", null, h("strong", null, tier.label || tier.id), h("small", null, tier.model || "Model not set")),
+          h(Badge, null, tier.reasoningEffort || "medium"),
+          h("p", null, tier.useWhen || "No usage rule.")
+        )
+      )) : h("p", { className: "muted" }, "No model tiers defined yet.")
+    ),
+    h(StaffTemplateJsonEditor, {
+      title: "Edit Model Tiers",
+      description: "Define reusable budget/quality options. Departments select one tier at assignment/runtime.",
+      fieldKey: "modelTiers",
+      value: tiers,
+      updateDraft,
+      placeholder: '[{"id":"balanced","label":"Balanced","model":"gpt-5-mini","reasoningEffort":"medium","useWhen":"Normal analysis."}]'
+    })
+  );
+}
+
+function StaffTemplateAnalysisTemplatesTab({ draft, updateDraft }) {
+  const templates = Array.isArray(draft.analysisTemplates) ? draft.analysisTemplates : [];
+  return h("div", { className: "staff-table-list" },
+    h("article", { className: "staff-info-panel" },
+      h("h4", null, "Reusable Analysis Templates"),
+      h("p", null, "These are the repeatable analysis modes the staff knows how to perform. A workflow stage can select one template and provide the required inputs."),
+      templates.length ? h("div", { className: "staff-table-list compact" }, templates.map(template =>
+        h("article", { key: template.id || template.label, className: "staff-tool-row" },
+          h("div", null, h("strong", null, template.label || template.id), h("small", null, template.id || "analysis_template")),
+          h(Badge, null, `${listForUi(template.requiredInputs).length} inputs`),
+          h("p", null, listForUi(template.outputSections).length ? `Outputs: ${listForUi(template.outputSections).map(promptRuleLabel).join(", ")}` : "No output sections set.")
+        )
+      )) : h("p", { className: "muted" }, "No analysis templates defined yet.")
+    ),
+    h(StaffTemplateJsonEditor, {
+      title: "Edit Analysis Templates",
+      description: "Each template should define an ID, label, required inputs, and output sections.",
+      fieldKey: "analysisTemplates",
+      value: templates,
+      updateDraft,
+      placeholder: '[{"id":"keyword_opportunity","label":"Keyword Opportunity","requiredInputs":["site_url"],"outputSections":["quick_wins"]}]'
+    })
+  );
+}
+
+function StaffTemplateFallbackMatrixTab({ draft, updateDraft }) {
+  const rows = Array.isArray(draft.toolFallbackMatrix) ? draft.toolFallbackMatrix : [];
+  return h("div", { className: "staff-table-list" },
+    h("article", { className: "staff-info-panel" },
+      h("h4", null, "Tool Availability Logic"),
+      h("p", null, "This tells the staff what to do when some connections are active, missing, or unavailable. The staff must state limitations instead of pretending tools exist."),
+      rows.length ? h("div", { className: "staff-table-list compact" }, rows.map((row, index) =>
+        h("article", { key: `${row.condition || index}`, className: "staff-tool-row" },
+          h("div", null, h("strong", null, row.condition || `Condition ${index + 1}`), h("small", null, "Runtime connection branch")),
+          h("p", null, row.behavior || "No behavior defined.")
+        )
+      )) : h("p", { className: "muted" }, "No fallback matrix defined yet.")
+    ),
+    h(StaffTemplateJsonEditor, {
+      title: "Edit Fallback Matrix",
+      description: "Define conditions such as which APIs are active, and what the staff should do.",
+      fieldKey: "toolFallbackMatrix",
+      value: rows,
+      updateDraft,
+      placeholder: '[{"condition":"Search Console active only","behavior":"Use GSC data and mark Analytics unavailable."}]'
+    })
   );
 }
 
 function StaffTemplateToolsTab({ draft }) {
   const tools = draft.requiredLanesTools || [];
   return h("div", { className: "staff-table-list" },
-    tools.length ? tools.map((tool, index) => h("article", { key: `${tool.family || index}`, className: "staff-tool-row" },
-      h("div", null, h("strong", null, tool.family || "Tool family"), h("small", null, tool.providerResolutionRule || "Provider resolved by active workspace connection.")),
-      h(Badge, { tone: tool.requirement === "required" ? "warn" : "neutral" }, tool.requirement || "optional"),
-      h(Badge, { tone: String(tool.status || "").startsWith("active") ? "success" : "neutral" }, tool.status || "inactive"),
-      h("p", null, tool.fallbackBehavior || "Fallback to manager routing.")
-    )) : h(EmptyState, { title: "No tools configured", body: "Add allowed tool families to define lane adapter requirements." })
+    h("article", { className: "staff-info-panel" },
+      h("h4", null, "What This Section Means"),
+      h("p", null, "These are tool families this staff may use. They are not fixed accounts. At runtime, the department resolves each family through the workspace's active connections and lane adapters."),
+      h("p", null, "If the required connection is missing, the staff should route the blocker to the AI Manager instead of pretending the tool is available.")
+    ),
+    tools.length ? tools.map((tool, index) => {
+      const family = tool.family || "";
+      const status = String(tool.status || "").trim();
+      const isActive = status.toLowerCase().startsWith("active");
+      return h("article", { key: `${family || index}`, className: "staff-tool-row" },
+        h("div", null,
+          h("strong", null, toolFamilyLabel(family || "Tool family")),
+          h("small", null, family ? `Tool-family key: ${family}` : "Tool-family key not set")
+        ),
+        h(Badge, { tone: tool.requirement === "required" ? "warn" : "neutral" }, tool.requirement || "optional"),
+        h(Badge, { tone: isActive ? "success" : "neutral" }, isActive ? "connection available" : (status || "connection not active")),
+        h("p", null, toolFamilyMeaning(family)),
+        h(DetailList, { rows: [
+          { label: "Provider is chosen by", value: tool.providerResolutionRule || "Active workspace connection plus lane adapter." },
+          { label: "If missing", value: tool.fallbackBehavior || "Route to AI Manager and create a blocker or setup task." },
+          { label: "External action", value: /email|smtp|gmail|outlook/i.test(family) ? "Draft/preview only until approval passes." : "Internal unless a lane adapter explicitly requires human approval." },
+        ] })
+      );
+    }) : h(EmptyState, { title: "No tool families configured", body: "Add tool-family rules to define what this staff can use and how missing connections should be handled." })
   );
 }
 
 function StaffTemplateDatasetsTab({ draft }) {
-  return h("div", { className: "staff-info-grid" },
-    h(StaffInfoPanel, { title: "Required Datasets", items: draft.requiredDatasets }),
-    h(StaffInfoPanel, { title: "Optional Datasets", items: draft.optionalDatasets }),
-    h(StaffInfoPanel, { title: "Workspace-Provided Datasets", items: draft.workspaceProvidedDatasets }),
-    h("article", { className: "staff-info-panel" }, h("h4", null, "Missing-Data Behavior"), h("p", null, draft.missingDataBehavior || "Ask AI Manager to request missing input."))
+  const groups = [
+    ["Required Inputs", draft.requiredDatasets, "required"],
+    ["Helpful Optional Context", draft.optionalDatasets, "optional"],
+    ["Workspace Defaults / Shared Data", draft.workspaceProvidedDatasets, "workspace"],
+  ];
+  function datasetGroup(title, items, type) {
+    const values = listForUi(items);
+    return h("article", { key: title, className: "staff-info-panel" },
+      h("h4", null, title),
+      values.length ? h("div", { className: "staff-table-list compact" },
+        values.map(item => h("article", { key: `${type}-${item}`, className: "staff-tool-row" },
+          h("div", null,
+            h("strong", null, datasetLabel(item)),
+            h("small", null, `Dataset rule: ${item}`)
+          ),
+          h(Badge, { tone: type === "required" ? "warn" : type === "workspace" ? "success" : "neutral" }, type === "required" ? "required" : type === "workspace" ? "workspace supplied" : "optional"),
+          h("p", null, datasetMeaning(item)),
+          h(DetailList, { rows: [
+            { label: "How to activate", value: datasetActivation(item, type) },
+            { label: "If missing", value: type === "required" ? (draft.missingDataBehavior || "Ask AI Manager to create a human-facing missing-input thread.") : "Continue if safe, but mention the limitation in the output." },
+          ] })
+        ))
+      ) : h("p", { className: "muted" }, "None configured.")
+    );
+  }
+  return h("div", { className: "staff-table-list" },
+    h("article", { className: "staff-info-panel" },
+      h("h4", null, "What This Section Means"),
+      h("p", null, "Datasets are the information this staff needs before it can do reliable work. They are not always separate database tables; they can come from a lead record, uploaded tender files, CRM tables, workspace settings, communications logs, or approved learnings."),
+      h("p", null, "To activate a dataset, connect or provide the source in Workspace Settings, Department Settings, the lead/project record, uploaded files, or the Learning Library.")
+    ),
+    groups.map(([title, items, type]) => datasetGroup(title, items, type)),
+    h("article", { className: "staff-info-panel" },
+      h("h4", null, "Missing Data Policy"),
+      h("p", null, draft.missingDataBehavior || "Ask AI Manager to request missing input.")
+    )
   );
 }
 
@@ -2493,15 +3447,488 @@ function StaffTemplateVersionTab({ draft }) {
   );
 }
 
-function StaffInfoPanel({ title, items }) {
+function StaffInfoPanel({ title, items, format }) {
   const values = listForUi(items);
+  const displayValue = item => format === "promptRule" ? promptRuleLabel(item) : format === "friendly" ? friendlyId(item) : item;
   return h("article", { className: "staff-info-panel" },
     h("h4", null, title),
-    values.length ? h("ul", null, values.map(item => h("li", { key: item }, item))) : h("p", { className: "muted" }, "None configured.")
+    values.length ? h("ul", null, values.map(item => h("li", { key: item }, displayValue(item)))) : h("p", { className: "muted" }, "None configured.")
   );
 }
 
-function PlatformP4LibraryPanel({ rows, catalogKey, loading }) {
+function p4SourceCollection(catalogKey, row = {}) {
+  if (catalogKey === "departmentPackages") return "departmentTemplates";
+  if (catalogKey === "skillPacks") return row.sourceCatalog || row.catalog || "staffTemplateSkills";
+  if (catalogKey === "toolDataContracts") return "lanes";
+  if (catalogKey === "stageTemplates") return "recipes";
+  if (catalogKey === "laneAdapters") return "lanes";
+  return "";
+}
+
+function p4SourceId(catalogKey, row = {}) {
+  if (catalogKey === "toolDataContracts") return row.laneId || "";
+  if (catalogKey === "stageTemplates") return row.recipeId || "";
+  return row.id || "";
+}
+
+function p4FindSourceItem(catalogKey, row = {}, catalogs = {}) {
+  const sourceId = p4SourceId(catalogKey, row);
+  if (!sourceId) return null;
+  if (catalogKey === "departmentPackages") return (catalogs.departmentBlueprints || []).find(item => item.id === sourceId) || row;
+  if (catalogKey === "toolDataContracts" || catalogKey === "laneAdapters") return (catalogs.laneAdapters || []).find(item => item.id === sourceId) || row;
+  if (catalogKey === "stageTemplates") {
+    return (catalogs.recipes || []).find(item => item.id === sourceId)
+      || (catalogs.workflowTemplates || []).find(item => item.recipeId === sourceId || item.id === sourceId)
+      || row;
+  }
+  return row;
+}
+
+function stripP4RuntimeKeys(item = {}) {
+  const blocked = new Set([
+    "dtoType", "fieldAccess", "accessSummary", "packageId", "installedDepartmentId", "runtimeStatus",
+    "staffBlueprintCount", "stageTemplateCount", "skillPackId", "activationState", "adapterId",
+    "providerRulesOwnedBy", "fieldAccessMode", "contractId", "connectionLabels", "databaseLabels",
+    "stageTemplateId", "recipeLabel", "capabilityLabel", "sequence", "requiredLanes", "requiredQualityGates",
+  ]);
+  return Object.fromEntries(Object.entries(item || {}).filter(([key]) => !blocked.has(key)));
+}
+
+function p4NewSourceItem(catalogKey) {
+  const stamp = Date.now();
+  if (catalogKey === "departmentPackages") {
+    return {
+      id: `template_custom_department_${stamp}`,
+      label: "New Department Package",
+      purpose: "Describe the reusable department package.",
+      status: "Draft",
+      version: "0.1.0",
+      locked: false,
+      workspaceEditable: true,
+      capabilities: [],
+      staffProfiles: [],
+    };
+  }
+  if (catalogKey === "skillPacks") {
+    return {
+      id: `staff_skill_custom_${stamp}`,
+      label: "New Skill Pack",
+      scope: "staffTemplate",
+      summary: "Describe this reusable skill pack.",
+      rules: [],
+      ownerLayer: "platformAdmin",
+      locked: false,
+      workspaceEditable: false,
+      status: "Draft",
+      version: "0.1.0",
+    };
+  }
+  if (catalogKey === "stageTemplates") {
+    return {
+      id: `recipe_custom_stage_${stamp}`,
+      label: "New Stage Template Recipe",
+      summary: "Describe this reusable workflow stage template.",
+      ownerStaff: "AIstaff_Manager",
+      status: "Draft",
+      stages: [
+        {
+          id: `stage_custom_${stamp}`,
+          label: "New Stage",
+          lanes: [],
+          qualityGates: [],
+        },
+      ],
+      outputs: [],
+    };
+  }
+  return {
+    id: `lane_custom_${stamp}`,
+    label: catalogKey === "toolDataContracts" ? "New Tool/Data Contract Lane" : "New Lane Adapter",
+    routeType: catalogKey === "toolDataContracts" ? "tool/data contract" : "local workflow",
+    ownerStaff: "AIstaff_Manager",
+    connections: [],
+    databases: [],
+    aiSupport: [],
+    qualityGates: [],
+    status: "Draft",
+    version: "0.1.0",
+    locked: false,
+    workspaceEditable: false,
+  };
+}
+
+function duplicateP4SourceItem(catalogKey, row = {}, catalogs = {}) {
+  const source = p4FindSourceItem(catalogKey, row, catalogs) || row;
+  const clone = stripP4RuntimeKeys(jsonCloneForUi(source));
+  const stamp = Date.now();
+  clone.id = `${source.id || row.id || "catalog_row"}_copy_${stamp}`;
+  clone.label = `${source.label || row.label || "Catalog Row"} Copy`;
+  clone.status = "Draft";
+  clone.version = "0.1.0";
+  clone.locked = false;
+  if (catalogKey === "toolDataContracts" || catalogKey === "laneAdapters") clone.routeType = clone.routeType || "local workflow";
+  if (catalogKey === "stageTemplates" && Array.isArray(clone.stages)) {
+    clone.stages = clone.stages.map((stage, index) => ({
+      ...stage,
+      id: `${stage.id || "stage"}_copy_${stamp}_${index + 1}`,
+      label: `${stage.label || "Stage"} Copy`,
+    }));
+  }
+  return clone;
+}
+
+function catalogItemLabel(catalogs = {}, collection, id) {
+  const value = String(id || "");
+  if (!value) return "";
+  const rows = (catalogs[collection] || []) || [];
+  const row = rows.find(item => String(item.id) === value);
+  return row ? (row.label || row.name || row.id) : friendlyId(value);
+}
+
+function CatalogReferencePanel({ title, ids, collection, catalogs, onOpenReference }) {
+  const values = listForUi(ids);
+  return h("article", { className: "staff-info-panel catalog-reference-panel" },
+    h("h4", null, title),
+    values.length ? h("div", { className: "catalog-reference-list" }, values.map(id => {
+      const label = catalogItemLabel(catalogs, collection, id);
+      return h("button", { type: "button", className: "catalog-reference-row", key: id, onClick: () => onOpenReference && onOpenReference(collection, id) },
+        h("strong", null, label),
+        h("small", null, id)
+      );
+    })) : h("p", { className: "muted" }, "None configured.")
+  );
+}
+
+function compatibilityRuleLabel(rule) {
+  const labels = {
+    local_alpha_compatible: "Compatible with local alpha runtime",
+    compatible_with_local_p4_resolver: "Compatible with local P4 composition resolver",
+  };
+  return labels[rule] || friendlyId(rule);
+}
+
+function compatibilityRuleDescription(rule) {
+  const descriptions = {
+    local_alpha_compatible: "This object can run in the current local Python/React + SQLite alpha without production cloud orchestration.",
+    compatible_with_local_p4_resolver: "This skill pack can be resolved into the effective local P4 runtime context.",
+  };
+  return descriptions[rule] || "Platform compatibility metadata used by the resolver and admin validation.";
+}
+
+function compatibilityRuleRecord(catalogs = {}, rule) {
+  return ((catalogs.compatibilityRules || []) || []).find(row => String(row.id) === String(rule)) || {};
+}
+
+function CompatibilityRulesPanel({ rules, catalogs, onOpenReference }) {
+  const values = listForUi(rules);
+  return h("article", { className: "staff-info-panel catalog-reference-panel" },
+    h("h4", null, "Compatibility Rules"),
+    values.length ? h("div", { className: "catalog-reference-list" }, values.map(rule => {
+      const row = compatibilityRuleRecord(catalogs, rule);
+      return h("button", { type: "button", className: "catalog-reference-row", key: rule, onClick: () => onOpenReference && onOpenReference("compatibilityRules", rule) },
+        h("strong", null, row.label || compatibilityRuleLabel(rule)),
+        h("small", null, rule),
+        h("p", null, row.summary || compatibilityRuleDescription(rule))
+      );
+    })) : h("p", { className: "muted" }, "None configured.")
+  );
+}
+
+function formSchemaForCollection(catalogs = {}, collection) {
+  return ((catalogs.formSchemas || {})[collection]) || null;
+}
+
+function schemaDefaultItem(schema, collection) {
+  const stamp = Date.now();
+  const item = {};
+  (schema && schema.fields || []).forEach(field => {
+    if (field.default !== undefined) item[field.name] = jsonCloneForUi(field.default);
+    else if (field.type === "boolean") item[field.name] = false;
+    else if (["multiReference", "multiEnum", "tags", "childTable"].includes(field.type)) item[field.name] = [];
+    else item[field.name] = "";
+  });
+  item.id = item.id || `${(schema && schema.idPrefix) || collection || "row"}_${stamp}`;
+  item.label = item.label || `New ${(schema && schema.label) || collection || "Row"}`;
+  return item;
+}
+
+function editorStateFor({ mode, collection, title, item, schema }) {
+  const cleanItem = jsonCloneForUi(item || schemaDefaultItem(schema, collection));
+  return {
+    mode,
+    collection,
+    title,
+    item: cleanItem,
+    json: jsonPretty(cleanItem),
+    originalId: cleanItem.id || "",
+    activeTab: "form",
+  };
+}
+
+function updateEditorItem(setEditor, updater) {
+  setEditor(current => {
+    const nextItem = typeof updater === "function" ? updater(jsonCloneForUi(current.item || {})) : updater;
+    return { ...current, item: nextItem, json: jsonPretty(nextItem) };
+  });
+}
+
+function referenceOptionsFor(catalogs = {}, collection) {
+  const rows = ((catalogs.referenceIndexes || {})[collection]) || catalogs[collection] || [];
+  return (rows || []).filter(Boolean).map(row => ({
+    id: row.id,
+    label: row.label || row.name || row.id,
+    summary: row.summary || row.purpose || row.rule || row.usage || "",
+    status: row.status || row.lifecycleStatus || "",
+  })).filter(row => row.id);
+}
+
+function enumOptionsFor(catalogs = {}, field = {}) {
+  return ((catalogs.enumOptions || {})[field.enumKey] || field.options || []).map(value => ({ id: value, label: String(value) }));
+}
+
+function SchemaForm({ schema, item, setItem, catalogs, onOpenReference, mode }) {
+  if (!schema) {
+    return h("pre", { className: "manifest-preview compact" }, jsonPretty(item || {}).slice(0, 7000));
+  }
+  const fields = schema.fields || [];
+  const sections = [];
+  fields.forEach(field => {
+    const section = field.section || "General";
+    if (!sections.includes(section)) sections.push(section);
+  });
+  function setField(name, value) {
+    setItem(current => ({ ...(current || {}), [name]: value }));
+  }
+  return h("div", { className: "schema-form" },
+    sections.map(section => h("section", { key: section, className: "schema-form-section" },
+      h("h4", null, section),
+      h("div", { className: "schema-field-grid" },
+        fields.filter(field => (field.section || "General") === section).map(field =>
+          h(SchemaField, {
+            key: field.name,
+            field,
+            value: (item || {})[field.name],
+            item,
+            setValue: value => setField(field.name, value),
+            catalogs,
+            onOpenReference,
+            mode,
+          })
+        )
+      )
+    ))
+  );
+}
+
+function SchemaField({ field, value, setValue, catalogs, onOpenReference, mode }) {
+  const disabled = field.editable === false || (field.name === "id" && mode === "edit");
+  const label = field.label || field.name;
+  const help = field.helpText ? h("small", { className: "field-help" }, field.helpText) : null;
+  if (field.type === "textarea") {
+    return h(Field, { label, className: "schema-field-wide" },
+      h(Textarea, { value: value || "", rows: 4, disabled, onChange: event => setValue(event.target.value) }),
+      help
+    );
+  }
+  if (field.type === "boolean") {
+    return h("label", { className: "schema-checkbox" },
+      h("input", { type: "checkbox", checked: Boolean(value), disabled, onChange: event => setValue(event.target.checked) }),
+      h("span", null, label),
+      help
+    );
+  }
+  if (field.type === "enum" || field.type === "multiEnum") {
+    return h(SchemaSelectField, { field, value, setValue, catalogs, disabled, label, options: enumOptionsFor(catalogs, field), multiple: field.type === "multiEnum", onOpenReference });
+  }
+  if (field.type === "reference" || field.type === "multiReference") {
+    return h(SchemaSelectField, { field, value, setValue, catalogs, disabled, label, options: referenceOptionsFor(catalogs, field.referenceCollection), multiple: field.type === "multiReference", onOpenReference });
+  }
+  if (field.type === "tags") {
+    return h(Field, { label, className: "schema-field-wide" },
+      h(Textarea, {
+        value: listForUi(value).join("\n"),
+        rows: 4,
+        disabled,
+        onChange: event => setValue(String(event.target.value || "").split(/[\n,;]+/).map(item => item.trim()).filter(Boolean)),
+      }),
+      help
+    );
+  }
+  if (field.type === "childTable") {
+    return h(SchemaChildTable, { field, value: Array.isArray(value) ? value : [], setValue, catalogs, onOpenReference, disabled });
+  }
+  if (field.type === "readonly") {
+    return h(Field, { label }, h(Input, { value: value || "", disabled: true }), help);
+  }
+  return h(Field, { label },
+    h(Input, { value: value || "", disabled, required: Boolean(field.required), onChange: event => setValue(event.target.value) }),
+    help
+  );
+}
+
+function SchemaSelectField({ field, value, setValue, catalogs, disabled, label, options, multiple, onOpenReference }) {
+  const values = multiple ? listForUi(value) : (value || "");
+  const currentValue = multiple ? "" : values;
+  function addValue(nextValue) {
+    if (!nextValue) return;
+    if (multiple) {
+      const current = listForUi(values);
+      if (!current.includes(nextValue)) setValue([...current, nextValue]);
+    } else {
+      setValue(nextValue);
+    }
+  }
+  function removeValue(removeId) {
+    setValue(listForUi(values).filter(item => item !== removeId));
+  }
+  return h(Field, { label, className: multiple ? "schema-field-wide" : "" },
+    h("div", { className: "schema-select-row" },
+      h(Select, { value: currentValue, disabled, onChange: event => multiple ? addValue(event.target.value) : setValue(event.target.value) },
+        h("option", { value: "" }, multiple ? "Add value..." : "Select..."),
+        options.map(option => h("option", { key: option.id, value: option.id }, option.label || option.id))
+      ),
+      !multiple && value && field.referenceCollection ? h(Button, { type: "button", variant: "outline", onClick: () => onOpenReference && onOpenReference(field.referenceCollection, value) }, "Open") : null
+    ),
+    multiple ? h("div", { className: "schema-chip-list" },
+      listForUi(values).map(item => {
+        const option = options.find(row => String(row.id) === String(item)) || { id: item, label: friendlyId(item) };
+        return h("span", { className: "schema-chip", key: item },
+          h("button", { type: "button", onClick: () => field.referenceCollection && onOpenReference && onOpenReference(field.referenceCollection, item) }, option.label || item),
+          h("small", null, item),
+          disabled ? null : h("button", { type: "button", className: "schema-chip-remove", onClick: () => removeValue(item) }, "x")
+        );
+      })
+    ) : null,
+    field.helpText ? h("small", { className: "field-help" }, field.helpText) : null
+  );
+}
+
+function SchemaChildTable({ field, value, setValue, catalogs, onOpenReference, disabled }) {
+  function newChildRow() {
+    const stamp = Date.now();
+    const childFields = field.fields || [];
+    const row = {};
+    childFields.forEach(childField => {
+      if (childField.default !== undefined) row[childField.name] = jsonCloneForUi(childField.default);
+      else if (childField.type === "boolean") row[childField.name] = childField.name === "editable";
+      else if (["multiReference", "multiEnum", "tags", "childTable"].includes(childField.type)) row[childField.name] = [];
+      else row[childField.name] = "";
+    });
+    if ("id" in row) {
+      row.id = `${String(field.name || "row").replace(/s$/, "")}_${stamp}`;
+    }
+    if ("name" in row) {
+      row.name = `field_${stamp}`;
+    }
+    if ("label" in row) {
+      row.label = field.name === "stages" ? "New Stage" : "New Field";
+    }
+    if ("type" in row) {
+      row.type = row.type || "text";
+    }
+    if (field.name === "stages") {
+      row.id = row.id || `stage_${stamp}`;
+      row.label = row.label || "New Stage";
+      row.lanes = Array.isArray(row.lanes) ? row.lanes : [];
+      row.qualityGates = Array.isArray(row.qualityGates) ? row.qualityGates : [];
+    }
+    return row;
+  }
+  function updateRow(index, row) {
+    setValue(value.map((item, itemIndex) => itemIndex === index ? row : item));
+  }
+  function addRow() {
+    setValue([...(value || []), newChildRow()]);
+  }
+  function duplicateRow(index) {
+    const row = jsonCloneForUi(value[index] || {});
+    const stamp = Date.now();
+    if (row.id) row.id = `${row.id}_copy_${stamp}`;
+    if (row.name) row.name = `${row.name}_copy_${stamp}`;
+    if (row.label) row.label = `${row.label} Copy`;
+    setValue([...(value || []), row]);
+  }
+  function removeRow(index) {
+    setValue(value.filter((_, itemIndex) => itemIndex !== index));
+  }
+  function moveRow(index, direction) {
+    const next = [...value];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    const [row] = next.splice(index, 1);
+    next.splice(target, 0, row);
+    setValue(next);
+  }
+  return h("div", { className: "schema-child-table schema-field-wide" },
+    h("div", { className: "schema-child-head" },
+      h("div", null, h("h4", null, field.label || field.name), field.helpText ? h("small", null, field.helpText) : null),
+      h(Button, { type: "button", variant: "secondary", onClick: addRow, disabled }, icon("plus"), field.addLabel || `Add ${field.name === "stages" ? "Stage" : "Row"}`)
+    ),
+    value.length ? value.map((row, index) => h("article", { className: "schema-child-row", key: row.id || index },
+      h("div", { className: "schema-child-row-head" },
+        h("strong", null, row.label || row.id || `Row ${index + 1}`),
+        h("div", { className: "panel-actions" },
+          h(Button, { type: "button", variant: "outline", onClick: () => moveRow(index, -1), disabled: disabled || index === 0 }, "Up"),
+          h(Button, { type: "button", variant: "outline", onClick: () => moveRow(index, 1), disabled: disabled || index === value.length - 1 }, "Down"),
+          h(Button, { type: "button", variant: "outline", onClick: () => duplicateRow(index), disabled }, "Duplicate"),
+          h(Button, { type: "button", variant: "outline", onClick: () => removeRow(index), disabled }, "Delete")
+        )
+      ),
+      h("div", { className: "schema-field-grid" },
+        (field.fields || []).map(childField =>
+          h(SchemaField, {
+            key: childField.name,
+            field: childField,
+            value: row[childField.name],
+            item: row,
+            setValue: nextValue => updateRow(index, { ...row, [childField.name]: nextValue }),
+            catalogs,
+            onOpenReference,
+            mode: "child",
+          })
+        )
+      )
+    )) : h(EmptyState, {
+      title: field.emptyTitle || `No ${String(field.label || field.name || "rows").toLowerCase()}`,
+      body: field.emptyBody || `Add a ${field.name === "stages" ? "stage" : "row"} to define this section.`,
+    })
+  );
+}
+
+function SchemaEditorForm({ editor, setEditor, catalogs, state, onSubmit, onCancel, onOpenReference }) {
+  const schema = formSchemaForCollection(catalogs, editor.collection);
+  function setItem(updater) {
+    updateEditorItem(setEditor, updater);
+  }
+  function setAdvancedJson(value) {
+    setEditor(current => ({ ...current, json: value }));
+  }
+  const activeTab = editor.activeTab || "form";
+  return h("form", { className: "catalog-json-editor schema-editor", onSubmit },
+    h("div", { className: "catalog-editor-head" },
+      h("div", null,
+        h("p", { className: "eyebrow" }, editor.collection),
+        h("h3", null, editor.title)
+      ),
+      h("div", { className: "panel-actions" },
+        h(Button, { type: "submit", pending: state.busy, pendingLabel: "Saving..." }, icon("save"), "Save"),
+        h(Button, { type: "button", variant: "outline", onClick: onCancel, disabled: state.busy }, "Cancel")
+      )
+    ),
+    h("div", { className: "schema-editor-tabs", role: "tablist", "aria-label": "Editor tabs" },
+      h("button", { type: "button", role: "tab", className: cn("schema-editor-tab", activeTab === "form" && "active"), "aria-selected": activeTab === "form", onClick: () => setEditor(current => ({ ...current, activeTab: "form" })) }, "Form"),
+      h("button", { type: "button", role: "tab", className: cn("schema-editor-tab", activeTab === "advanced" && "active"), "aria-selected": activeTab === "advanced", onClick: () => setEditor(current => ({ ...current, activeTab: "advanced", json: jsonPretty(current.item || {}) })) }, "Advanced JSON")
+    ),
+    activeTab === "advanced"
+      ? h(Fragment, null,
+        h("p", { className: "muted" }, "Advanced edit writes the same source row. Use it only for fields not yet represented in the form schema."),
+        h(Textarea, { value: editor.json, rows: 18, onChange: event => setAdvancedJson(event.target.value) })
+      )
+      : h(SchemaForm, { schema, item: editor.item, setItem, catalogs, onOpenReference, mode: editor.mode })
+  );
+}
+
+function PlatformP4LibraryPanel({ rows, catalogKey, catalogs, loading, onRefresh, focusTarget, onOpenReference }) {
   const titles = {
     departmentPackages: ["AiDepartmentPackage", "Department Packages"],
     skillPacks: ["AiSkillPack", "Skill Packs"],
@@ -2512,42 +3939,158 @@ function PlatformP4LibraryPanel({ rows, catalogKey, loading }) {
   const [dtoType, title] = titles[catalogKey] || ["AiP4CatalogObject", catalogKey];
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  const [viewMode, setViewMode] = useState("table");
   const [detailTab, setDetailTab] = useState("overview");
+  const [editor, setEditor] = useState(null);
+  const [state, setState] = useState({ busy: false, error: "", message: "" });
   const filtered = (rows || []).filter(row => {
     const blob = [row.id, row.label, row.status, row.riskTier, row.scope, row.recipeLabel, row.capabilityLabel, ...(row.compatibilityRules || [])].join(" ").toLowerCase();
     return !query.trim() || blob.includes(query.trim().toLowerCase());
   });
   const selected = (rows || []).find(row => row.id === selectedId) || filtered[0] || rows[0] || null;
+  const sourceCollection = p4SourceCollection(catalogKey, selected || {});
+  const sourceItem = selected ? p4FindSourceItem(catalogKey, selected, catalogs) : null;
+  const selectedLocked = Boolean((sourceItem || selected || {}).locked || (selected || {}).accessSummary === "platform_locked");
   useEffect(() => {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected && selected.id]);
-  const tabs = [["overview", "Overview"], ["contracts", "Contracts"], ["usage", "Used By"], ["validation", "Validation"], ["json", "JSON"]];
+  useEffect(() => {
+    setEditor(null);
+    setViewMode("table");
+    setState({ busy: false, error: "", message: "" });
+  }, [catalogKey]);
+  useEffect(() => {
+    if (!focusTarget || focusTarget.tab !== catalogKey || !focusTarget.id) return;
+    const match = (rows || []).find(row =>
+      String(row.id) === String(focusTarget.id) ||
+      String(row.laneId || "") === String(focusTarget.id) ||
+      String(row.recipeId || "") === String(focusTarget.id) ||
+      String(row.sourceCatalog || "") === String(focusTarget.collection || "")
+    );
+    if (match) {
+      setSelectedId(match.id);
+      setDetailTab("overview");
+      setViewMode("detail");
+    }
+  }, [focusTarget && focusTarget.nonce, rows.length, catalogKey]);
+  const tabs = [["overview", "Overview"], ["contracts", "Contracts"], ["usage", "Used By"], ["validation", "Validation"], ["json", "Advanced JSON"]];
+
+  function openAdd() {
+    const collection = p4SourceCollection(catalogKey, {});
+    const schema = formSchemaForCollection(catalogs, collection);
+    setEditor(editorStateFor({ mode: "add", collection, title: `Add ${title}`, item: p4NewSourceItem(catalogKey), schema }));
+    setViewMode("editor");
+    setState({ busy: false, error: "", message: "" });
+  }
+
+  function openEdit() {
+    if (!selected || !sourceCollection || !sourceItem) return;
+    const schema = formSchemaForCollection(catalogs, sourceCollection);
+    setEditor(editorStateFor({ mode: "edit", collection: sourceCollection, title: `Edit source ${sourceCollection}`, item: stripP4RuntimeKeys(sourceItem), schema }));
+    setViewMode("editor");
+    setState({ busy: false, error: "", message: "" });
+  }
+
+  function openDuplicate() {
+    if (!selected || !sourceCollection) return;
+    const schema = formSchemaForCollection(catalogs, sourceCollection);
+    setEditor(editorStateFor({ mode: "duplicate", collection: sourceCollection, title: `Duplicate into ${sourceCollection}`, item: duplicateP4SourceItem(catalogKey, selected, catalogs), schema }));
+    setViewMode("editor");
+    setState({ busy: false, error: "", message: "" });
+  }
+
+  async function saveEditor(event) {
+    event.preventDefault();
+    if (!editor) return;
+    setState({ busy: true, error: "", message: "" });
+    try {
+      const item = editor.activeTab === "advanced" ? JSON.parse(editor.json) : editor.item;
+      await api("/api/fabric-object", {
+        method: "POST",
+        body: JSON.stringify({
+          collection: editor.collection,
+          item,
+          mode: editor.mode,
+          originalId: editor.originalId,
+          reason: `${editor.mode} from Platform Admin ${title} table.`,
+          updatedBy: "Platform Admin",
+        }),
+      });
+      setSelectedId(item.id || selectedId);
+      setEditor(null);
+      setViewMode("detail");
+      setState({ busy: false, error: "", message: `${title} source row saved.` });
+      await onRefresh();
+    } catch (error) {
+      setState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
+  async function archiveSelected() {
+    if (!selected || !sourceCollection || !sourceItem || selectedLocked) return;
+    if (!window.confirm(`Archive ${selected.label || selected.id}?`)) return;
+    setState({ busy: true, error: "", message: "" });
+    try {
+      await api("/api/fabric-object/archive", {
+        method: "POST",
+        body: JSON.stringify({
+          collection: sourceCollection,
+          objectId: sourceItem.id || p4SourceId(catalogKey, selected),
+          reason: `Archived from Platform Admin ${title} table.`,
+          updatedBy: "Platform Admin",
+        }),
+      });
+      setState({ busy: false, error: "", message: `${title} source row archived.` });
+      setViewMode("table");
+      await onRefresh();
+    } catch (error) {
+      setState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
   return h(Card, { className: "designer-section-card p4-library-panel" },
     h(CardHeader, {
       eyebrow: dtoType,
       title,
-      description: "P4 library objects are reusable platform/admin assets. Departments install and resolve them at runtime rather than owning execution logic directly.",
-      action: h(Badge, { tone: "neutral" }, `${(rows || []).length} object(s)`)
+      description: `One table view for ${title}. Source collection: ${sourceCollection || "catalog export"}.`,
+      action: h("div", { className: "panel-actions" },
+        h(Button, { variant: "secondary", onClick: openAdd, disabled: state.busy }, icon("plus"), "Add"),
+        h(Button, { variant: "outline", onClick: openEdit, disabled: !selected || selectedLocked || state.busy }, "Edit"),
+        h(Button, { variant: "outline", onClick: openDuplicate, disabled: !selected || state.busy }, "Duplicate"),
+        h(Button, { variant: "outline", onClick: archiveSelected, disabled: !selected || selectedLocked || state.busy }, "Archive")
+      )
     }),
     h(CardContent, null,
+      state.error ? h("div", { className: "form-error" }, state.error) : null,
+      state.message ? h("div", { className: "designer-status" }, state.message) : null,
       loading ? h("p", { className: "muted" }, "Loading P4 library...") : null,
-      h("div", { className: "p4-library-layout" },
-        h("aside", { className: "p4-library-list" },
-          h(Field, { label: "Search library" }, h(Input, { value: query, onChange: event => setQuery(event.target.value), placeholder: "Search name, status, contract, stage..." })),
-          h("div", { className: "p4-library-cards" }, filtered.map(row =>
-            h("button", { key: row.id || row.label, type: "button", className: cn("p4-library-card", selected && selected.id === row.id && "active"), onClick: () => { setSelectedId(row.id); setDetailTab("overview"); } },
-              h("span", { className: "staff-card-topline" },
-                h("strong", null, row.label || row.name || row.id),
-                h(Badge, { tone: row.status === "Deprecated" ? "danger" : row.status === "Draft" ? "warn" : "success" }, row.status || "Approved")
-              ),
-              h("small", null, row.id || row.contractId || row.stageTemplateId),
-              h("span", { className: "staff-card-footer" },
-                h("span", null, `v${row.version || "1.0.0"}`),
-                h("span", null, `${row.riskTier || "Medium"} risk`)
-              )
-            )
-          ))
-        ),
+      viewMode === "table" ? h("div", { className: "p4-library-single" },
+        h(Field, { label: "Search this table" }, h(Input, { value: query, onChange: event => setQuery(event.target.value), placeholder: "Search name, status, contract, stage..." })),
+        h(AdminDataTable, {
+          rows: filtered,
+          loading,
+          selectedId,
+          onSelect: rowId => { setSelectedId(rowId); setDetailTab("overview"); setViewMode("detail"); },
+          columns: [
+            ["label", "Name"],
+            ["id", "ID"],
+            ["status", "Status"],
+            ["version", "Version"],
+            ["riskTier", "Risk"],
+            ["updatedAt", "Updated"],
+          ],
+        })
+      ) : viewMode === "editor" && editor ? h("div", { className: "p4-library-single" },
+        h(SchemaEditorForm, {
+          editor,
+          setEditor,
+          catalogs,
+          state,
+          onSubmit: saveEditor,
+          onCancel: () => { setEditor(null); setViewMode("table"); },
+          onOpenReference,
+        })
+      ) : h("div", { className: "p4-library-single" },
         selected ? h("section", { className: "p4-library-detail" },
           h("div", { className: "staff-detail-head" },
             h("div", null,
@@ -2556,6 +4099,7 @@ function PlatformP4LibraryPanel({ rows, catalogKey, loading }) {
               h("p", null, selected.purpose || selected.summary || selected.providerResolutionRule || selected.escalationPolicy || "")
             ),
             h("div", { className: "staff-detail-badges" },
+              h(Button, { variant: "outline", onClick: () => setViewMode("table") }, "Back to Table"),
               h(AccessBadge, { value: selected.accessSummary || (selected.locked ? "platform_locked" : "department_editable") }),
               h(Badge, null, selected.status || "Approved"),
               h(Badge, { tone: (selected.riskTier || "").toLowerCase() === "high" ? "warn" : "neutral" }, `${selected.riskTier || "Medium"} risk`)
@@ -2565,9 +4109,11 @@ function PlatformP4LibraryPanel({ rows, catalogKey, loading }) {
             h("button", { key, type: "button", role: "tab", className: cn("staff-detail-tab", detailTab === key && "active"), "aria-selected": detailTab === key, onClick: () => setDetailTab(key) }, label)
           )),
           detailTab === "overview" ? h("div", { className: "staff-info-grid" },
-            h(StaffInfoPanel, { title: "Compatibility Rules", items: selected.compatibilityRules }),
-            h(StaffInfoPanel, { title: "Required Lanes", items: selected.requiredLanes || selected.requiredConnections }),
-            h(StaffInfoPanel, { title: "Required Datasets", items: selected.requiredDatabases || selected.databaseLabels }),
+            h(CompatibilityRulesPanel, { rules: selected.compatibilityRules, catalogs, onOpenReference }),
+            h(CatalogReferencePanel, { title: "Required Lanes", ids: selected.requiredLanes || selected.lanes, collection: "lanes", catalogs, onOpenReference }),
+            h(CatalogReferencePanel, { title: "Required Connections", ids: selected.requiredConnections || selected.connections, collection: "connections", catalogs, onOpenReference }),
+            h(CatalogReferencePanel, { title: "Required Databases", ids: selected.requiredDatabases || selected.databases, collection: "databases", catalogs, onOpenReference }),
+            h(CatalogReferencePanel, { title: "Quality Gates", ids: selected.requiredQualityGates || selected.qualityGates, collection: "qualityGates", catalogs, onOpenReference }),
             h("article", { className: "staff-info-panel" }, h("h4", null, "Version & Status"), h(DetailList, { rows: [
               { label: "Version", value: selected.version },
               { label: "Status", value: selected.status },
@@ -2589,13 +4135,13 @@ function PlatformP4LibraryPanel({ rows, catalogKey, loading }) {
             h("article", { className: "staff-info-panel" }, h("h4", null, "Publish Flow"), h("p", null, "Draft -> Review -> Approved -> Active. Deprecated objects remain inspectable."))
           ) : null,
           detailTab === "json" ? h("pre", { className: "manifest-preview compact" }, jsonPretty(selected).slice(0, 9000)) : null
-        ) : h(EmptyState, { title: "No library object selected", body: "Select an object from the left list." })
+        ) : h(EmptyState, { title: "No library object selected", body: "Select a row from this table." })
       )
     )
   );
 }
 
-function PlatformCatalogPanel({ rows, catalogKey, loading }) {
+function PlatformCatalogPanel({ rows, catalogKey, catalogs, loading, onRefresh, focusTarget, onOpenReference }) {
   const titles = {
     installedDepartments: ["AiDepartmentInstance", "Installed Departments"],
     departmentBlueprints: ["AiDepartmentBlueprint", "Department Blueprints"],
@@ -2603,32 +4149,193 @@ function PlatformCatalogPanel({ rows, catalogKey, loading }) {
     laneAdapters: ["AiLaneAdapter", "Lane / Tool Adapters"],
     scopedSkills: ["AiScopedSkillDefinition", "Scoped Skill Catalog"],
     workflowTemplates: ["AiWorkflowTemplate", "Workflow Templates"],
+    formSchemas: ["AiFormSchema", "Form Schemas"],
+    enumSets: ["AiEnumSet", "Enum Sets"],
     senderIdentities: ["AiSenderIdentity", "Sender Identities"],
   };
   const [dtoType, title] = titles[catalogKey] || ["AiCatalogObject", catalogKey];
-  return h(Card, { className: "designer-section-card" },
-    h(CardHeader, { eyebrow: dtoType, title, description: "Read/export/review first. Locked catalog internals are platform-owned; safe client customization belongs in Workspace Settings or Department Explorer." }),
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [viewMode, setViewMode] = useState("table");
+  const [editor, setEditor] = useState(null);
+  const [state, setState] = useState({ busy: false, error: "", message: "" });
+  const editableCollections = {
+    capabilities: "capabilities",
+    departmentBlueprints: "departmentTemplates",
+    staffTemplates: "staffArchetypes",
+    laneAdapters: "lanes",
+    scopedSkills: "staffTemplateSkills",
+    workflowTemplates: "recipes",
+    connections: "connections",
+    databases: "databases",
+    aiSupport: "aiSupport",
+    qualityGates: "qualityGates",
+    automations: "automations",
+    compatibilityRules: "compatibilityRules",
+    formSchemas: "formSchemas",
+    enumSets: "enumSets",
+  };
+  const collection = editableCollections[catalogKey] || "";
+  const filtered = (rows || []).filter(row => {
+    const blob = [row.id, row.label, row.name, row.status, row.owner, row.ownerStaff, row.email, row.provider].join(" ").toLowerCase();
+    return !query.trim() || blob.includes(query.trim().toLowerCase());
+  });
+  const selected = (rows || []).find(row => row.id === selectedId) || filtered[0] || rows[0] || null;
+  const selectedLocked = Boolean((selected || {}).locked || (selected || {}).accessSummary === "platform_locked");
+
+  useEffect(() => {
+    if (selected && selected.id !== selectedId) setSelectedId(selected.id);
+  }, [selected && selected.id]);
+  useEffect(() => {
+    setEditor(null);
+    setViewMode("table");
+    setState({ busy: false, error: "", message: "" });
+    setSelectedId("");
+  }, [catalogKey]);
+  useEffect(() => {
+    if (!focusTarget || focusTarget.tab !== catalogKey || !focusTarget.id) return;
+    const match = (rows || []).find(row => String(row.id) === String(focusTarget.id));
+    if (match) {
+      setSelectedId(match.id);
+      setViewMode("detail");
+      setEditor(null);
+    }
+  }, [focusTarget && focusTarget.nonce, rows.length, catalogKey]);
+
+  function basicNewItem() {
+    const schema = formSchemaForCollection(catalogs, collection);
+    if (schema) return schemaDefaultItem(schema, collection);
+    const stamp = Date.now();
+    return {
+      id: `${catalogKey.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_${stamp}`,
+      label: `New ${title}`,
+      status: "Draft",
+      version: "0.1.0",
+      locked: false,
+    };
+  }
+
+  function openEditor(mode) {
+    if (!collection && mode !== "view") {
+      setState({ busy: false, error: "", message: `${title} is managed by its runtime setup screen, not this fabric table.` });
+      return;
+    }
+    const base = mode === "add"
+      ? basicNewItem()
+      : mode === "duplicate"
+        ? { ...stripP4RuntimeKeys(jsonCloneForUi(selected || {})), id: `${(selected || {}).id || catalogKey}_copy_${Date.now()}`, label: `${(selected || {}).label || title} Copy`, status: "Draft", locked: false }
+        : stripP4RuntimeKeys(selected || {});
+    const schema = formSchemaForCollection(catalogs, collection);
+    setEditor(editorStateFor({ mode, collection, title: `${mode === "add" ? "Add" : mode === "duplicate" ? "Duplicate" : "Edit"} ${title}`, item: base, schema }));
+    setViewMode("editor");
+    setState({ busy: false, error: "", message: "" });
+  }
+
+  async function saveEditor(event) {
+    event.preventDefault();
+    if (!editor || !collection) return;
+    setState({ busy: true, error: "", message: "" });
+    try {
+      const item = editor.activeTab === "advanced" ? JSON.parse(editor.json) : editor.item;
+      await api("/api/fabric-object", {
+        method: "POST",
+        body: JSON.stringify({
+          collection,
+          item,
+          mode: editor.mode,
+          originalId: editor.originalId,
+          reason: `${editor.mode} from Platform Admin ${title} table.`,
+          updatedBy: "Platform Admin",
+        }),
+      });
+      setSelectedId(item.id || selectedId);
+      setEditor(null);
+      setViewMode("detail");
+      setState({ busy: false, error: "", message: `${title} row saved.` });
+      await onRefresh();
+    } catch (error) {
+      setState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
+  async function archiveSelected() {
+    if (!selected || !collection || selectedLocked) return;
+    if (!window.confirm(`Archive ${selected.label || selected.id}?`)) return;
+    setState({ busy: true, error: "", message: "" });
+    try {
+      await api("/api/fabric-object/archive", {
+        method: "POST",
+        body: JSON.stringify({ collection, objectId: selected.id, reason: `Archived from Platform Admin ${title} table.`, updatedBy: "Platform Admin" }),
+      });
+      setState({ busy: false, error: "", message: `${title} row archived.` });
+      setViewMode("table");
+      await onRefresh();
+    } catch (error) {
+      setState({ busy: false, error: error.message || String(error), message: "" });
+    }
+  }
+
+  return h(Card, { className: "designer-section-card admin-table-manager" },
+    h(CardHeader, {
+      eyebrow: dtoType,
+      title,
+      description: `One table view for ${title}. ${collection ? `Source collection: ${collection}.` : "Runtime-owned rows are inspected here."}`,
+      action: h("div", { className: "panel-actions" },
+        h(Button, { variant: "secondary", onClick: () => openEditor("add"), disabled: !collection || state.busy }, icon("plus"), "Add"),
+        h(Button, { variant: "outline", onClick: () => openEditor("edit"), disabled: !selected || !collection || selectedLocked || state.busy }, "Edit"),
+        h(Button, { variant: "outline", onClick: () => openEditor("duplicate"), disabled: !selected || !collection || state.busy }, "Duplicate"),
+        h(Button, { variant: "outline", onClick: archiveSelected, disabled: !selected || !collection || selectedLocked || state.busy }, "Archive")
+      )
+    }),
     h(CardContent, null,
+      state.error ? h("div", { className: "form-error" }, state.error) : null,
+      state.message ? h("div", { className: "designer-status" }, state.message) : null,
       loading ? h("p", { className: "muted" }, "Loading catalog DTOs...") : null,
-      rows.length ? h("div", { className: "designer-object-grid platform-catalog-grid" }, rows.map(row =>
-        h("article", { className: cn("designer-object-card", (row.locked || row.accessSummary === "platform_locked") && "is-locked"), key: row.id || row.label },
-          h("div", { className: "designer-object-head" },
-            h("div", null,
-              h("p", { className: "eyebrow" }, row.dtoType || dtoType),
-              h("h3", null, row.label || row.name || row.id),
-              row.id ? h("small", null, row.id) : null
-            ),
-            h(AccessBadge, { value: row.accessSummary || (row.locked ? "platform_locked" : "department_editable") })
+      viewMode === "table" ? h(Fragment, null,
+        h(Field, { label: "Search this table" }, h(Input, { value: query, onChange: event => setQuery(event.target.value), placeholder: "Search rows..." })),
+        h(AdminDataTable, {
+        rows: filtered,
+        loading,
+        selectedId,
+        onSelect: rowId => { setSelectedId(rowId); setViewMode("detail"); },
+        columns: [
+          ["label", "Name"],
+          ["id", "ID"],
+          ["status", "Status"],
+          ["ownerStaff", "Owner"],
+          ["version", "Version"],
+          ["updatedAt", "Updated"],
+        ],
+        })
+      ) : viewMode === "editor" && editor ? h(SchemaEditorForm, {
+        editor,
+        setEditor,
+        catalogs,
+        state,
+        onSubmit: saveEditor,
+        onCancel: () => { setEditor(null); setViewMode("table"); },
+        onOpenReference,
+      }) : selected ? h("section", { className: "p4-library-detail" },
+        h("div", { className: "staff-detail-head" },
+          h("div", null,
+            h("p", { className: "eyebrow" }, selected.dtoType || dtoType),
+            h("h3", null, selected.label || selected.name || selected.id),
+            h("p", null, shortText(selected.summary || selected.purpose || selected.laneRule || selected.providerRulesOwnedBy || selected.communicationModel || "", 280))
           ),
-          h("p", { className: "designer-object-summary" }, shortText(row.summary || row.purpose || row.laneRule || row.providerRulesOwnedBy || row.communicationModel || "", 240)),
-          h(DetailList, { rows: [
-            { label: "Owner", value: row.ownerStaff ? h(StaffChip, { staffId: row.ownerStaff }) : row.owner || row.ownerLayer || row.providerRulesOwnedBy || "Platform Admin", raw: Boolean(row.ownerStaff) },
-            { label: "Editable", value: row.workspaceEditable === false ? "No" : "Yes" },
-            { label: "Field access", value: Object.entries(row.fieldAccess || {}).slice(0, 5).map(([key, value]) => `${key}: ${value}`).join("; "), length: 220 },
-          ] }),
-          row.allowedPluginFamilies ? h("div", { className: "overview-meta-row" }, row.allowedPluginFamilies.slice(0, 5).map(item => h("span", { key: item }, item))) : null
-        )
-      )) : h(EmptyState, { title: "No catalog rows", body: "This catalog is empty in the current local fabric." })
+          h("div", { className: "staff-detail-badges" },
+            h(Button, { variant: "outline", onClick: () => setViewMode("table") }, "Back to Table"),
+            h(AccessBadge, { value: selected.accessSummary || (selected.locked ? "platform_locked" : "department_editable") }),
+            h(Badge, null, selected.status || selected.lifecycleStatus || "Active")
+          )
+        ),
+        h(DetailList, { rows: [
+          { label: "Source table", value: collection || "Runtime/local SQLite" },
+          { label: "Owner", value: selected.ownerStaff ? h(StaffChip, { staffId: selected.ownerStaff }) : selected.owner || selected.ownerLayer || selected.providerRulesOwnedBy || "Platform Admin", raw: Boolean(selected.ownerStaff) },
+          { label: "Editable", value: selected.workspaceEditable === false ? "No" : "Yes" },
+          { label: "Field access", value: Object.entries(selected.fieldAccess || {}).slice(0, 8).map(([key, value]) => `${key}: ${value}`).join("; "), length: 360 },
+        ] }),
+        h("pre", { className: "manifest-preview compact" }, jsonPretty(selected).slice(0, 5000))
+      ) : h(EmptyState, { title: "No catalog rows", body: "This table is empty in the current local fabric." })
     )
   );
 }
@@ -2650,28 +4357,30 @@ function PlatformExportManifestPanel({ manifest }) {
   );
 }
 
-function OverviewView({ dashboard, summary, runOne, runLocalWorkerOnce, useTestWorkerCommand, openTaskDialog, runAutopilotCycle, setAutopilot, autopilotEnabled, setView }) {
+function OverviewView({ dashboard, summary, runOne, runLocalWorkerOnce, useTestWorkerCommand, openTaskDialog, runAutopilotCycle, setAutopilot, autopilotEnabled, setView, onDepartmentSelect }) {
   const [activeTab, setActiveTab] = useState("home");
   const sync = dashboard.localSync || {};
   const alexOpenThreads = (((dashboard.threadsSummary || {}).byStaff || {}).AIstaff_Manager || {}).open || 0;
   const activeLeads = summary.activeEntities || (dashboard.applications || []).length || 0;
   const blockedCount = (summary.blockedEmails || 0) + (summary.overdueTasks || 0) + (summary.overdueFollowUps || 0);
+  const showDeveloperSurfaces = typeof window !== "undefined" && (
+    window.location.search.includes("developer=1") || window.location.search.includes("debugAutomation=1")
+  );
   const tabs = [
     ["home", "AI Department Home"],
     ["howTo", "How to work with the department"],
-    ["department", "Department operating model"],
-    ["runtime", "Automation runtime"],
+    ...(showDeveloperSurfaces ? [["department", "Department operating model"]] : []),
   ];
   return h("section", { className: "overview-landing" },
     h("div", { className: "overview-hero" },
       h("div", { className: "overview-hero-copy" },
-        h("p", { className: "eyebrow" }, "Overview"),
-        h("h1", null, APP_NAME),
-        h("p", null, "A local AI staff department for tender lead review, supplier and partner matching, quotation outreach, tender package preparation, and follow-up control.")
+        h("p", { className: "eyebrow" }, "Home"),
+        h("h1", null, "AI Departments"),
+        h("p", null, "Select a department first. Each department owns its own work, workflow, tools, reports, messages, and settings.")
       ),
       h("div", { className: "overview-hero-actions" },
-        h(Button, { variant: "secondary", onClick: () => setView("explorer") }, icon("user"), "Department Explorer"),
-        h(Button, { onClick: () => setView("reports") }, icon("play"), "Login to Department")
+        h(Button, { onClick: () => setView("applications") }, icon("database"), "Open Departments"),
+        h(Button, { variant: "secondary", onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), "Messages")
       )
     ),
     h("div", { className: "overview-tabbar", role: "tablist", "aria-label": "Overview sections" },
@@ -2684,38 +4393,37 @@ function OverviewView({ dashboard, summary, runOne, runLocalWorkerOnce, useTestW
         onClick: () => setActiveTab(key),
       }, label))
     ),
-    activeTab === "home" ? h(OverviewSponsorTab, { dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync, setView }) : null,
+    activeTab === "home" ? h(OverviewSponsorTab, { dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync, setView, onDepartmentSelect }) : null,
     activeTab === "howTo" ? h(OverviewHowToTab, { setView, openTaskDialog }) : null,
-    activeTab === "department" ? h(OverviewDepartmentTab, { dashboard, setView }) : null,
-    activeTab === "runtime" ? h(AutomationRuntimeTab, { dashboard, sync, setView, runLocalWorkerOnce, useTestWorkerCommand }) : null
+    activeTab === "department" ? h(OverviewDepartmentTab, { dashboard, setView }) : null
   );
 }
 
-function OverviewSponsorTab({ dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync, setView }) {
+function OverviewSponsorTab({ dashboard, summary, activeLeads, alexOpenThreads, blockedCount, sync, setView, onDepartmentSelect }) {
   const fabric = fabricOrFallback(dashboard);
   const model = operatingModelFromDashboard(dashboard);
   const visibility = model.visibilityModes || {};
   const mission = ((dashboard.kpis || []).find(row => normalizedText(row.Status) === "active") || {})["Owner Notes"] || "Review tender leads, read tender documents, check GCC lab fit, match suppliers or partners, request quotations, and prepare submission packages.";
-  const localWorker = sync.localWorker || {};
-  const workerCounts = localWorker.counts || {};
   const blockers = sync.automationBlockers || {};
   const blockerCounts = blockers.counts || {};
   const blockerRows = [
     ["Human approval", blockerCounts.humanApproval || 0],
     ["Missing files", blockerCounts.missingFiles || 0],
     ["Email approval", blockerCounts.externalEmailApproval || 0],
-    ["Codex worker", blockerCounts.codexWorker || 0],
-    ["Config errors", blockerCounts.fabricErrors || 0],
+    ["Automation setup", blockerCounts.fabricErrors || 0],
   ];
   const cards = [
     ["Sponsor", "Iman Najafi", "Human owner and final decision maker."],
     ["Department", APP_NAME, "Tender lead review, supplier matching, quotation outreach, tender package preparation, and follow-up control."],
     ["Manager", "Alex Fergusen", `${alexOpenThreads || 0} open thread(s) with the AI manager.`],
     ["Current workload", `${activeLeads || 0} active lead case(s)`, `${summary.dueTasks || 0} due task(s), ${blockedCount || 0} risk item(s).`],
-    ["Autopilot", ((sync.autopilot || {}).enabled ? "On" : "Paused"), (((sync.autopilot || {}).progress || {}).reason || "Watching local work.")],
-    ["Local worker", localWorker.commandConfigured ? "Configured" : "Needs command", `${workerCounts.open || 0} open Codex work item(s).`],
+    ["Automation engine", ((sync.windmill || {}).configured ? "Connected" : "Setup needed"), "Execution workflows run outside the AI Department app."],
   ];
   const ownedDepartments = (fabric.departments || []).filter(row => normalizedText(row.ownershipMode || "ownedDepartment") !== "sponsoredassignment");
+  const ownedActiveDepartments = ownedDepartments.filter(row => departmentLifecycleGroup(row) === "active");
+  const ownedUnderConstructionDepartments = ownedDepartments.filter(row => departmentLifecycleGroup(row) === "construction");
+  const ownedArchivedDepartments = ownedDepartments.filter(row => departmentLifecycleGroup(row) === "archived");
+  const ownedVisibleDepartments = [...ownedActiveDepartments, ...ownedUnderConstructionDepartments];
   const sponsoredDepartments = (fabric.departments || []).filter(row => normalizedText(row.ownershipMode) === "sponsoredassignment");
   return h("div", { className: "overview-panel" },
     h("div", { className: "overview-section-head" },
@@ -2728,15 +4436,27 @@ function OverviewSponsorTab({ dashboard, summary, activeLeads, alexOpenThreads, 
           h("h3", null, (visibility.ownedDepartment || {}).label || "AI Departments I Own"),
           h(Badge, null, ownedDepartments.length || 1)
         ),
-        (ownedDepartments.length ? ownedDepartments : [{ id: "department_local_default", label: APP_NAME, humanManager: HUMAN_STAFF_ID, aiManager: "AIstaff_Manager", status: "Active" }]).map(row =>
-          h("button", { key: row.id, type: "button", className: "department-home-row", onClick: () => setView("explorer") },
+        h("div", { className: "department-home-status" },
+          h(Badge, { tone: "success" }, `Active ${ownedActiveDepartments.length || (ownedDepartments.length ? 0 : 1)}`),
+          h(Badge, { tone: "warn" }, `Under construction ${ownedUnderConstructionDepartments.length}`),
+          h(Badge, { tone: "neutral" }, `Archived ${ownedArchivedDepartments.length}`)
+        ),
+        (ownedVisibleDepartments.length ? ownedVisibleDepartments : [{ id: "department_local_default", label: APP_NAME, humanManager: HUMAN_STAFF_ID, aiManager: "AIstaff_Manager", status: "Active" }]).map(row =>
+          h("button", { key: row.id, type: "button", className: "department-home-row", onClick: () => onDepartmentSelect ? onDepartmentSelect(row.id, "overview") : setView("applications") },
             h("span", { className: "department-home-icon" }, icon("user")),
             h("span", null,
               h("strong", null, row.label || APP_NAME),
-              h("small", null, `${row.status || "Active"} | Manager: ${staffProfile(row.aiManager || "AIstaff_Manager").label}`)
+              h("small", null, `${departmentStatusLabel(row)} | Manager: ${departmentManagerDisplayName(row)} | open workspace`)
             )
           )
-        )
+        ),
+        ownedArchivedDepartments.length ? h("button", { type: "button", className: "department-home-row archived-link", onClick: () => setView("applications") },
+          h("span", { className: "department-home-icon" }, icon("database")),
+          h("span", null,
+            h("strong", null, "Archived departments"),
+            h("small", null, `${ownedArchivedDepartments.length} archived department${ownedArchivedDepartments.length === 1 ? "" : "s"} in the Departments archived tab.`)
+          )
+        ) : null
       ),
       h("article", { className: "department-home-panel" },
         h("div", { className: "department-home-head" },
@@ -2775,7 +4495,7 @@ function OverviewSponsorTab({ dashboard, summary, activeLeads, alexOpenThreads, 
       h("div", { className: "overview-meta-row" }, blockerRows.map(([label, value]) =>
         h("span", { key: label }, `${label}: ${value}`)
       )),
-      h("p", null, localWorker.commandConfigured ? "Internal Codex worker execution is configured." : "Set AI_DEPARTMENT_WORKER_COMMAND to let queued research and writing work run automatically.")
+      h("p", null, "Only business blockers are shown here. Technical execution, worker logs, and script routing belong in the automation engine.")
     )
   );
 }
@@ -2802,7 +4522,7 @@ function AutomationRuntimeTab({ dashboard, sync, setView, runLocalWorkerOnce, us
   return h("div", { className: "overview-panel" },
     h("div", { className: "overview-section-head" },
       h("div", null, h("h2", null, "Automation runtime"), h("p", null, "The platform runs from durable queue/state tables, cron/internal runner cycles, and supervised gates.")),
-      h(Button, { variant: "secondary", onClick: () => setView("reports") }, "Open Reports")
+      h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Open Reports")
     ),
     h("div", { className: "runtime-grid" }, rows.map(([label, value, detail]) =>
       h("article", { className: "runtime-card", key: label },
@@ -2906,7 +4626,7 @@ function OverviewHowToTab({ setView, openTaskDialog }) {
     ["1", "Transfer or name a Lead", "Give Alex the Lead ID, tender files, source, and what decision you need."],
     ["2", "Ava reads the tender", "Ava reviews tender PDFs, specs, forms, deadlines, and missing-document blockers."],
     ["3", "Leo routes the bid", "Leo checks GCC lab fit and finds existing suppliers or partners before asking Nadia to search outside."],
-    ["4", "Monitor the case", "Use Reports and Leads to track supplier quotes, tender package readiness, follow-ups, blockers, and submission status."],
+    ["4", "Monitor the department", "Use Departments, then open the selected department's work or Reports tab to track cases, staff activity, blockers, and outputs."],
   ];
   return h("div", { className: "overview-panel" },
     h("div", { className: "overview-section-head" },
@@ -2920,9 +4640,9 @@ function OverviewHowToTab({ setView, openTaskDialog }) {
     )),
     h("div", { className: "overview-inline-actions" },
       h(Button, { onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), "Message Alex"),
-      h(Button, { variant: "secondary", onClick: () => setView("wikis") }, icon("book"), "Open Wikis"),
+      h(Button, { variant: "secondary", onClick: () => setView("applications") }, icon("database"), "Open Departments"),
       h(Button, { variant: "secondary", onClick: () => setView("work") }, "Open Tasks"),
-      h(Button, { variant: "secondary", onClick: () => setView("reports") }, "Open Reports")
+      h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Open Department Reports")
     )
   );
 }
@@ -2991,7 +4711,7 @@ function WikisView({ setView, openTaskDialog }) {
     ["Overview", "Entry page for the department.", "Use it to understand the sponsor, mission, and main entry actions."],
     ["Wikis", "This user guide.", "Use it when you need to remember the process, menus, or safety rules."],
     ["Department Explorer", "Org-chart and profile view of the AI department.", "Use it to inspect Alex, specialist staff, roles, tools, work steps, QA rules, and learned skills."],
-    ["Leads", "List or pipeline view of tender Lead entities.", "Use it to search Leads, check stage/status, open Lead detail, and see related supplier/tender work."],
+    ["Departments", "List of installed AI Departments and each department workspace.", "Use it to open a department, then review its projects/cases, workflow, tools, data, settings, and department-specific tables such as Tender Leads."],
     ["Tasks", "Conversation inbox for human/AI task threads.", "Use it to answer Alex, review human decisions, and follow task conversations like a chat."],
     ["Reports", "Manager cockpit for operating performance.", "Use it as the main dashboard after login: KPI progress, blockers, pipeline, staff, follow-ups, email safety, and system health."],
     ["Settings", "Configuration and local status.", "Use it to inspect bridge/sync settings, operating notes, and technical configuration where allowed."],
@@ -3011,7 +4731,7 @@ function WikisView({ setView, openTaskDialog }) {
         description: "A practical guide for normal users: what to click, how work moves, and what each menu means.",
         action: h("div", { className: "wiki-hero-actions" },
           h(Button, { onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), "Message Alex"),
-          h(Button, { variant: "secondary", onClick: () => setView("reports") }, icon("play"), "Login to Department")
+          h(Button, { variant: "secondary", onClick: () => setView("applications") }, icon("play"), "Login to Department")
         )
       })
     ),
@@ -3070,7 +4790,7 @@ function WikisView({ setView, openTaskDialog }) {
         h(CardHeader, { title: "Recommended Daily Routine", description: "The simplest way to operate the department." }),
         h(CardContent, null,
           h("div", { className: "wiki-routine" },
-            ["Open Reports and check Do First.", "Answer any Human Inbox threads from Alex.", "Check Leads for movement and deadlines.", "Use Department Explorer only when you need to inspect or improve the team structure.", "End by asking Alex what is blocked and what should happen next."].map(item => h("p", { key: item }, item))
+            ["Open Reports and check Do First.", "Answer any Human Inbox threads from Alex.", "Open Departments and check the selected department's projects/cases for movement and deadlines.", "Use Department Explorer only when you need to inspect or improve the team structure.", "End by asking Alex what is blocked and what should happen next."].map(item => h("p", { key: item }, item))
           )
         )
       )
@@ -3127,7 +4847,7 @@ function ActivityCard({ dashboard, setView }) {
   const reports = (dashboard.recentReports || []).slice(0, 3).map(item => ({ kind: "Report", time: item.Date, title: item.Period || item["Report ID"], body: item.Summary || item.Blockers }));
   const items = [...events, ...runs, ...reports].sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0)).slice(0, 10);
   return h(Card, { className: "activity-panel" },
-    h(CardHeader, { title: "Live Activity", description: "Latest staff actions, status changes, and safety checks.", action: h(Button, { variant: "secondary", onClick: () => setView("reports") }, "Open Reports") }),
+    h(CardHeader, { title: "Live Activity", description: "Latest staff actions, status changes, and safety checks.", action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Open Reports") }),
     h(CardContent, { className: "timeline" }, items.length ? items.map((item, index) =>
       h("article", { className: "timeline-item", key: `${item.kind}-${index}` },
         h("div", { className: "timeline-dot" }),
@@ -3235,7 +4955,1689 @@ function StaffCard({ item, dashboard, runOne, openTaskDialog }) {
   );
 }
 
-function ApplicationsView({ rows, labels, filters, setFilters, viewMode, setViewMode, runOne, openTaskDialog, openRef, openUniversity }) {
+function departmentWorkObjectLabel(department = {}) {
+  const blob = normalizedText([department.label, department.purpose, ...(department.projectTypes || [])].join(" "));
+  if (blob.includes("tender") || blob.includes("lead") || blob.includes("supplier")) return "Tender Leads";
+  if (blob.includes("seo") || blob.includes("content") || blob.includes("wordpress")) return "Content Projects";
+  if (blob.includes("investor")) return "Investor Projects";
+  if (blob.includes("compliance")) return "Compliance Cases";
+  return "Projects / Cases";
+}
+
+function departmentHasTenderWork(department = {}) {
+  const blob = normalizedText([department.label, department.purpose, ...(department.projectTypes || []), ...(department.approvedDatasets || [])].join(" "));
+  return blob.includes("tender") || blob.includes("lead") || blob.includes("supplier") || blob.includes("gcc");
+}
+
+function departmentHasSeoWork(department = {}) {
+  const blob = normalizedText([department.label, department.purpose, ...(department.projectTypes || []), ...(department.activeConnections || [])].join(" "));
+  return blob.includes("seo") || blob.includes("wordpress") || blob.includes("search console") || blob.includes("content");
+}
+
+function departmentLifecycleGroup(department = {}) {
+  const status = normalizedText(department.status || department.lifecycleStatus || "");
+  if (department.archived || status === "archived") return "archived";
+  if (department.isCurrentDepartment || status === "active") return "active";
+  return "construction";
+}
+
+function departmentStatusLabel(department = {}, currentDepartmentId = "") {
+  const group = departmentLifecycleGroup(department);
+  if (group === "archived") return "Archived";
+  if (currentDepartmentId && department.id === currentDepartmentId) return "Current";
+  if (group === "active") return "Active";
+  return "Under construction";
+}
+
+function departmentStatusTone(department = {}, currentDepartmentId = "") {
+  const group = departmentLifecycleGroup(department);
+  if (group === "archived") return "neutral";
+  if (group === "construction") return "warn";
+  return department.id === currentDepartmentId ? "success" : "ok";
+}
+
+function ownedDepartmentRowsFromDashboard(dashboard = {}) {
+  const fabric = fabricOrFallback(dashboard);
+  return (fabric.departments || []).filter(row => normalizedText(row.ownershipMode || "ownedDepartment") !== "sponsoredassignment");
+}
+
+function currentDepartmentFromRows(rows = [], preferredId = "") {
+  return rows.find(row => row.id === preferredId) ||
+    rows.find(row => row.isCurrentDepartment) ||
+    rows.find(row => normalizedText(row.status || row.lifecycleStatus || "") === "active") ||
+    rows[0] ||
+    null;
+}
+
+function departmentManagerDisplayName(department = {}) {
+  return department.aiManagerAlias || staffProfile(department.aiManager || "AIstaff_Manager").label;
+}
+
+function storeDepartmentWorkspaceTarget(departmentId = "", tab = "") {
+  if (departmentId) {
+    window.sessionStorage.setItem(DEPARTMENT_EXPLORER_DEPARTMENT_KEY, departmentId);
+  }
+  if (tab) {
+    window.sessionStorage.setItem(DEPARTMENT_WORKSPACE_TAB_KEY, tab);
+  }
+}
+
+function departmentCapabilityRows(fabric = {}, department = {}) {
+  const template = (fabric.departmentTemplates || []).find(row => row.id === department.templateId) || {};
+  const capabilityIds = uniqueValues([
+    ...(template.capabilities || []),
+    ...(department.capabilities || []),
+    ...(department.capabilityIds || []),
+  ]);
+  const capabilityLookup = byId(fabric.capabilities || []);
+  return rowsFromIds(capabilityIds, capabilityLookup);
+}
+
+function departmentConnectionRows(fabric = {}, department = {}) {
+  const connectionLookup = byId(fabric.connections || []);
+  const identity = departmentBusinessIdentity(department, fabric);
+  const connectionConfigs = identity.connectionConfigs || {};
+  const activeLabels = listForUi(identity.activeConnections || department.activeConnections);
+  const activeByLabel = activeLabels.flatMap(label => {
+    const normalized = normalizedText(label);
+    return (fabric.connections || []).filter(row =>
+      normalizedText(row.id) === normalized ||
+      normalizedText(row.label) === normalized ||
+      normalizedText(row.type) === normalized ||
+      normalizedText(row.label || "").includes(normalized) ||
+      normalized.includes(normalizedText(row.label || ""))
+    );
+  });
+  const capabilityConnections = departmentCapabilityRows(fabric, department).flatMap(row => [
+    ...(row.requiredConnections || []),
+    ...(row.recommendedConnections || []),
+  ]);
+  const explicitConnectionIds = listForUi(department.connectionIds || department.connections);
+  return uniqueValues([
+    ...rowsFromIds([...capabilityConnections, ...explicitConnectionIds], connectionLookup),
+    ...activeByLabel,
+  ].map(row => row && row.id)).map(id => {
+    const base = connectionLookup[id];
+    const scoped = connectionConfigs[id] || {};
+    return base ? { ...base, ...scoped, id: base.id, label: base.label, catalogStatus: base.status, organizationScoped: Boolean(scoped.connectionId), departmentId: department.id, organizationDisplayName: identity.organizationDisplayName } : null;
+  }).filter(Boolean);
+}
+
+function connectionIsPlatformActive(connection = {}) {
+  const status = normalizedText(connection.lastTestStatus || connection.status || connection.lifecycleStatus || "");
+  return Boolean(
+    connection.configured ||
+    connection.connected ||
+    connection.isConfigured ||
+    ["active", "available", "configured", "connected", "local", "passed", "ready"].includes(status)
+  );
+}
+
+function platformConnectionRows(fabric = {}) {
+  return (fabric.connections || []).filter(row => row && row.id).map(row => ({
+    ...row,
+    platformStatus: toolSetupStatus({ ...row, kind: "connection" }),
+    platformActive: connectionIsPlatformActive(row),
+  }));
+}
+
+function departmentAssignableConnectionRows(fabric = {}, department = {}) {
+  const assignedIds = new Set(listForUi(departmentBusinessIdentity(department, fabric).activeConnections || department.activeConnections));
+  return platformConnectionRows(fabric).filter(row => row.platformActive || assignedIds.has(row.id));
+}
+
+function departmentDatabaseRows(fabric = {}, department = {}) {
+  const databaseLookup = byId(fabric.databases || []);
+  const capabilityDatabases = departmentCapabilityRows(fabric, department).flatMap(row => row.databases || []);
+  const identity = departmentBusinessIdentity(department, fabric);
+  const activeLabels = listForUi(identity.approvedDatabases || department.approvedDatasets);
+  const activeByLabel = activeLabels.flatMap(label => {
+    const normalized = normalizedText(label);
+    return (fabric.databases || []).filter(row =>
+      normalizedText(row.id) === normalized ||
+      normalizedText(row.label) === normalized ||
+      normalizedText(row.type) === normalized ||
+      normalizedText(row.label || "").includes(normalized) ||
+      normalized.includes(normalizedText(row.label || ""))
+    );
+  });
+  return uniqueValues([
+    ...rowsFromIds(capabilityDatabases, databaseLookup),
+    ...activeByLabel,
+  ].map(row => row && row.id)).map(id => databaseLookup[id]).filter(Boolean);
+}
+
+function departmentStaffProfileRows(fabric = {}, department = {}) {
+  const profileLookup = byId(fabric.staffProfiles || []);
+  const template = (fabric.departmentTemplates || []).find(row => row.id === department.templateId) || {};
+  const ids = uniqueValues([
+    department.humanManager,
+    department.aiManager,
+    ...(department.staffProfiles || []),
+    ...(template.staffProfiles || []),
+  ]);
+  if (department.id === "department_seo_demand_engine") {
+    [
+      "AIstaff_SEOManager",
+      "AIstaff_SEOSourceAnalyst",
+      "AIstaff_SEOExpert",
+      "AIstaff_CaseStudyMapper",
+      "AIstaff_InternalLinkBuilder",
+      "AIstaff_SEOQAAnalyst",
+      "AIstaff_WordPressPublisher",
+    ].forEach(id => ids.includes(id) || ids.push(id));
+  }
+  return ids.map(id => profileLookup[id] || (id ? { id, label: staffProfile(id).label, alias: defaultStaffAlias(id) } : null)).filter(Boolean);
+}
+
+function departmentBusinessIdentity(department = {}, fabric = {}) {
+  const workspace = fabric.workspaceBusinessProfile || {};
+  const identity = department.effectiveBusinessIdentity || department.businessIdentity || {};
+  return {
+    organizationDisplayName: identity.organizationDisplayName || workspace.companyDisplayName || department.label || "",
+    legalOrganizationName: identity.legalOrganizationName || workspace.legalCompanyName || "",
+    websiteUrl: identity.websiteUrl || workspace.websiteUrl || "",
+    primaryDomain: identity.primaryDomain || workspace.primaryDomain || "",
+    vatOrTaxId: identity.vatOrTaxId || workspace.vatOrTaxId || "",
+    commercialRegistrationNumber: identity.commercialRegistrationNumber || workspace.commercialRegistrationNumber || "",
+    registeredAddress: identity.registeredAddress || workspace.registeredAddress || "",
+    industrySector: identity.industrySector || workspace.industrySector || "",
+    defaultLanguage: identity.defaultLanguage || department.defaultLanguage || workspace.defaultLanguage || "English",
+    approvedBrandTone: identity.approvedBrandTone || workspace.approvedBrandTone || "",
+    managerDisplayName: identity.managerDisplayName || department.humanManager || workspace.defaultManagerTitle || "",
+    managerTitle: identity.managerTitle || workspace.defaultManagerTitle || "",
+    approvedEmailSignature: identity.approvedEmailSignature || workspace.approvedEmailSignature || "",
+    publicDescription: identity.publicDescription || department.purpose || "",
+    activeConnections: listForUi(identity.activeConnections || department.activeConnections || workspace.activeConnections),
+    approvedDatabases: listForUi(identity.approvedDatabases || department.approvedDatasets || workspace.approvedDatabases),
+    connectionConfigs: identity.connectionConfigs || {},
+  };
+}
+
+function normalizedDepartmentGoal(goal = {}, department = {}) {
+  const label = goal.label || (departmentHasTenderWork(department) ? "Complete department cases" : "Publish SEO content");
+  const target = Math.max(0, Number(goal.targetCount || 0));
+  const current = Math.max(0, Number(goal.currentCount || 0));
+  return {
+    id: goal.id || `goal_${department.id || "department"}_primary`,
+    label,
+    description: goal.description || "",
+    metricType: goal.metricType || "published_content_count",
+    targetCount: target,
+    currentCount: current,
+    targetUnit: goal.targetUnit || "Content pieces",
+    periodType: goal.periodType || "Monthly",
+    periodStart: goal.periodStart || "",
+    periodEnd: goal.periodEnd || "",
+    status: goal.status || (target && current >= target ? "Completed" : "Active"),
+    ownerStaff: goal.ownerStaff || department.aiManager || "AIstaff_Manager",
+    progressSource: goal.progressSource || "Manual/local alpha until source system is connected",
+    nextAction: goal.nextAction || "",
+    progressPercent: target ? Math.min(100, Math.round((current / target) * 100)) : 0,
+    remainingCount: Math.max(0, target - current),
+  };
+}
+
+function departmentGoalsFromRow(department = {}) {
+  const goals = Array.isArray(department.goals) ? department.goals : [];
+  if (goals.length) return goals.map(goal => normalizedDepartmentGoal(goal, department));
+  const isSeo = normalizedText([department.label, department.purpose, ...(department.projectTypes || [])].join(" ")).includes("seo");
+  return [
+    normalizedDepartmentGoal({
+      id: isSeo ? "goal_seo_monthly_published_content" : `goal_${department.id || "department"}_primary`,
+      label: isSeo ? "Publish SEO content" : "Complete department work",
+      description: isSeo ? "Create approved, SEO-ready WordPress draft articles and publish only after confirmation." : "Track the main output target for this department.",
+      metricType: isSeo ? "published_content_count" : "completed_work_count",
+      targetCount: isSeo ? 20 : 10,
+      currentCount: 0,
+      targetUnit: isSeo ? "Content pieces" : "Outputs",
+      periodType: "Monthly",
+      ownerStaff: department.aiManager || "AIstaff_Manager",
+      nextAction: isSeo ? "Prepare SEO article packages and request approval before publishing." : "Run department workflow until the target is met.",
+    }, department)
+  ];
+}
+
+function DepartmentGoalsPanel({ department, onSaved }) {
+  const goals = departmentGoalsFromRow(department);
+  const primary = goals[0] || normalizedDepartmentGoal({}, department);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(primary);
+  const [state, setState] = useState({ busy: false, message: "", error: "" });
+  useEffect(() => {
+    const next = departmentGoalsFromRow(department)[0] || normalizedDepartmentGoal({}, department);
+    setDraft(next);
+    setState({ busy: false, message: "", error: "" });
+    setEditing(false);
+  }, [department && department.id, department && department.updatedAt, JSON.stringify((department && department.goals) || [])]);
+  function update(key, value) {
+    setDraft(current => ({ ...current, [key]: value }));
+  }
+  async function save(event) {
+    event.preventDefault();
+    if (!department || !department.id) return;
+    setState({ busy: true, message: "", error: "" });
+    try {
+      const result = await api("/api/department-goal", {
+        method: "POST",
+        body: JSON.stringify({
+          departmentId: department.id,
+          updatedBy: HUMAN_STAFF_ID,
+          goal: {
+            ...draft,
+            targetCount: Number(draft.targetCount || 0),
+            currentCount: Number(draft.currentCount || 0),
+          },
+        }),
+      });
+      const nextDepartment = result.department || { ...department, goals: result.goals || [draft] };
+      const nextGoal = (result.goals || [result.goal || draft])[0] || draft;
+      setDraft(normalizedDepartmentGoal(nextGoal, nextDepartment));
+      setEditing(false);
+      setState({ busy: false, message: "Department goal saved.", error: "" });
+      if (onSaved) await onSaved(nextDepartment);
+    } catch (error) {
+      setState({ busy: false, message: "", error: error.message || String(error) });
+    }
+  }
+  const progress = normalizedDepartmentGoal(draft, department);
+  return h("article", { className: "overview-narrative department-goal-panel" },
+    h("div", { className: "profile-section-head" },
+      h("div", null,
+        h("h3", null, "Department Goal"),
+        h("p", null, "The AI Manager and staff use this target to decide whether to keep producing, escalate blockers, or report completion.")
+      ),
+      h(Button, { type: "button", variant: editing ? "outline" : "secondary", onClick: () => setEditing(!editing) }, editing ? "Cancel" : "Edit goal")
+    ),
+    state.error ? h("div", { className: "form-error" }, state.error) : null,
+    state.message ? h("div", { className: "designer-status" }, state.message) : null,
+    h("div", { className: "target-summary" },
+      h("article", null,
+        h("span", null, "Progress"),
+        h("strong", null, `${progress.currentCount} / ${progress.targetCount}`),
+        h("p", null, `${progress.remainingCount} ${progress.targetUnit} remaining`)
+      ),
+      h("article", null,
+        h("span", null, "Period"),
+        h("strong", null, progress.periodType),
+        h("p", null, progress.status)
+      ),
+      h("article", null,
+        h("span", null, "Owner"),
+        h("strong", null, staffProfile(progress.ownerStaff).label),
+        h("p", null, progress.progressSource)
+      )
+    ),
+    h("div", { className: "progress-track", "aria-label": "Department goal progress" },
+      h("span", { style: { width: `${progress.progressPercent}%` } })
+    ),
+    editing ? h("form", { className: "workspace-profile-form department-goal-form", onSubmit: save },
+      h(Field, { label: "Goal name" }, h(Input, { value: draft.label || "", onChange: event => update("label", event.target.value) })),
+      h(Field, { label: "Metric type" }, h(Select, { value: draft.metricType || "published_content_count", onChange: event => update("metricType", event.target.value) },
+        ["published_content_count", "draft_content_count", "approved_content_count", "completed_work_count", "lead_cases_completed"].map(option => h("option", { key: option, value: option }, friendlyId(option)))
+      )),
+      h(Field, { label: "Target count" }, h(Input, { type: "number", min: "0", value: draft.targetCount || 0, onChange: event => update("targetCount", event.target.value) })),
+      h(Field, { label: "Current count" }, h(Input, { type: "number", min: "0", value: draft.currentCount || 0, onChange: event => update("currentCount", event.target.value) })),
+      h(Field, { label: "Unit" }, h(Input, { value: draft.targetUnit || "", onChange: event => update("targetUnit", event.target.value), placeholder: "Content pieces" })),
+      h(Field, { label: "Period" }, h(Select, { value: draft.periodType || "Monthly", onChange: event => update("periodType", event.target.value) },
+        ["Daily", "Weekly", "Monthly", "Quarterly", "Campaign", "Custom"].map(option => h("option", { key: option, value: option }, option))
+      )),
+      h(Field, { label: "Period start" }, h(Input, { type: "date", value: draft.periodStart || "", onChange: event => update("periodStart", event.target.value) })),
+      h(Field, { label: "Period end" }, h(Input, { type: "date", value: draft.periodEnd || "", onChange: event => update("periodEnd", event.target.value) })),
+      h(Field, { label: "Status" }, h(Select, { value: draft.status || "Active", onChange: event => update("status", event.target.value) },
+        ["Active", "Paused", "Completed", "Blocked"].map(option => h("option", { key: option, value: option }, option))
+      )),
+      h(Field, { label: "Description", className: "wide" }, h(Textarea, { rows: 3, value: draft.description || "", onChange: event => update("description", event.target.value) })),
+      h(Field, { label: "Next action", className: "wide" }, h(Textarea, { rows: 3, value: draft.nextAction || "", onChange: event => update("nextAction", event.target.value) })),
+      h("div", { className: "connection-config-footer wide" },
+        h("small", null, "In this local alpha, progress can be updated manually. Later it can be calculated from WordPress/Make.com publish logs."),
+        h("div", { className: "panel-actions" },
+          h(Button, { type: "button", variant: "outline", onClick: () => { setDraft(primary); setEditing(false); } }, "Cancel"),
+          h(Button, { type: "submit", pending: state.busy, pendingLabel: "Saving..." }, icon("save"), "Save goal")
+        )
+      )
+    ) : h(DetailList, { rows: [
+      { label: "Goal", value: progress.label },
+      { label: "Description", value: progress.description || "Not set", length: 260 },
+      { label: "Next action", value: progress.nextAction || "Not set", length: 260 },
+    ] })
+  );
+}
+
+function DepartmentIdentityEditor({ department, fabric, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(() => departmentBusinessIdentity(department, fabric));
+  const [state, setState] = useState({ busy: false, message: "", error: "" });
+  const assignableConnections = departmentAssignableConnectionRows(fabric, department);
+  const selectedConnectionIds = new Set(listForUi(draft.activeConnections));
+  function toggleConnection(connectionId, checked) {
+    const next = new Set(listForUi(draft.activeConnections));
+    if (checked) next.add(connectionId);
+    else next.delete(connectionId);
+    update("activeConnections", Array.from(next));
+  }
+  useEffect(() => {
+    setDraft(departmentBusinessIdentity(department, fabric));
+    setState({ busy: false, message: "", error: "" });
+    setEditing(false);
+  }, [department && department.id, department && department.updatedAt]);
+  function update(key, value) {
+    setDraft(current => ({ ...current, [key]: value }));
+  }
+  async function save(event) {
+    event.preventDefault();
+    if (!department || !department.id) return;
+    setState({ busy: true, message: "", error: "" });
+    try {
+      const result = await api("/api/department-identity", {
+        method: "POST",
+        body: JSON.stringify({
+          departmentId: department.id,
+          updatedBy: HUMAN_STAFF_ID,
+          businessIdentity: {
+            ...draft,
+            activeConnections: listForUi(draft.activeConnections),
+            approvedDatabases: listForUi(draft.approvedDatabases),
+          },
+        }),
+      });
+      const nextIdentity = result.businessIdentity || draft;
+      setDraft(departmentBusinessIdentity({ ...(result.department || department), effectiveBusinessIdentity: nextIdentity }, fabric));
+      setEditing(false);
+      setState({ busy: false, message: "Department identity saved.", error: "" });
+      if (onSaved) await onSaved(result.department || { ...department, effectiveBusinessIdentity: nextIdentity });
+    } catch (error) {
+      setState({ busy: false, message: "", error: error.message || String(error) });
+    }
+  }
+  const rows = [
+    { label: "Organization", value: draft.organizationDisplayName || "Not set" },
+    { label: "Website", value: draft.websiteUrl || "Not set" },
+    { label: "Primary domain", value: draft.primaryDomain || "Not set" },
+    { label: "Industry", value: draft.industrySector || "Not set" },
+    { label: "Default language", value: draft.defaultLanguage || "Not set" },
+    { label: "Brand tone", value: draft.approvedBrandTone || "Not set", length: 220 },
+    { label: "Manager", value: [draft.managerDisplayName, draft.managerTitle].filter(Boolean).join(" / ") || "Not set" },
+    { label: "Assigned tools", value: listForUi(draft.activeConnections).map(id => ((fabric.connections || []).find(row => row.id === id) || {}).label || id).join(", ") || "Not set", length: 260 },
+    { label: "Approved databases", value: listForUi(draft.approvedDatabases).join(", ") || "Not set", length: 260 },
+  ];
+  return h("article", { className: "overview-narrative department-identity-panel" },
+    h("div", { className: "profile-section-head" },
+      h("div", null,
+        h("h3", null, "Department Organization Identity"),
+        h("p", null, "These facts belong to this department only. They override workspace defaults for tools, prompts, reports, and department context.")
+      ),
+      h(Button, { type: "button", variant: editing ? "outline" : "secondary", onClick: () => setEditing(!editing) }, editing ? "Cancel" : "Edit identity")
+    ),
+    state.error ? h("div", { className: "form-error" }, state.error) : null,
+    state.message ? h("div", { className: "designer-status" }, state.message) : null,
+    editing ? h("form", { className: "workspace-profile-form department-identity-form", onSubmit: save },
+      h(Field, { label: "Organization display name" }, h(Input, { value: draft.organizationDisplayName || "", onChange: event => update("organizationDisplayName", event.target.value), placeholder: "WorldBusiness Council" })),
+      h(Field, { label: "Legal organization name" }, h(Input, { value: draft.legalOrganizationName || "", onChange: event => update("legalOrganizationName", event.target.value) })),
+      h(Field, { label: "Website URL" }, h(Input, { value: draft.websiteUrl || "", onChange: event => update("websiteUrl", event.target.value), placeholder: "https://worldbc.co/" })),
+      h(Field, { label: "Primary domain" }, h(Input, { value: draft.primaryDomain || "", onChange: event => update("primaryDomain", event.target.value), placeholder: "worldbc.co" })),
+      h(Field, { label: "VAT / Tax ID" }, h(Input, { value: draft.vatOrTaxId || "", onChange: event => update("vatOrTaxId", event.target.value) })),
+      h(Field, { label: "Commercial registration" }, h(Input, { value: draft.commercialRegistrationNumber || "", onChange: event => update("commercialRegistrationNumber", event.target.value) })),
+      h(Field, { label: "Registered address", className: "wide" }, h(Textarea, { rows: 2, value: draft.registeredAddress || "", onChange: event => update("registeredAddress", event.target.value) })),
+      h(Field, { label: "Industry / sector" }, h(Input, { value: draft.industrySector || "", onChange: event => update("industrySector", event.target.value) })),
+      h(Field, { label: "Default language" }, h(Input, { value: draft.defaultLanguage || "", onChange: event => update("defaultLanguage", event.target.value) })),
+      h(Field, { label: "Manager display name" }, h(Input, { value: draft.managerDisplayName || "", onChange: event => update("managerDisplayName", event.target.value) })),
+      h(Field, { label: "Manager title" }, h(Input, { value: draft.managerTitle || "", onChange: event => update("managerTitle", event.target.value) })),
+      h(Field, { label: "Brand tone", className: "wide" }, h(Textarea, { rows: 2, value: draft.approvedBrandTone || "", onChange: event => update("approvedBrandTone", event.target.value) })),
+      h(Field, { label: "Public description", className: "wide" }, h(Textarea, { rows: 3, value: draft.publicDescription || "", onChange: event => update("publicDescription", event.target.value) })),
+      h(Field, { label: "Assigned platform tools", className: "wide" },
+        h("div", { className: "assignment-checklist" },
+          assignableConnections.length ? assignableConnections.map(connection => {
+            const checked = selectedConnectionIds.has(connection.id);
+            return h("label", { key: connection.id, className: cn("assignment-check-row", checked && "selected", !connection.platformActive && "needs-setup") },
+              h("input", { type: "checkbox", checked, disabled: !connection.platformActive && !checked, onChange: event => toggleConnection(connection.id, event.target.checked) }),
+              h("span", null,
+                h("strong", null, connection.label || connection.id),
+                h("small", null, `${connection.type || "Connection"} · ${connection.platformActive ? "Active in Settings / Tools" : "Needs platform setup"}`)
+              ),
+              h(Badge, { tone: connection.platformActive ? "success" : "warn" }, connection.platformStatus || connection.status || "Needs setup")
+            );
+          }) : h("p", { className: "muted" }, "No active platform tools are available yet. Configure them in Settings -> Tools first.")
+        ),
+        h("small", { className: "field-hint" }, "Departments only choose already configured platform tools. API details, provider IDs, and test results are managed under Settings -> Tools.")
+      ),
+      h(Field, { label: "Approved databases", className: "wide" }, h(Textarea, { rows: 3, value: listText(draft.approvedDatabases), onChange: event => update("approvedDatabases", event.target.value), placeholder: "db_source_transcripts, db_search_console_keywords" })),
+      h("div", { className: "connection-config-footer wide" },
+        h("small", null, "This updates only the selected department. It does not change global workspace defaults."),
+        h("div", { className: "panel-actions" },
+          h(Button, { type: "button", variant: "outline", onClick: () => { setDraft(departmentBusinessIdentity(department, fabric)); setEditing(false); } }, "Cancel"),
+          h(Button, { type: "submit", pending: state.busy, pendingLabel: "Saving..." }, icon("save"), "Save identity")
+        )
+      )
+    ) : h(DetailList, { rows })
+  );
+}
+
+function DepartmentSettingsWorkspacePanel({ department, fabric, onSaved }) {
+  const [section, setSection] = useState(() => window.sessionStorage.getItem("departmentSettingsSection") || "goal");
+  return h("section", { className: "department-single-view-panel" },
+    h("div", { className: "department-explorer-toolbar" },
+      h("div", null,
+        h("p", { className: "eyebrow" }, "Department Settings"),
+        h("h3", null, section === "identity" ? "Organization Identity" : "Department Goal"),
+        h("p", null, "Settings are separated into one focused view at a time so forms do not stack on the page.")
+      ),
+      h("label", { className: "filter-dropdown" },
+        h("span", null, "View"),
+        h("select", { value: section, onChange: event => { setSection(event.target.value); window.sessionStorage.setItem("departmentSettingsSection", event.target.value); }, "aria-label": "Department settings view" },
+          h("option", { value: "goal" }, "Goal"),
+          h("option", { value: "identity" }, "Organization identity")
+        )
+      )
+    ),
+    section === "goal"
+      ? h(DepartmentGoalsPanel, { department, onSaved })
+      : h(DepartmentIdentityEditor, { department, fabric, onSaved })
+  );
+}
+
+function DepartmentConnectionSetupPanel({ fabric, department, onSaved }) {
+  const connections = departmentConnectionRows(fabric, department);
+  const needsSetup = connections.filter(row => ["needs setup", "planned", "draft", "test failed"].includes(normalizedText(row.status)));
+  return h("article", { className: "overview-narrative department-connected-apps-panel" },
+    h("div", { className: "profile-section-head" },
+      h("div", null,
+        h("h3", null, "Connected Apps"),
+        h("p", null, "Set up the external accounts this department uses. Automation still runs in Windmill, but safe connection details are managed here for the selected organization.")
+      ),
+      h("div", { className: "tool-setup-stats compact" },
+        h("article", null, h("span", null, "Apps"), h("strong", null, connections.length)),
+        h("article", null, h("span", null, "Need setup"), h("strong", null, needsSetup.length))
+      )
+    ),
+    connections.length
+      ? h("div", { className: "connection-config-grid" }, connections.map(row => h(ConnectionConfigCard, { key: row.id, connection: row, department, businessOnly: true, onSaved })))
+      : h(EmptyState, { title: "No connected apps mapped yet", body: "Add the department's active connections from Department Organization Identity, then configure each app here." })
+  );
+}
+
+function fallbackStaffAssignmentsFromFabric(fabric = {}, department = {}) {
+  const archetypeLookup = byId(fabric.staffArchetypes || []);
+  return departmentStaffProfileRows(fabric, department).filter(row => !isHumanResponsible(row.id)).map(row => {
+    const blueprintId = row.primaryArchetypeId || (row.archetypeIds || [])[0] || "";
+    const blueprint = archetypeLookup[blueprintId] || { id: blueprintId, label: blueprintId || "Reusable staff blueprint" };
+    const effective = {
+      ...row,
+      label: row.label || staffProfile(row.id).label,
+      alias: row.alias || defaultStaffAlias(row.id),
+      role: row.role || row.profileTitle || "",
+      contactPolicy: row.contactPolicy || "",
+      toolOperatingMode: row.toolOperatingMode || "",
+      editableSkillRules: listForUi(row.editableSkillRules || row.skillRules),
+    };
+    return {
+      assignmentId: `local_${department.id || "department"}_${row.id}`,
+      departmentId: department.id || "",
+      staffProfileId: row.id,
+      staffBlueprintId: blueprintId,
+      status: "Active",
+      profile: row,
+      blueprint,
+      assignment: {
+        alias: effective.alias,
+        displayName: effective.label,
+        roleOverride: "",
+        contactPolicyOverride: "",
+        toolOperatingModeOverride: "",
+        editableSkillRules: [],
+        modelTier: "",
+        analysisTemplateId: "",
+        source: "fabric fallback",
+      },
+      effective,
+    };
+  });
+}
+
+function staffSkillDraftFromAssignment(row = {}) {
+  const assignment = row.assignment || {};
+  const effective = row.effective || {};
+  return {
+    alias: assignment.alias || effective.alias || "",
+    displayName: assignment.displayName || effective.label || "",
+    roleOverride: assignment.roleOverride || "",
+    contactPolicyOverride: assignment.contactPolicyOverride || "",
+    toolOperatingModeOverride: assignment.toolOperatingModeOverride || "",
+    editableSkillRules: listForUi(assignment.editableSkillRules || []),
+    modelTier: assignment.modelTier || effective.modelTier || "",
+    analysisTemplateId: assignment.analysisTemplateId || effective.analysisTemplateId || "",
+  };
+}
+
+function DepartmentStaffSkillsPanel({ fabric, department, onSaved }) {
+  const fallbackRows = fallbackStaffAssignmentsFromFabric(fabric, department);
+  const [rows, setRows] = useState([]);
+  const [selectedId, setSelectedId] = useState(() => (fallbackRows[0] || {}).staffProfileId || "");
+  const visibleRows = rows.length ? rows : fallbackRows;
+  const selected = visibleRows.find(row => row.staffProfileId === selectedId) || visibleRows[0] || {};
+  const selectedEffective = selected.effective || {};
+  const selectedBlueprint = selected.blueprint || {};
+  const selectedProfile = selected.profile || {};
+  const [draft, setDraft] = useState(() => staffSkillDraftFromAssignment(selected));
+  const [editing, setEditing] = useState(false);
+  const [state, setState] = useState({ busy: false, loading: false, message: "", error: "" });
+  useEffect(() => {
+    if (!department || !department.id) return undefined;
+    let alive = true;
+    setState(current => ({ ...current, loading: true, error: "", message: "" }));
+    api(`/api/department-staff-assignments?departmentId=${encodeURIComponent(department.id)}`)
+      .then(result => {
+        if (!alive) return;
+        const nextRows = Array.isArray(result.assignments) ? result.assignments : [];
+        setRows(nextRows);
+        const nextSelected = nextRows.find(row => row.staffProfileId === selectedId) || nextRows[0] || {};
+        if (nextSelected.staffProfileId && nextSelected.staffProfileId !== selectedId) setSelectedId(nextSelected.staffProfileId);
+        setDraft(staffSkillDraftFromAssignment(nextSelected));
+        setState(current => ({ ...current, loading: false, error: "" }));
+      })
+      .catch(error => {
+        if (!alive) return;
+        setRows([]);
+        setState(current => ({ ...current, loading: false, error: error.message || String(error) }));
+      });
+    return () => { alive = false; };
+  }, [department && department.id]);
+  useEffect(() => {
+    const nextSelected = visibleRows.find(row => row.staffProfileId === selectedId) || visibleRows[0] || {};
+    if (!nextSelected.staffProfileId) return;
+    if (nextSelected.staffProfileId !== selectedId) setSelectedId(nextSelected.staffProfileId);
+    setDraft(staffSkillDraftFromAssignment(nextSelected));
+    setEditing(false);
+    setState(current => ({ ...current, busy: false, message: "", error: "" }));
+  }, [selectedId, rows.length, (fabric.staffProfiles || []).map(row => `${row.id}:${row.updatedAt || ""}`).join("|")]);
+  function update(key, value) {
+    setDraft(current => ({ ...current, [key]: value }));
+  }
+  async function save() {
+    if (!selected.staffProfileId) return;
+    setState(current => ({ ...current, busy: true, message: "", error: "" }));
+    try {
+      const result = await api("/api/department-staff-assignment", {
+        method: "POST",
+        body: JSON.stringify({
+          departmentId: department.id,
+          assignmentId: selected.assignmentId,
+          staffProfileId: selected.staffProfileId,
+          staffBlueprintId: selected.staffBlueprintId,
+          updatedBy: HUMAN_STAFF_ID,
+          assignment: {
+            alias: draft.alias,
+            displayName: draft.displayName,
+            roleOverride: draft.roleOverride,
+            contactPolicyOverride: draft.contactPolicyOverride,
+            toolOperatingModeOverride: draft.toolOperatingModeOverride,
+            editableSkillRules: listForUi(draft.editableSkillRules),
+            modelTier: draft.modelTier,
+            analysisTemplateId: draft.analysisTemplateId,
+          },
+          reason: `Updated reusable staff assignment for ${department.label || department.id}.`,
+        }),
+      });
+      if (Array.isArray(result.assignments)) setRows(result.assignments);
+      setEditing(false);
+      setState(current => ({ ...current, busy: false, message: "Department staff assignment saved.", error: "" }));
+      if (onSaved) await onSaved();
+    } catch (error) {
+      setState(current => ({ ...current, busy: false, message: "", error: error.message || String(error) }));
+    }
+  }
+  return h("article", { className: "overview-narrative department-staff-skills-panel" },
+    h("div", { className: "profile-section-head" },
+      h("div", null,
+        h("h3", null, "Reusable Staff Assignments"),
+        h("p", null, "Staff blueprints stay reusable. This department only edits aliases, responsibilities, tool behavior, escalation notes, and extra skill rules for its own assignment.")
+      ),
+      selected.staffProfileId ? h(Button, { type: "button", variant: editing ? "outline" : "secondary", onClick: () => setEditing(!editing) }, editing ? "Cancel" : "Edit assignment") : null
+    ),
+    state.loading ? h("div", { className: "designer-status" }, "Loading department staff assignments...") : null,
+    state.error ? h("div", { className: "form-error" }, state.error) : null,
+    state.message ? h("div", { className: "designer-status" }, state.message) : null,
+    visibleRows.length ? h("div", { className: "staff-skill-editor-layout" },
+      h("div", { className: "staff-skill-list" }, visibleRows.map(row => {
+        const effective = row.effective || {};
+        const profile = staffProfile(row.staffProfileId);
+        const active = row.staffProfileId === selected.staffProfileId;
+        return h("button", {
+          key: row.assignmentId || row.staffProfileId,
+          type: "button",
+          className: cn("staff-skill-row", active && "active"),
+          onClick: () => setSelectedId(row.staffProfileId),
+        },
+          staffAvatar(row.staffProfileId, true),
+          h("span", null,
+            h("strong", null, effective.alias || effective.label || profile.label),
+            h("small", null, (row.blueprint && (row.blueprint.label || row.blueprint.id)) || profile.systemLabel || row.staffProfileId)
+          )
+        );
+      })),
+      h("div", { className: "staff-skill-detail" },
+        h("div", { className: "profile-section-head compact" },
+          h("div", null,
+            h("p", { className: "eyebrow" }, selected.staffProfileId || "AI Staff"),
+            h("h4", null, selectedEffective.alias || selectedEffective.label || selected.staffProfileId),
+            h("p", null, selectedEffective.role || selectedEffective.profileTitle || "Department AI staff")
+          ),
+          h(Badge, { tone: selectedEffective.canContactHuman ? "warn" : "ok" }, selectedEffective.canContactHuman ? "Manager-facing" : "Staff-to-manager")
+        ),
+        h("div", { className: "staff-skill-blueprint-grid" },
+          h("article", null,
+            h("span", null, "Reusable blueprint"),
+            h("strong", null, selectedBlueprint.label || selectedBlueprint.name || selected.staffBlueprintId || "Not set"),
+            h("p", null, selectedBlueprint.summary || selectedBlueprint.description || selectedBlueprint.id || "Platform-owned reusable role.")
+          ),
+          h("article", null,
+            h("span", null, "Department assignment"),
+            h("strong", null, selected.assignmentId || "Not saved"),
+            h("p", null, "Safe local overrides for this department. The blueprint can still be reused elsewhere.")
+          )
+        ),
+        editing ? h("div", { className: "workspace-profile-form staff-skill-form" },
+          h(Field, { label: "Department alias" }, h(Input, { value: draft.alias || "", onChange: event => update("alias", event.target.value), placeholder: selectedProfile.alias || selectedEffective.alias || "Sofia" })),
+          h(Field, { label: "Display name" }, h(Input, { value: draft.displayName || "", onChange: event => update("displayName", event.target.value), placeholder: selectedProfile.label || selectedEffective.label || "SEO Manager" })),
+          h(Field, { label: "Responsibility override", className: "wide" }, h(Textarea, { rows: 3, value: draft.roleOverride || "", onChange: event => update("roleOverride", event.target.value), placeholder: selectedProfile.role || selectedProfile.profileTitle || selectedEffective.role || "Leave blank to inherit the reusable blueprint/profile responsibility." })),
+          h(Field, { label: "Tool and lane behavior override", className: "wide" }, h(Textarea, { rows: 3, value: draft.toolOperatingModeOverride || "", onChange: event => update("toolOperatingModeOverride", event.target.value), placeholder: selectedProfile.toolOperatingMode || selectedEffective.toolOperatingMode || "Leave blank to inherit default tool behavior." })),
+          h(Field, { label: "Model / budget tier" }, h(Select, { value: draft.modelTier || "", onChange: event => update("modelTier", event.target.value) },
+            h("option", { value: "" }, "Inherit from template"),
+            (selectedBlueprint.modelTiers || []).map(tier => h("option", { key: tier.id || tier.label, value: tier.id || tier.label }, `${tier.label || tier.id} - ${tier.reasoningEffort || "medium"}`))
+          )),
+          h(Field, { label: "Analysis template" }, h(Select, { value: draft.analysisTemplateId || "", onChange: event => update("analysisTemplateId", event.target.value) },
+            h("option", { value: "" }, "Choose per project/task"),
+            (selectedBlueprint.analysisTemplates || []).map(template => h("option", { key: template.id || template.label, value: template.id || template.label }, template.label || template.id))
+          )),
+          h(Field, { label: "Contact / escalation override", className: "wide" }, h(Textarea, { rows: 3, value: draft.contactPolicyOverride || "", onChange: event => update("contactPolicyOverride", event.target.value), placeholder: selectedProfile.contactPolicy || selectedEffective.contactPolicy || "Leave blank to inherit default escalation policy." })),
+          h(Field, { label: "Department-specific skill rules", className: "wide" }, h(Textarea, { rows: 5, value: listText(draft.editableSkillRules), onChange: event => update("editableSkillRules", event.target.value), placeholder: "One rule per line. Example: Always return a WordPress-ready HTML package before asking for publishing approval." })),
+          h("div", { className: "connection-config-footer wide" },
+            h("small", null, "Blank override fields inherit the reusable blueprint/profile. Locked platform safety, department rules, and approval gates still win."),
+            h("div", { className: "panel-actions" },
+              h(Button, { type: "button", variant: "outline", onClick: () => { setDraft(staffSkillDraftFromAssignment(selected)); setEditing(false); } }, "Cancel"),
+              h(Button, { type: "button", pending: state.busy, pendingLabel: "Saving...", onClick: save }, icon("save"), "Save assignment")
+            )
+          )
+        ) : h(DetailList, { rows: [
+          { label: "Effective responsibility", value: selectedEffective.role || selectedEffective.profileTitle || "Not set", length: 260 },
+          { label: "Tool behavior", value: selectedEffective.toolOperatingMode || "Not set", length: 260 },
+          { label: "Model / budget tier", value: selectedEffective.modelTier || "Inherited from template" },
+          { label: "Analysis template", value: selectedEffective.analysisTemplateId || "Selected per project/task" },
+          { label: "Contact policy", value: selectedEffective.contactPolicy || "Not set", length: 260 },
+          { label: "Department-specific rules", value: listForUi(selectedEffective.editableSkillRules).join("; ") || "No additional department rules.", length: 320 },
+          { label: "Reports to", value: selectedEffective.reportsTo || "Not set" },
+          { label: "Reusable profile source", value: `${selectedProfile.id || selected.staffProfileId || "Not set"} -> ${selectedBlueprint.id || selected.staffBlueprintId || "No blueprint"}`, length: 220 },
+        ] })
+      )
+    ) : h(EmptyState, { title: "No staff assignments mapped", body: "Add reusable staff profiles to the department package, then configure this department's assignments here." })
+  );
+}
+
+function departmentWorkspaceStaffIds(fabric = {}, department = {}, dashboard = {}) {
+  const ids = departmentStaffProfileRows(fabric, department).map(row => row.id);
+  return uniqueValues([
+    department.humanManager || HUMAN_STAFF_ID,
+    department.aiManager || "AIstaff_Manager",
+    ...ids,
+  ]).filter(Boolean);
+}
+
+function DepartmentWorkspaceStaffExplorer({ dashboard, fabric, department, runOne, openTaskDialog }) {
+  const managerStaffId = department.aiManager || "AIstaff_Manager";
+  const staffIds = departmentWorkspaceStaffIds(fabric, department, dashboard);
+  const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [p4State, setP4State] = useState({ loading: true, readiness: null, context: null, scenario: null, error: "" });
+
+  useEffect(() => {
+    setSelectedStaffId("");
+  }, [department.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadP4() {
+      if (!department.id) return;
+      setP4State(current => ({ ...current, loading: true, error: "" }));
+      try {
+        const departmentId = department.id || "";
+        const [readiness, context, scenario] = await Promise.all([
+          api(`/api/p4/readiness?departmentId=${encodeURIComponent(departmentId)}`),
+          api(`/api/p4/resolve-context?departmentId=${encodeURIComponent(departmentId)}`),
+          api(`/api/p4/scenario-map?departmentId=${encodeURIComponent(departmentId)}`),
+        ]);
+        if (!cancelled) setP4State({ loading: false, readiness, context, scenario, error: "" });
+      } catch (error) {
+        if (!cancelled) setP4State({ loading: false, readiness: null, context: null, scenario: null, error: error.message || String(error) });
+      }
+    }
+    loadP4();
+    return () => { cancelled = true; };
+  }, [department.id]);
+
+  const managerName = staffProfile(managerStaffId).label;
+  if (selectedStaffId) {
+    return h("section", { className: "department-staff-explorer workspace-profile-mode" },
+      h("div", { className: "profile-return-bar" },
+        h(Button, { variant: "outline", onClick: () => setSelectedStaffId("") }, "Back to org chart"),
+        h("span", null, `${department.label || "Department"} / Staff profile`)
+      ),
+      p4State.error ? h("div", { className: "form-error" }, p4State.error) : null,
+      h(StaffProfilePanel, {
+        dashboard,
+        fabric,
+        staffId: selectedStaffId,
+        runOne,
+        openTaskDialog,
+        setSelectedStaffId,
+        p4State,
+        managerStaffId,
+      })
+    );
+  }
+  return h("section", { className: "department-staff-explorer" },
+    h(Card, { className: "department-chart-card chart-enter" },
+      h(CardHeader, {
+        eyebrow: "Department Staff",
+        title: "Organization Chart",
+        description: `Inspect the AI Manager and specialist staff for ${department.label || "this department"}. Click a person to open their full explorer profile.`,
+        action: h(Button, { onClick: () => openTaskDialog({ assignedTo: managerStaffId, taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), `Message ${managerName}`),
+      }),
+      h(CardContent, null,
+        p4State.loading ? h("div", { className: "designer-status" }, "Resolving staff, stages, tools, and readiness...") : null,
+        p4State.error ? h("div", { className: "form-error" }, p4State.error) : null,
+        h(DepartmentHierarchyTree, {
+          dashboard,
+          fabric,
+          staffIds,
+          selectedStaffId,
+          managerStaffId,
+          onSelect: setSelectedStaffId,
+        })
+      )
+    )
+  );
+}
+
+function toolSetupStatus(row = {}) {
+  const raw = row.testStatus || row.status || row.lifecycleStatus || row.catalogStatus || "";
+  const text = normalizedText(raw);
+  if (row.configured || row.isConfigured || row.organizationScoped || row.connected || text === "active" || text === "connected" || text === "ready") return "Connected";
+  if (text.includes("fail")) return "Needs setup";
+  if (["draft", "planned", "inactive", "missing", "not configured", "needs setup"].includes(text)) return "Needs setup";
+  if (row.kind === "dataset") return "Mapped";
+  return raw || "Needs setup";
+}
+
+function toolSetupPriority(row = {}, requiredIds = new Set(), recommendedIds = new Set()) {
+  if (row.priority) return row.priority;
+  if (row.kind === "automation") return "Must have";
+  if (requiredIds.has(row.id)) return "Must have";
+  if (recommendedIds.has(row.id)) return "Nice to have";
+  if (row.kind === "dataset") return "Knowledge/Data";
+  return "Nice to have";
+}
+
+function departmentToolRows(fabric = {}, department = {}, dashboard = {}) {
+  const capabilities = departmentCapabilityRows(fabric, department);
+  const requiredConnectionIds = new Set(uniqueValues(capabilities.flatMap(row => row.requiredConnections || [])));
+  const recommendedConnectionIds = new Set(uniqueValues(capabilities.flatMap(row => row.recommendedConnections || [])));
+  const connections = departmentConnectionRows(fabric, department).map(row => {
+    const status = toolSetupStatus({ ...row, kind: "connection" });
+    return {
+      ...row,
+      kind: "connection",
+      typeLabel: row.provider || row.type || "Connection",
+      priority: toolSetupPriority(row, requiredConnectionIds, recommendedConnectionIds),
+      setupStatus: status,
+      nextAction: normalizedText(status) === "connected" ? "Test connection" : "Configure",
+    };
+  });
+  const databases = departmentDatabaseRows(fabric, department).map(row => ({
+    ...row,
+    kind: "dataset",
+    typeLabel: row.type || row.storage || "Knowledge/Data",
+    priority: "Knowledge/Data",
+    setupStatus: toolSetupStatus({ ...row, kind: "dataset" }),
+    nextAction: "View details",
+  }));
+  const windmill = dashboard.windmill || dashboard.localSync?.windmill || {};
+  const windmillConfigured = Boolean(windmill.configured || windmill.commandConfigured || windmill.baseUrl);
+  const windmillNeeded = connections.some(row => normalizedText(`${row.id} ${row.label} ${row.type}`).includes("windmill")) ||
+    listForUi(department.automations || department.activeAutomations).some(value => normalizedText(value).includes("windmill"));
+  const automationRows = windmillNeeded ? [{
+    id: "automation_windmill_runtime",
+    label: "Windmill Automation Runtime",
+    summary: "Executes approved department automations outside the AI Department UI.",
+    kind: "automation",
+    typeLabel: "Automation",
+    provider: "Windmill",
+    priority: "Must have",
+    setupStatus: windmillConfigured ? "Connected" : "Needs setup",
+    lastTestResult: windmill.lastStatus || windmill.lastError || (windmillConfigured ? "Configured" : "No Windmill URL/token configured"),
+    nextAction: windmillConfigured ? "Test" : "Configure",
+  }] : [];
+  return [...connections, ...databases, ...automationRows];
+}
+
+function DepartmentToolsDataPanel({ fabric, department, dashboard = {}, setView = () => {} }) {
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState("cards");
+  const tools = departmentToolRows(fabric, department, dashboard);
+  const normalizedQuery = normalizedText(query);
+  const counts = {
+    all: tools.length,
+    must: tools.filter(row => row.priority === "Must have").length,
+    nice: tools.filter(row => row.priority === "Nice to have").length,
+    setup: tools.filter(row => normalizedText(row.setupStatus).includes("needs setup")).length,
+    connected: tools.filter(row => normalizedText(row.setupStatus) === "connected").length,
+    data: tools.filter(row => row.kind === "dataset").length,
+    automation: tools.filter(row => row.kind === "automation").length,
+  };
+  const filtered = tools.filter(row => {
+    const haystack = normalizedText(`${row.label || ""} ${row.id || ""} ${row.provider || ""} ${row.type || ""} ${row.kind || ""} ${row.summary || ""}`);
+    if (normalizedQuery && !haystack.includes(normalizedQuery)) return false;
+    if (filter === "must") return row.priority === "Must have";
+    if (filter === "nice") return row.priority === "Nice to have";
+    if (filter === "setup") return normalizedText(row.setupStatus).includes("needs setup");
+    if (filter === "connected") return normalizedText(row.setupStatus) === "connected";
+    if (filter === "data") return row.kind === "dataset";
+    if (filter === "automation") return row.kind === "automation";
+    return true;
+  });
+  const [selectedId, setSelectedId] = useState("");
+  const [detailOpen, setDetailOpen] = useState(false);
+  const selected = tools.find(row => row.id === selectedId) || filtered[0] || tools[0] || null;
+
+  useEffect(() => {
+    if (selected && selected.id !== selectedId && !filtered.some(row => row.id === selectedId)) {
+      setSelectedId(selected.id);
+    }
+  }, [selected && selected.id, selectedId, filtered.map(row => row.id).join("|")]);
+
+  const filterOptions = [
+    ["all", "All", counts.all],
+    ["must", "Must have", counts.must],
+    ["nice", "Nice to have", counts.nice],
+    ["setup", "Needs setup", counts.setup],
+    ["connected", "Connected", counts.connected],
+    ["data", "Data sources", counts.data],
+    ["automation", "Automation", counts.automation],
+  ];
+  const openToolDetail = row => {
+    if (!row) return;
+    setSelectedId(row.id);
+    setDetailOpen(true);
+  };
+
+  const renderToolCard = row => {
+    const active = selected && selected.id === row.id;
+    const kindIcon = row.kind === "dataset" ? "database" : row.kind === "automation" ? "play" : "settings";
+    return h("article", { key: row.id, className: cn("tool-console-card", active && "active") },
+      h("button", { type: "button", className: "tool-console-card-head", onClick: () => openToolDetail(row) },
+        h("span", { className: "tool-kind-icon" }, icon(kindIcon)),
+        h("span", null,
+          h("strong", null, row.label || row.id),
+          h("small", null, `${row.typeLabel || row.type || row.kind} · ${row.provider || row.id}`)
+        ),
+        h(Badge, { tone: connectionStatusTone(row.setupStatus) }, row.setupStatus)
+      ),
+      h("p", null, shortText(row.summary || row.description || row.lastTestResult || "Mapped to this department.", 130)),
+      h("div", { className: "tool-console-meta" },
+        h(Badge, { tone: row.priority === "Must have" ? "warn" : row.priority === "Knowledge/Data" ? "ok" : "neutral" }, row.priority),
+        row.lastTestResult ? h("small", null, shortText(row.lastTestResult, 70)) : null
+      ),
+      h("div", { className: "panel-actions" },
+        h(Button, { type: "button", size: "sm", onClick: () => openToolDetail(row) }, row.nextAction || "Open"),
+        h(Button, { type: "button", size: "sm", variant: "outline", onClick: () => openToolDetail(row) }, "Details")
+      )
+    );
+  };
+
+  return h("div", { className: "department-tools-panel" },
+    h("section", { className: "tool-setup-hero" },
+      h("div", null,
+        h("p", { className: "eyebrow" }, "Tools & Data"),
+        h("h3", null, "Setup console for this department"),
+        h("p", null, "This department can use the active tools assigned from Settings. API setup, provider IDs, tests, and secure runtime values are managed in Settings -> Tools.")
+      ),
+      h("div", { className: "tool-setup-stats" },
+        h("article", null, h("span", null, "Must have"), h("strong", null, counts.must)),
+        h("article", null, h("span", null, "Need setup"), h("strong", null, counts.setup)),
+        h("article", null, h("span", null, "Data sources"), h("strong", null, counts.data))
+      )
+    ),
+    h("section", { className: "tool-console-section" },
+      h("div", { className: "tool-console-controls" },
+        !detailOpen ? h("label", { className: "filter-dropdown" },
+          h("span", null, "Filter"),
+          h("select", { value: filter, onChange: event => setFilter(event.target.value), "aria-label": "Tool filter" },
+            filterOptions.map(([key, label, count]) => h("option", { key, value: key }, `${label} (${count})`))
+          )
+        ) : h(Button, { type: "button", variant: "secondary", onClick: () => setDetailOpen(false) }, "Back to tools"),
+        !detailOpen ? h("div", { className: "tool-console-right-controls" },
+          h("label", { className: "tool-search-field" },
+            icon("search"),
+            h("input", { value: query, onChange: event => setQuery(event.target.value), placeholder: "Search tools, data, provider..." })
+          ),
+          h("div", { className: "segmented-control", role: "group", "aria-label": "Tool view" },
+            ["cards", "table"].map(mode => h("button", { key: mode, type: "button", className: cn(viewMode === mode && "active"), onClick: () => setViewMode(mode) }, mode === "cards" ? "Cards" : "Table"))
+          )
+        ) : null
+      ),
+      detailOpen && selected ? h("section", { className: "tool-detail-pane focused" },
+        h("div", { className: "profile-section-head compact" },
+          h("div", null,
+            h("p", { className: "eyebrow" }, selected.kind === "dataset" ? "Knowledge/Data" : selected.kind === "automation" ? "Automation" : "Connection"),
+            h("h3", null, selected.label || selected.id),
+            h("p", null, selected.summary || selected.description || selected.lastTestResult || "Assigned department tool.")
+          ),
+          h("div", { className: "tool-detail-actions" },
+            h(Badge, { tone: connectionStatusTone(selected.setupStatus) }, selected.setupStatus),
+            selected.kind === "connection" ? h(Button, { type: "button", variant: "secondary", onClick: () => setView("settings") }, "Configure in Settings") : null,
+            h(Button, { type: "button", variant: "outline", onClick: () => setDetailOpen(false) }, "Back")
+          )
+        ),
+        h(DetailList, { rows: [
+              { label: "ID", value: selected.id },
+              { label: "Provider/type", value: selected.provider || selected.typeLabel || selected.type || selected.kind },
+              { label: "Priority", value: selected.priority },
+              { label: "Where configured", value: selected.kind === "connection" ? "Settings -> Tools" : "Department scenario / catalog" },
+              { label: "Next action", value: selected.kind === "connection" && normalizedText(selected.setupStatus).includes("needs setup") ? "Configure and test this platform tool in Settings -> Tools." : selected.nextAction || "View details" },
+              { label: "Last test/result", value: selected.lastTestResult || selected.status || "No test logged yet.", length: 220 },
+              { label: "Notes", value: selected.notes || selected.storage || selected.url || selected.summary || "No additional notes.", length: 260 },
+            ] })
+      ) : filtered.length
+        ? viewMode === "cards"
+          ? h("div", { className: "tool-console-grid" }, filtered.map(renderToolCard))
+          : h("div", { className: "tool-console-table-wrap" },
+              h("table", { className: "tool-console-table" },
+                h("thead", null, h("tr", null, ["Name", "Type", "Priority", "Status", "Next action"].map(label => h("th", { key: label }, label)))),
+                h("tbody", null, filtered.map(row => h("tr", { key: row.id, className: selected && selected.id === row.id ? "active" : "", onClick: () => openToolDetail(row) },
+                  h("td", null, h("strong", null, row.label || row.id), h("small", null, row.id)),
+                  h("td", null, row.typeLabel || row.kind),
+                  h("td", null, h(Badge, { tone: row.priority === "Must have" ? "warn" : "neutral" }, row.priority)),
+                  h("td", null, h(Badge, { tone: connectionStatusTone(row.setupStatus) }, row.setupStatus)),
+                  h("td", null, row.nextAction || "View details")
+                )))
+              )
+            )
+        : h(EmptyState, { title: "No tools match this filter", body: "Clear the search or choose another setup chip." })
+    )
+  );
+}
+
+function activityStatusTone(status) {
+  const text = normalizedText(status);
+  if (["done", "approved", "ready"].includes(text)) return "success";
+  if (["pending approval", "waiting approval", "needs configuration"].includes(text)) return "warn";
+  if (["failed", "blocked", "rejected"].includes(text)) return "danger";
+  if (["running", "in progress"].includes(text)) return "ok";
+  return "neutral";
+}
+
+function activityBusinessLabel(activityName) {
+  const text = normalizedText(activityName);
+  if (text.includes("wordpress")) return "WordPress Draft";
+  if (text.includes("search console")) return "Search Console Insights";
+  if (text.includes("webhook")) return "External Workflow";
+  if (text.includes("text extract") || text.includes("file text")) return "Text Reader";
+  return String(activityName || "Automation")
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function activityBusinessStatus(status, approvalState) {
+  const approval = normalizedText(approvalState);
+  const text = normalizedText(status);
+  if (approval === "pending") return "Waiting for approval";
+  if (approval === "rejected" || text === "blocked") return "Blocked";
+  if (text === "done") return "Completed";
+  if (text === "failed") return "Needs review";
+  if (text === "running" || text === "in progress") return "Running";
+  if (text === "ready") return "Ready";
+  if (text === "needs configuration") return "Needs setup";
+  return status || "Not started";
+}
+
+function DepartmentAutomationPanel({ department, compact = false }) {
+  const [state, setState] = useState({ loading: true, busy: "", error: "", message: "", windmill: {}, orchestration: {}, activities: [], bindings: [] });
+  const departmentId = department && department.id;
+  const showDeveloperAutomation = typeof window !== "undefined" && window.location.search.includes("debugAutomation=1");
+  async function load() {
+    if (!departmentId) return;
+    setState(current => ({ ...current, loading: true, error: "" }));
+    try {
+      const [windmillResult, orchestrationResult, activityResult] = await Promise.all([
+        api("/api/windmill/status"),
+        api(`/api/orchestration/status?departmentId=${encodeURIComponent(departmentId)}`),
+        api(`/api/activity-runs?departmentId=${encodeURIComponent(departmentId)}&limit=25`),
+      ]);
+      setState(current => ({
+        ...current,
+        loading: false,
+        windmill: windmillResult.windmill || {},
+        orchestration: orchestrationResult.orchestration || {},
+        activities: activityResult.activityRuns || [],
+        bindings: activityResult.bindings || [],
+      }));
+    } catch (error) {
+      setState(current => ({ ...current, loading: false, error: error.message || String(error) }));
+    }
+  }
+  useEffect(() => {
+    load();
+  }, [departmentId]);
+  async function runAction(key, label, fn) {
+    setState(current => ({ ...current, busy: key, error: "", message: "" }));
+    try {
+      const result = await fn();
+      setState(current => ({ ...current, busy: "", message: label || "Done." }));
+      await load();
+      return result;
+    } catch (error) {
+      setState(current => ({ ...current, busy: "", error: error.message || String(error), message: "" }));
+      return null;
+    }
+  }
+  async function startRun() {
+    return runAction("orchestration:start", "Orchestration run started.", () => api("/api/orchestration/start", {
+      method: "POST",
+      body: JSON.stringify({ departmentId, intent: "Advance department goal under supervised autonomy.", createdBy: "AIstaff_Manager" }),
+    }));
+  }
+  async function stepRun() {
+    const run = (state.orchestration.runs || [])[0];
+    if (!run) return startRun();
+    return runAction("orchestration:step", "Orchestration graph advanced one node.", () => api("/api/orchestration/step", {
+      method: "POST",
+      body: JSON.stringify({ runId: run.runId }),
+    }));
+  }
+  async function testWindmill() {
+    return runAction("windmill:test", "Windmill connection test completed.", () => api("/api/windmill/test-connection", { method: "POST", body: JSON.stringify({ departmentId }) }));
+  }
+  async function provisionWindmill() {
+    return runAction("windmill:provision", "Starter Windmill activities provisioned.", () => api("/api/windmill/provision-starter-activities", { method: "POST", body: JSON.stringify({ departmentId }) }));
+  }
+  async function requestSampleActivity() {
+    const isSeo = normalizedText([department.label, department.purpose, ...(department.projectTypes || [])].join(" ")).includes("seo");
+    const activityName = isSeo ? "worldbc.seo.run_workflow" : "worldbc.file.text_extract";
+    return runAction("activity:request", "Automation test requested.", () => api("/api/activity/request", {
+      method: "POST",
+      body: JSON.stringify({
+        departmentId,
+        organizationAccountId: (departmentBusinessIdentity(department, {}) || {}).id || "",
+        activityName,
+        dryRun: true,
+        requestedBy: "AIstaff_Manager",
+        approvalReason: "Batch 1 dry-run activity request from department workspace.",
+        input: {
+          departmentLabel: department.label || departmentId,
+          goal: (departmentGoalsFromRow(department)[0] || {}).label || "",
+          source: "department_workspace",
+          sourceText: isSeo ? "Sample source text for a WorldBC SEO article. The workflow should prepare keyword evidence, a brief, an article package, QA checks, and an approval-ready WordPress payload." : "",
+        },
+      }),
+    }));
+  }
+  async function requestLiveActivity() {
+    const isSeo = normalizedText([department.label, department.purpose, ...(department.projectTypes || [])].join(" ")).includes("seo");
+    const activityName = isSeo ? "worldbc.wordpress.create_draft" : "worldbc.file.text_extract";
+    return runAction("activity:request-live", "Execution request created. Approval is required before external work runs.", () => api("/api/activity/request", {
+      method: "POST",
+      body: JSON.stringify({
+        departmentId,
+        organizationAccountId: (departmentBusinessIdentity(department, {}) || {}).id || "",
+        activityName,
+        dryRun: false,
+        requestedBy: "AIstaff_Manager",
+        approvalReason: "Live Windmill activity requires human approval before execution.",
+        input: {
+          departmentLabel: department.label || departmentId,
+          goal: (departmentGoalsFromRow(department)[0] || {}).label || "",
+          source: "department_workspace_live_request",
+          text: "Local smoke test from AI Department control plane.",
+        },
+      }),
+    }));
+  }
+  async function approveActivity(run) {
+    return runAction(`activity:approve:${run.activityRunId}`, "Activity approved.", () => api("/api/activity/approve", {
+      method: "POST",
+      body: JSON.stringify({ activityRunId: run.activityRunId, approved: true, approvedBy: HUMAN_STAFF_ID, reason: "Approved from department workspace." }),
+    }));
+  }
+  async function runActivity(run) {
+    return runAction(`activity:run:${run.activityRunId}`, "Activity run attempted.", () => api("/api/activity/run", {
+      method: "POST",
+      body: JSON.stringify({ activityRunId: run.activityRunId }),
+    }));
+  }
+  const windmill = state.windmill || {};
+  const orchestration = state.orchestration || {};
+  const latestRun = (orchestration.runs || [])[0];
+  const activities = state.activities || [];
+  const pendingApprovals = activities.filter(row => normalizedText(row.approvalState) === "pending").length;
+  const availableAutomations = (state.bindings || []).filter(row => normalizedText(row.status) !== "archived");
+  const completedCount = activities.filter(row => normalizedText(row.status) === "done").length;
+  const needsReviewCount = activities.filter(row => ["failed", "blocked", "needs configuration"].includes(normalizedText(row.status))).length;
+  const [automationView, setAutomationView] = useState("status");
+  return h("article", { className: cn("overview-narrative automation-orchestration-panel", compact && "compact") },
+    h("div", { className: "profile-section-head" },
+      h("div", null,
+        h("h3", null, "Automation Engine"),
+        h("p", null, "Use approved automations to read inputs, prepare outputs, and request external execution. External actions still wait for Iman approval.")
+      ),
+      h("div", { className: "panel-actions" },
+        !compact ? h("label", { className: "filter-dropdown compact" },
+          h("span", null, "View"),
+          h("select", { value: automationView, onChange: event => setAutomationView(event.target.value), "aria-label": "Automation view" },
+            h("option", { value: "status" }, "Status"),
+            h("option", { value: "automations" }, "Available automations"),
+            h("option", { value: "history" }, "Run history")
+          )
+        ) : null,
+        h(Button, { type: "button", variant: "outline", pending: state.busy === "windmill:test", onClick: testWindmill }, "Test connection"),
+        showDeveloperAutomation ? h(Button, { type: "button", variant: "outline", pending: state.busy === "windmill:provision", onClick: provisionWindmill }, "Provision scripts") : null,
+        showDeveloperAutomation ? h(Button, { type: "button", pending: state.busy === "orchestration:start", onClick: startRun }, "Start graph run") : null
+      )
+    ),
+    state.error ? h("div", { className: "form-error" }, state.error) : null,
+    state.message ? h("div", { className: "designer-status" }, state.message) : null,
+    (compact || automationView === "status") ? h(Fragment, null,
+      h("div", { className: "target-summary automation-summary-grid" },
+        h("article", null, h("span", null, "Automation engine"), h("strong", null, windmill.configured ? "Connected" : "Setup needed"), h("p", null, windmill.configured ? "External execution is handled outside the AI Department app." : "Connect the automation engine before live execution.")),
+        h("article", null, h("span", null, "Available automations"), h("strong", null, availableAutomations.length), h("p", null, "Configured workflows this department can request.")),
+        h("article", null, h("span", null, "Waiting approvals"), h("strong", null, pendingApprovals), h("p", null, "External actions waiting for Iman approval.")),
+        h("article", null, h("span", null, "Completed runs"), h("strong", null, completedCount), h("p", null, needsReviewCount ? `${needsReviewCount} run(s) need review.` : "No automation errors need attention."))
+      ),
+      h("div", { className: "automation-action-row" },
+        showDeveloperAutomation ? h(Button, { type: "button", variant: "secondary", pending: state.busy === "orchestration:step", onClick: stepRun }, "Run next graph node") : null,
+        h(Button, { type: "button", variant: "outline", pending: state.busy === "activity:request", onClick: requestSampleActivity }, "Test automation"),
+        h(Button, { type: "button", variant: "outline", pending: state.busy === "activity:request-live", onClick: requestLiveActivity }, "Request execution"),
+        h(Button, { type: "button", variant: "outline", onClick: load }, "Refresh")
+      )
+    ) : null,
+    !compact && automationView === "automations" ? (
+      showDeveloperAutomation ? h("section", { className: "activity-binding-strip" },
+        latestRun ? h("article", { className: "activity-binding-card graph-trace-card" },
+          h("strong", null, "Current graph state"),
+          h("small", null, latestRun.runId),
+          h("p", null, `${latestRun.currentNode} | ${latestRun.status}`),
+          h(Badge, { tone: activityStatusTone(latestRun.status) }, latestRun.status)
+        ) : null,
+        (orchestration.events || []).slice(0, 3).map(event =>
+          h("article", { key: event.eventId, className: "activity-binding-card graph-trace-card" },
+            h("strong", null, event.nodeName || event.eventType),
+            h("small", null, event.createdAt),
+            h("p", null, event.summary || "Graph event recorded."),
+            h(Badge, { tone: "neutral" }, event.eventType)
+          )
+        ),
+        (state.bindings || []).length ? state.bindings.slice(0, 6).map(binding =>
+          h("article", { key: binding.bindingId, className: "activity-binding-card" },
+            h("strong", null, binding.label || binding.activityName),
+            h("small", null, binding.activityName),
+            h("p", null, binding.summary || binding.windmillPath || "Windmill activity binding."),
+            h(Badge, { tone: binding.approvalRequired ? "warn" : "success" }, binding.approvalRequired ? "Approval required" : "Internal/read action")
+          )
+        ) : h("p", { className: "muted" }, "No activity bindings found.")
+      ) : h("section", { className: "activity-binding-strip" },
+        availableAutomations.length ? availableAutomations.slice(0, 6).map(binding =>
+          h("article", { key: binding.bindingId, className: "activity-binding-card" },
+            h("strong", null, binding.label || activityBusinessLabel(binding.activityName)),
+            h("p", null, binding.summary || "Configured workflow available to this department."),
+            h(Badge, { tone: binding.approvalRequired ? "warn" : "success" }, binding.approvalRequired ? "Approval before external action" : "Can run internally")
+          )
+        ) : h("p", { className: "muted" }, "No automations are available yet.")
+      )
+    ) : null,
+    !compact && automationView === "history" ? h("section", { className: "activity-run-list" },
+      h("div", { className: "profile-section-head compact" },
+        h("div", null, h("h4", null, "Automation History"), h("p", null, "Requests, approvals, and completed automation results. Technical execution details stay in Windmill."))
+      ),
+      activities.length ? activities.map(run => {
+        const wordpressDraft = wordpressDraftFromActivityRun(run);
+        const hasWordpressReturn = run.activityName === "worldbc.wordpress.create_draft" && Boolean(wordpressDraft.id || wordpressDraft.url || wordpressDraft.status || wordpressDraft.createdAt);
+        return h("article", { key: run.activityRunId, className: "activity-run-row" },
+          h("div", null,
+            h("strong", null, activityBusinessLabel(run.activityName)),
+            h("small", null, fmtDate(run.createdAt) || "No date")
+          ),
+          h(Badge, { tone: activityStatusTone(run.status) }, activityBusinessStatus(run.status, run.approvalState)),
+          h(Badge, { tone: activityStatusTone(run.approvalState) }, normalizedText(run.approvalState) === "pending" ? "Needs Iman approval" : run.approvalState),
+          showDeveloperAutomation ? h("span", null, run.dryRun ? "Dry run" : "Live") : h("span", null, run.dryRun ? "Test" : "Execution"),
+          h("div", { className: "activity-run-actions" },
+            normalizedText(run.approvalState) === "pending" ? h(Button, { type: "button", variant: "outline", pending: state.busy === `activity:approve:${run.activityRunId}`, onClick: () => approveActivity(run) }, "Approve") : null,
+            ["ready", "needs configuration"].includes(normalizedText(run.status)) || (run.dryRun && ["approved", "not required"].includes(normalizedText(run.approvalState)))
+              ? h(Button, { type: "button", pending: state.busy === `activity:run:${run.activityRunId}`, onClick: () => runActivity(run) }, "Run")
+              : null
+          ),
+          hasWordpressReturn ? h("div", { className: "wordpress-return-summary" },
+            wordpressDraft.id ? h("span", null, h("strong", null, "Draft ID"), ` ${wordpressDraft.id}`) : null,
+            wordpressDraft.status ? h("span", null, h("strong", null, "Status"), ` ${wordpressDraft.status}`) : null,
+            wordpressDraft.createdAt ? h("span", null, h("strong", null, "Created"), ` ${fmtDate(wordpressDraft.createdAt) || wordpressDraft.createdAt}`) : null,
+            wordpressDraft.url ? h("a", { href: wordpressDraft.url, target: "_blank", rel: "noreferrer" }, "Open draft") : null
+          ) : null,
+          (run.error || (run.resultPayload && run.resultPayload.summary)) ? h("p", { className: "activity-run-note" }, run.error || run.resultPayload.summary) : null
+        );
+      }) : h(EmptyState, { title: "No automation history yet", body: "Test an automation or request an approved execution when the department is ready." })
+    ) : null
+  );
+}
+
+function DepartmentOperationsExplorer({ dashboard, fabric, department, runOne, openTaskDialog, initialSection = "", setView = () => {} }) {
+  const [section, setSection] = useState(() => initialSection || window.sessionStorage.getItem("departmentOperationsExplorerSection") || "staff");
+  const sections = [
+    ["staff", "Staff structure"],
+    ["tools", "Tools & data"],
+    ["automation", "Automation"],
+  ];
+  function updateSection(value) {
+    setSection(value);
+    window.sessionStorage.setItem("departmentOperationsExplorerSection", value);
+  }
+  useEffect(() => {
+    if (initialSection) updateSection(initialSection);
+  }, [initialSection]);
+  return h("section", { className: "department-operations-explorer" },
+    h("div", { className: "department-explorer-toolbar" },
+      h("div", null,
+        h("p", { className: "eyebrow" }, "Department Explorer"),
+        h("h3", null, section === "tools" ? "Tools & Data" : section === "automation" ? "Automation" : "Staff Structure"),
+        h("p", null, "Staff, tools, knowledge sources, and automation are parts of this department's operating model.")
+      ),
+      h("label", { className: "filter-dropdown" },
+        h("span", null, "View"),
+        h("select", { value: section, onChange: event => updateSection(event.target.value), "aria-label": "Department Explorer view" },
+          sections.map(([key, label]) => h("option", { key, value: key }, label))
+        )
+      )
+    ),
+    section === "staff" ? h(DepartmentWorkspaceStaffExplorer, { dashboard, fabric, department, runOne, openTaskDialog }) : null,
+    section === "tools" ? h(DepartmentToolsDataPanel, { fabric, department, dashboard, setView }) : null,
+    section === "automation" ? h(DepartmentAutomationPanel, { department }) : null
+  );
+}
+
+function DepartmentIndexView({ dashboard, setView, selectedDepartmentContextId = "", onDepartmentSelect, onRefresh }) {
+  const [departmentStatusOverrides, setDepartmentStatusOverrides] = useState({});
+  const [departmentListTab, setDepartmentListTab] = useState("active");
+  const [statusState, setStatusState] = useState({ busyId: "", error: "", message: "" });
+  const rawDepartments = ownedDepartmentRowsFromDashboard(dashboard);
+  const departments = rawDepartments.map(row => ({ ...row, ...(departmentStatusOverrides[row.id] || {}) }));
+  const fallbackDepartment = { id: "department_local_default", label: APP_NAME, status: "Active", aiManager: "AIstaff_Manager", humanManager: HUMAN_STAFF_ID, purpose: "Local department workspace." };
+  const departmentRows = departments.length ? departments : [fallbackDepartment];
+  const activeDepartmentRows = departmentRows.filter(row => departmentLifecycleGroup(row) === "active");
+  const constructionDepartmentRows = departmentRows.filter(row => departmentLifecycleGroup(row) === "construction");
+  const archivedDepartmentRows = departmentRows.filter(row => departmentLifecycleGroup(row) === "archived");
+  const currentDepartment = currentDepartmentFromRows(activeDepartmentRows, selectedDepartmentContextId);
+  const displayedDepartmentRows = departmentListTab === "archived" ? archivedDepartmentRows : departmentListTab === "construction" ? constructionDepartmentRows : activeDepartmentRows;
+  const departmentTabs = [
+    ["active", "Active", activeDepartmentRows.length],
+    ["construction", "Under Construction", constructionDepartmentRows.length],
+    ["archived", "Archived", archivedDepartmentRows.length],
+  ];
+  const showDeveloperSurfaces = typeof window !== "undefined" && (
+    window.location.search.includes("developer=1") || window.location.search.includes("debugAutomation=1")
+  );
+  async function changeDepartmentStatus(departmentId, action) {
+    if (!departmentId || departmentId === "department_local_default") return;
+    setStatusState({ busyId: departmentId, error: "", message: "" });
+    try {
+      const result = await api("/api/department-status", {
+        method: "POST",
+        body: JSON.stringify({ departmentId, action, updatedBy: "Human_Iman" }),
+      });
+      setDepartmentStatusOverrides(current => {
+        const next = { ...current };
+        const resultRows = Array.isArray(result.departments) ? result.departments : [];
+        resultRows.forEach(row => {
+          if (!row || !row.id) return;
+          next[row.id] = {
+            status: row.status,
+            lifecycleStatus: row.lifecycleStatus,
+            isCurrentDepartment: Boolean(row.isCurrentDepartment),
+            archived: Boolean(row.archived),
+          };
+        });
+        return next;
+      });
+      setStatusState({ busyId: "", error: "", message: action === "activate" ? "Department activated." : "Department paused." });
+      if (action === "activate" && onDepartmentSelect) onDepartmentSelect(departmentId, "overview");
+      if (onRefresh) await onRefresh();
+    } catch (error) {
+      setStatusState({ busyId: "", error: error.message || String(error), message: "" });
+    }
+  }
+  return h("section", { className: "departments-home-view" },
+    h("header", { className: "departments-home-hero" },
+      h("div", null,
+        h("p", { className: "eyebrow" }, "Home"),
+        h("h1", null, "AI Departments"),
+        h("p", null, "Choose one department to open its workspace. Tools, staff, automation, reports, and settings stay inside the selected department context.")
+      ),
+      h("div", { className: "panel-actions" },
+        currentDepartment ? h(Button, { onClick: () => onDepartmentSelect ? onDepartmentSelect(currentDepartment.id, "overview") : setView("applications") }, "Open current department") : null,
+        showDeveloperSurfaces ? h(Button, { variant: "secondary", onClick: () => { window.sessionStorage.setItem("departmentExplorerTab", "admin"); setView("explorer"); } }, icon("plus"), "New Department") : null
+      )
+    ),
+    statusState.error ? h("div", { className: "form-error" }, statusState.error) : null,
+    statusState.message ? h("div", { className: "designer-status" }, statusState.message) : null,
+    h("div", { className: "department-list-filter" },
+      h("label", { className: "filter-dropdown" },
+        h("span", null, "Department status"),
+        h("select", { value: departmentListTab, onChange: event => setDepartmentListTab(event.target.value), "aria-label": "Department status filter" },
+          departmentTabs.map(([key, label, count]) => h("option", { key, value: key }, `${label} (${count})`))
+        )
+      )
+    ),
+    h("div", { className: "department-card-grid department-home-list" },
+      displayedDepartmentRows.length ? displayedDepartmentRows.map(row => {
+        const isActiveDepartment = departmentLifecycleGroup(row) === "active" && (row.isCurrentDepartment || row.id === (currentDepartment && currentDepartment.id));
+        const isArchivedDepartment = departmentLifecycleGroup(row) === "archived";
+        const statusLabel = departmentStatusLabel(row, currentDepartment && currentDepartment.id);
+        const rowLabel = departmentWorkObjectLabel(row);
+        const busyThis = statusState.busyId === row.id;
+        return h("article", {
+          key: row.id,
+          className: cn("department-card-button department-index-card", row.id === selectedDepartmentContextId && "selected", isActiveDepartment && "is-active-department"),
+        },
+          h("button", {
+            type: "button",
+            className: "department-card-select",
+            onClick: () => onDepartmentSelect ? onDepartmentSelect(row.id, "overview") : setView("applications"),
+          },
+            h("span", { className: "department-card-icon" }, icon(departmentHasTenderWork(row) ? "file" : "user")),
+            h("span", { className: "department-card-main" },
+              h("strong", null, row.label || "AI Department"),
+              h("small", null, row.purpose || `${rowLabel} department workspace.`)
+            ),
+            h("span", { className: "department-card-meta" },
+              h(Badge, { tone: departmentStatusTone(row, currentDepartment && currentDepartment.id) }, statusLabel),
+              h("small", null, departmentManagerDisplayName(row))
+            )
+          ),
+          h("div", { className: "department-card-actions" },
+            h(Button, { onClick: () => onDepartmentSelect ? onDepartmentSelect(row.id, "overview") : setView("applications") }, "Open workspace"),
+            isArchivedDepartment
+              ? h(Button, { variant: "outline", disabled: true }, "Archived")
+              : isActiveDepartment
+              ? h(Button, { variant: "outline", pending: busyThis, pendingLabel: "Pausing...", onClick: () => changeDepartmentStatus(row.id, "pause") }, "Pause")
+              : h(Button, { variant: "secondary", pending: busyThis, pendingLabel: "Activating...", onClick: () => changeDepartmentStatus(row.id, "activate") }, "Activate")
+          )
+        );
+      }) : h(EmptyState, { title: `No ${departmentListTab === "construction" ? "under construction" : departmentListTab} departments`, body: departmentListTab === "archived" ? "Archived departments will appear here." : "Departments in this state will appear here." })
+    )
+  );
+}
+
+function ApplicationsView({ dashboard, rows, labels, filters, setFilters, viewMode, setViewMode, runOne, snoozeFollowUp, approveSkillUpdate, openTaskDialog, openRef, openUniversity, setView, selectedDepartmentContextId = "", activeDepartmentTab = "overview", onDepartmentContextChange, onDepartmentWorkspaceTabChange, onRefresh }) {
+  const fabric = fabricOrFallback(dashboard);
+  const [departmentStatusOverrides, setDepartmentStatusOverrides] = useState({});
+  const rawDepartments = ownedDepartmentRowsFromDashboard(dashboard);
+  const departments = rawDepartments.map(row => ({ ...row, ...(departmentStatusOverrides[row.id] || {}) }));
+  const fallbackDepartment = { id: "department_local_default", label: APP_NAME, status: "Active", aiManager: "AIstaff_Manager", humanManager: HUMAN_STAFF_ID, purpose: "Local tender department workspace." };
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState(() => selectedDepartmentContextId || window.sessionStorage.getItem(DEPARTMENT_EXPLORER_DEPARTMENT_KEY) || "");
+  const [activeTab, setActiveTab] = useState(() => window.sessionStorage.getItem(DEPARTMENT_WORKSPACE_TAB_KEY) || "overview");
+  const [departmentListTab, setDepartmentListTab] = useState("active");
+  const [statusState, setStatusState] = useState({ busyId: "", error: "", message: "" });
+  const showDeveloperSurfaces = typeof window !== "undefined" && (
+    window.location.search.includes("developer=1") || window.location.search.includes("debugAutomation=1")
+  );
+  const departmentRows = departments.length ? departments : [fallbackDepartment];
+  const activeDepartmentRows = departmentRows.filter(row => departmentLifecycleGroup(row) === "active");
+  const constructionDepartmentRows = departmentRows.filter(row => departmentLifecycleGroup(row) === "construction");
+  const archivedDepartmentRows = departmentRows.filter(row => departmentLifecycleGroup(row) === "archived");
+  const currentDepartment = currentDepartmentFromRows(activeDepartmentRows, selectedDepartmentContextId) || constructionDepartmentRows[0] || archivedDepartmentRows[0] || fallbackDepartment;
+  const displayedDepartmentRows = departmentListTab === "archived" ? archivedDepartmentRows : departmentListTab === "construction" ? constructionDepartmentRows : activeDepartmentRows;
+  const selectedDepartment = departmentRows.find(row => row.id === selectedDepartmentId) || displayedDepartmentRows[0] || currentDepartment;
+  const workObjectLabel = departmentWorkObjectLabel(selectedDepartment);
+  const relatedRows = departmentHasTenderWork(selectedDepartment) ? rows : [];
+  const openExplorerTab = tab => {
+    if (tab) window.sessionStorage.setItem("departmentExplorerTab", tab);
+    if (selectedDepartment && selectedDepartment.id) {
+      storeDepartmentWorkspaceTarget(selectedDepartment.id);
+      if (onDepartmentContextChange) onDepartmentContextChange(selectedDepartment.id);
+    }
+    setView("explorer");
+  };
+  const cards = [
+    ["Open work", relatedRows.length, `${workObjectLabel} available in this local snapshot.`],
+    ["Tasks", (dashboard.tasks || []).filter(row => !isTerminal(row)).length, "Open task threads and manager work."],
+    ["Email approvals", (((dashboard.localSync || {}).automationBlockers || {}).counts || {}).externalEmailApproval || 0, "Supplier communication remains supervised."],
+    ["Status", selectedDepartment.status || "Active", "Runtime state for this installed department."],
+  ];
+  const tabs = [
+    ["overview", "Overview"],
+    ["work", workObjectLabel],
+    ["automation", "Automation"],
+    ["resources", "Tools"],
+    ["staff", "Staff"],
+    ["settings", "Settings"],
+    ["reports", "Reports"],
+    ...(showDeveloperSurfaces ? [
+      ["workflow", "Workflow"],
+      ["admin", "Developer Settings"],
+    ] : []),
+  ];
+  const departmentTabs = [
+    ["active", "Active", activeDepartmentRows.length],
+    ["construction", "Under Construction", constructionDepartmentRows.length],
+    ["archived", "Archived", archivedDepartmentRows.length],
+  ];
+  useEffect(() => {
+    if (!displayedDepartmentRows.length) return;
+    if (departmentRows.some(row => row.id === selectedDepartmentId)) return;
+    const nextDepartment = displayedDepartmentRows[0] || currentDepartment;
+    setSelectedDepartmentId(nextDepartment.id);
+    storeDepartmentWorkspaceTarget(nextDepartment.id, "overview");
+    if (onDepartmentContextChange) onDepartmentContextChange(nextDepartment.id);
+    if (onDepartmentWorkspaceTabChange) onDepartmentWorkspaceTabChange("overview");
+    setActiveTab("overview");
+  }, [departmentListTab, selectedDepartmentId, displayedDepartmentRows.map(row => row.id).join("|")]);
+
+  useEffect(() => {
+    const requestedTab = activeDepartmentTab || window.sessionStorage.getItem(DEPARTMENT_WORKSPACE_TAB_KEY);
+    if (requestedTab && requestedTab !== activeTab) setActiveTab(requestedTab);
+  }, [selectedDepartmentContextId, activeDepartmentTab]);
+
+  useEffect(() => {
+    if (showDeveloperSurfaces) return;
+    if (!["workflow", "admin"].includes(activeTab)) return;
+    setActiveTab("overview");
+    if (selectedDepartment && selectedDepartment.id) {
+      storeDepartmentWorkspaceTarget(selectedDepartment.id, "overview");
+      if (onDepartmentWorkspaceTabChange) onDepartmentWorkspaceTabChange("overview");
+    }
+  }, [activeTab, showDeveloperSurfaces, selectedDepartment.id]);
+
+  function selectDepartment(row, tab = "overview") {
+    if (!row || !row.id) return;
+    setSelectedDepartmentId(row.id);
+    setActiveTab(tab);
+    storeDepartmentWorkspaceTarget(row.id, tab);
+    if (onDepartmentContextChange) onDepartmentContextChange(row.id);
+    if (onDepartmentWorkspaceTabChange) onDepartmentWorkspaceTabChange(tab);
+  }
+
+  async function changeDepartmentStatus(departmentId, action) {
+    if (!departmentId || departmentId === "department_local_default") return;
+    setStatusState({ busyId: departmentId, error: "", message: "" });
+    try {
+      const result = await api("/api/department-status", {
+        method: "POST",
+        body: JSON.stringify({ departmentId, action, updatedBy: "Human_Iman" }),
+      });
+      setDepartmentStatusOverrides(current => {
+        const next = { ...current };
+        const resultRows = Array.isArray(result.departments) ? result.departments : [];
+        if (resultRows.length) {
+          resultRows.forEach(row => {
+            if (!row || !row.id) return;
+            next[row.id] = {
+              status: row.status,
+              lifecycleStatus: row.lifecycleStatus,
+              isCurrentDepartment: Boolean(row.isCurrentDepartment),
+              archived: Boolean(row.archived),
+            };
+          });
+          return next;
+        }
+        departmentRows.forEach(row => {
+          if (!row || !row.id || departmentLifecycleGroup(row) === "archived") return;
+          if (action === "activate") {
+            next[row.id] = {
+              status: row.id === departmentId ? "Active" : "Paused",
+              lifecycleStatus: row.id === departmentId ? "Active" : "Paused",
+              isCurrentDepartment: row.id === departmentId,
+            };
+          } else if (row.id === departmentId) {
+            next[row.id] = { status: "Paused", lifecycleStatus: "Paused", isCurrentDepartment: false };
+          }
+        });
+        return next;
+      });
+      setSelectedDepartmentId(departmentId);
+      setActiveTab("overview");
+      storeDepartmentWorkspaceTarget(departmentId, "overview");
+      if (onDepartmentContextChange) onDepartmentContextChange(departmentId);
+      if (onDepartmentWorkspaceTabChange) onDepartmentWorkspaceTabChange("overview");
+      setDepartmentListTab(action === "activate" ? "active" : "construction");
+      setStatusState({ busyId: "", error: "", message: action === "activate" ? "Department activated." : "Department paused." });
+      if (onRefresh) await onRefresh();
+    } catch (error) {
+      setStatusState({ busyId: "", error: error.message || String(error), message: "" });
+    }
+  }
+  async function handleDepartmentIdentitySaved(nextDepartment) {
+    if (!nextDepartment || !nextDepartment.id) return;
+    setDepartmentStatusOverrides(current => ({
+      ...current,
+      [nextDepartment.id]: {
+        ...(current[nextDepartment.id] || {}),
+        ...nextDepartment,
+      },
+    }));
+    if (onRefresh) await onRefresh();
+  }
+  return h("section", { className: "departments-workspace department-workspace-only" },
+    h(Card, { className: "department-workspace-card" },
+      h(CardHeader, {
+        eyebrow: selectedDepartment.id,
+        title: selectedDepartment.label || "AI Department",
+        description: selectedDepartment.purpose || "Department workspace for goals, active projects, approvals, reports, and results.",
+        action: showDeveloperSurfaces ? h("div", { className: "panel-actions" },
+          h(Button, { onClick: () => { window.sessionStorage.setItem("departmentOperationsExplorerSection", "tools"); setActiveTab("explorer"); storeDepartmentWorkspaceTarget(selectedDepartment.id, "explorer"); if (onDepartmentWorkspaceTabChange) onDepartmentWorkspaceTabChange("explorer"); } }, "Set up tools"),
+          h(Button, { variant: "secondary", onClick: () => openExplorerTab("workflow") }, "Workflow Canvas"),
+          h(Button, { variant: "outline", onClick: () => openExplorerTab("admin") }, "Admin Catalogs")
+        ) : null
+      }),
+      h(CardContent, null,
+        activeTab === "overview" ? h("div", { className: "department-workspace-panel" },
+          h("div", { className: "overview-info-grid" }, cards.map(([label, value, detail]) =>
+            h("article", { className: "overview-info-card", key: label },
+              h("span", null, label),
+              h("strong", null, value),
+              h("p", null, detail)
+            )
+          )),
+          h("article", { className: "overview-narrative department-focus-hub" },
+            h("div", { className: "profile-section-head" },
+              h("div", null,
+                h("h3", null, "Department Workspace"),
+                h("p", null, "Choose one area to work on. Forms and detailed tables are kept inside their own section so this page stays calm.")
+              )
+            ),
+            h("div", { className: "department-focus-grid" },
+              [
+                ["work", workObjectLabel, "Open department cases, tasks, and project work.", "file"],
+                ["explorer", "Department Explorer", "Inspect staff, tools, data, automation, and the operating model.", "user"],
+                ["settings", "Settings", "Edit department identity, goals, language, and organization context.", "settings"],
+                ["reports", "Reports", "Review department results, activity, and progress.", "chart"],
+              ].map(([key, title, body, iconName]) =>
+                h("button", {
+                  key,
+                  type: "button",
+                  className: "department-focus-card",
+                  onClick: () => {
+                    setActiveTab(key);
+                    storeDepartmentWorkspaceTarget(selectedDepartment.id, key);
+                    if (onDepartmentWorkspaceTabChange) onDepartmentWorkspaceTabChange(key);
+                  },
+                },
+                  h("span", { className: "department-focus-icon" }, icon(iconName)),
+                  h("strong", null, title),
+                  h("small", null, body)
+                )
+              )
+            )
+          ),
+          h("article", { className: "overview-narrative" },
+            h("h3", null, "Department profile"),
+            h(DetailList, { rows: [
+              { label: "Human manager", value: selectedDepartment.humanManager ? h(StaffChip, { staffId: selectedDepartment.humanManager }) : "", raw: Boolean(selectedDepartment.humanManager) },
+              { label: "AI manager", value: selectedDepartment.aiManager ? h(StaffChip, { staffId: selectedDepartment.aiManager }) : "", raw: Boolean(selectedDepartment.aiManager) },
+              { label: "Manager alias", value: selectedDepartment.aiManagerAlias },
+              { label: "Project types", value: listForUi(selectedDepartment.projectTypes).join(", ") },
+              { label: "Default language", value: selectedDepartment.defaultLanguage },
+              { label: "Approval policy", value: selectedDepartment.approvalPolicy, length: 260 },
+            ] })
+          )
+        ) : null,
+        activeTab === "work" ? h("div", { className: "department-workspace-panel" },
+          h(DepartmentCasesView, { rows: relatedRows, allRowsCount: rows.length, title: workObjectLabel, labels, filters, setFilters, viewMode, setViewMode, runOne, openTaskDialog, openRef, openUniversity })
+        ) : null,
+        ["explorer", "automation", "resources", "staff"].includes(activeTab) ? h("div", { className: "department-workspace-panel" },
+          h(DepartmentOperationsExplorer, {
+            dashboard,
+            fabric,
+            department: selectedDepartment,
+            runOne,
+            openTaskDialog,
+            initialSection: activeTab === "resources" ? "tools" : activeTab === "automation" ? "automation" : activeTab === "staff" ? "staff" : "",
+            setView,
+          })
+        ) : null,
+        activeTab === "workflow" ? h("div", { className: "department-workspace-panel" },
+          h("div", { className: "department-workflow-summary" },
+            APPLICATION_STAGES.map((stage, index) =>
+              h("article", { className: "department-workflow-step", key: stage },
+                h("span", null, index + 1),
+                h("strong", null, stage),
+                h("p", null, index === 0 ? "New case intake and basic facts." : index === 1 ? "Tender document review and missing-file detection." : index === 2 ? "Eligibility, fit, and bid/no-bid signal." : "Routed department work step.")
+              )
+            )
+          ),
+          h("div", { className: "overview-inline-actions" },
+            h(Button, { onClick: () => openExplorerTab("workflow") }, "Open Workflow Canvas"),
+            h(Button, { variant: "secondary", onClick: () => openExplorerTab("scenario") }, "Open Scenario Explorer")
+          )
+        ) : null,
+        activeTab === "settings" ? h("div", { className: "department-workspace-panel" },
+          h(DepartmentSettingsWorkspacePanel, { department: selectedDepartment, fabric, onSaved: handleDepartmentIdentitySaved })
+        ) : null,
+        activeTab === "reports" ? h("div", { className: "department-workspace-panel department-report-panel" },
+          h(ReportsView, { dashboard, approveSkillUpdate, runOne, snoozeFollowUp, setView, openTaskDialog, openRef, department: selectedDepartment, embedded: true })
+        ) : null,
+        activeTab === "admin" ? h("div", { className: "department-workspace-panel" },
+          h(DepartmentGoalsPanel, { department: selectedDepartment, onSaved: handleDepartmentIdentitySaved }),
+          h(DepartmentIdentityEditor, { department: selectedDepartment, fabric, onSaved: handleDepartmentIdentitySaved }),
+          h("article", { className: "overview-narrative" },
+            h("h3", null, "Configuration"),
+            h("p", null, "Runtime-safe preferences live in Department Settings. Reusable blueprints, staff, skill packs, tools, data contracts, and stage templates live in Admin Catalogs."),
+            h("div", { className: "overview-inline-actions" },
+              h(Button, { onClick: () => openExplorerTab("settings") }, "Open Department Settings"),
+              h(Button, { variant: "secondary", onClick: () => openExplorerTab("admin") }, "Open Admin Catalogs")
+            )
+          )
+        ) : null
+      )
+    )
+  );
+}
+
+function DepartmentCasesView({ rows, allRowsCount, title = "Projects / Cases", labels, filters, setFilters, viewMode, setViewMode, runOne, openTaskDialog, openRef, openUniversity }) {
   const stageOptions = useMemo(() => {
     const counts = new Map();
     rows.forEach(row => counts.set(applicationStage(row), (counts.get(applicationStage(row)) || 0) + 1));
@@ -3260,8 +6662,14 @@ function ApplicationsView({ rows, labels, filters, setFilters, viewMode, setView
     return !search || text.includes(search);
   });
   const update = (key, value) => setFilters({ ...filters, [key]: value });
-  return h(Card, null,
-    h(CardHeader, { title: "Leads", description: "Tender lead cases, stages, owners, supplier route, and clickable references.", action: h(Button, { variant: "secondary", onClick: () => openTaskDialog({ taskType: "Tender Package" }) }, icon("plus"), "Add Lead Task") }),
+  return h("section", { className: "department-cases-panel" },
+    h("div", { className: "department-cases-head" },
+      h("div", null,
+        h("h3", null, title),
+        h("p", null, "Department-specific work objects. For this tender department, these are tender lead cases, stages, owners, supplier route, and clickable references.")
+      ),
+      h(Button, { variant: "secondary", onClick: () => openTaskDialog({ taskType: "Tender Package" }) }, icon("plus"), "Add Task")
+    ),
     h("div", { className: "application-toolbar" },
       h(Field, { label: "Search leads", className: "search-field" }, h(Input, { type: "search", value: filters.search, onChange: event => update("search", event.target.value), placeholder: "Search by Lead ID, tender source, supplier, stage..." })),
       h(Field, { label: "Stage" }, h(Select, { value: filters.stage, onChange: event => update("stage", event.target.value) }, h("option", { value: "" }, "All stages"), stageOptions.map(([value, label]) => h("option", { key: value, value }, label)))),
@@ -3270,10 +6678,10 @@ function ApplicationsView({ rows, labels, filters, setFilters, viewMode, setView
         h(Button, { className: cn("icon-toggle", viewMode === "list" && "active"), variant: "ghost", size: "icon", onClick: () => setViewMode("list"), title: "List view", "aria-pressed": viewMode === "list" }, icon("list")),
         h(Button, { className: cn("icon-toggle", viewMode === "kanban" && "active"), variant: "ghost", size: "icon", onClick: () => setViewMode("kanban"), title: "Kanban view", "aria-pressed": viewMode === "kanban" }, icon("kanban"))
       ),
-      h("span", { className: "toolbar-count" }, `${filtered.length} / ${rows.length}`)
+      h("span", { className: "toolbar-count" }, `${filtered.length} / ${rows.length || allRowsCount || 0}`)
     ),
-    h(CardContent, { className: "applications-content" },
-      !rows.length ? h(EmptyState, { title: "No active leads", body: "The dashboard did not return any Lead cases yet. A future action can transfer Lead records and files into this department." }) :
+    h("div", { className: "applications-content" },
+      !rows.length ? h(EmptyState, { title: `No ${title.toLowerCase()} yet`, body: "This department does not have work-object rows in the current local snapshot. Add or transfer cases for this department to populate this table." }) :
       !filtered.length ? h(EmptyState, { title: "No matching leads", body: "Adjust the search, stage, or tender-source filters to broaden this view." }) :
       viewMode === "kanban" ? h(ApplicationKanban, { rows: filtered, labels, runOne, openTaskDialog, openRef, openUniversity }) :
       h("div", { className: "entity-list no-pad" }, filtered.map(row => h(ApplicationCard, { key: row.entityId || row.applicationId, row, labels, runOne, openTaskDialog, openRef, openUniversity })))
@@ -3853,16 +7261,19 @@ function WorkView({ dashboard, tasks, labels, filters, setFilters, runOne, start
               h(Input, { type: "search", value: filters.search, onChange: event => updateFilter("search", event.target.value), placeholder: "Search..." }),
               h("span", { className: "toolbar-count" }, `${visibleThreads.length}`)
             ),
-            h("div", { className: "thread-filter-chips", role: "group", "aria-label": "Thread filters" },
-              [
-                ["human", "All"],
-                ["unread", "Unread"],
-                ["internal", "Internal"],
-                ["archive", "Archive"],
-              ].map(([mode, label]) =>
-                h("button", { key: mode, type: "button", className: cn("thread-filter-chip", activeThreadChip === mode && "active"), onClick: () => quickThreadFilter(mode) }, label)
+            h("div", { className: "thread-filter-bar", "aria-label": "Thread filters" },
+              h("label", { className: "filter-dropdown compact" },
+                h("span", null, "Filter"),
+                h("select", { value: activeThreadChip, onChange: event => quickThreadFilter(event.target.value), "aria-label": "Thread quick filter" },
+                  [
+                    ["human", "All"],
+                    ["unread", "Unread"],
+                    ["internal", "Internal"],
+                    ["archive", "Archive"],
+                  ].map(([mode, label]) => h("option", { key: mode, value: mode }, label))
+                )
               ),
-              h("button", { type: "button", className: "thread-filter-chip icon-only", onClick: () => openTaskDialog({
+              h("button", { type: "button", className: "thread-filter-action", onClick: () => openTaskDialog({
                 assignedTo: "AIstaff_Manager",
                 taskType: "Manager Guidance",
                 taskCategory: "Manager Guidance",
@@ -4452,6 +7863,21 @@ function uniqueValues(values = []) {
   return Array.from(new Set((values || []).filter(Boolean)));
 }
 
+function uniqueRows(rows = [], keyFn = row => row && (row.objectId || row.id || row.label)) {
+  const seen = new Set();
+  return (rows || []).filter(row => {
+    const key = keyFn(row);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isDeveloperSurfaceEnabled() {
+  if (typeof window === "undefined") return false;
+  return window.location.search.includes("developer=1") || window.location.search.includes("debugAutomation=1");
+}
+
 function departmentStaffIds(dashboard = {}) {
   return uniqueValues([...registryStaffIds((dashboard.capabilityFabric || activeFabric())), ...((dashboard.staff || []).map(row => row.staffId))]);
 }
@@ -4620,11 +8046,19 @@ function staffWakeupCount(dashboard = {}, staffId = "") {
 
 function DepartmentExplorerView({ dashboard, runOne, openTaskDialog, setView, selectedStaffRequest = "" }) {
   const fabric = fabricOrFallback(dashboard);
+  const allDepartments = (fabric.departments || []).filter(row => normalizedText(row.ownershipMode || "ownedDepartment") !== "sponsoredassignment");
+  const defaultDepartment = allDepartments.find(row => row.isCurrentDepartment) || allDepartments.find(row => normalizedText(row.status || "active") === "active") || allDepartments[0] || {};
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState(() => window.sessionStorage.getItem(DEPARTMENT_EXPLORER_DEPARTMENT_KEY) || "");
+  const activeDepartment = allDepartments.find(row => row.id === selectedDepartmentId) || defaultDepartment;
   const staffIds = departmentStaffIds(dashboard);
-  const [explorerTab, setExplorerTab] = useState("org");
+  const [explorerTab, setExplorerTab] = useState(initialDepartmentExplorerTabFromStorage);
   const [selectedStaffId, setSelectedStaffId] = useState("");
-  const [p4State, setP4State] = useState({ loading: true, readiness: null, context: null, error: "" });
-  const activeDepartment = (fabric.departments || []).find(row => normalizedText(row.status || "active") === "active") || (fabric.departments || [])[0] || {};
+  const [p4State, setP4State] = useState({ loading: true, readiness: null, context: null, scenario: null, error: "" });
+  useEffect(() => {
+    if (!activeDepartment.id) return;
+    if (selectedDepartmentId !== activeDepartment.id) setSelectedDepartmentId(activeDepartment.id);
+    window.sessionStorage.setItem(DEPARTMENT_EXPLORER_DEPARTMENT_KEY, activeDepartment.id);
+  }, [activeDepartment.id]);
   useEffect(() => {
     if (!selectedStaffRequest) return;
     setExplorerTab("org");
@@ -4636,27 +8070,87 @@ function DepartmentExplorerView({ dashboard, runOne, openTaskDialog, setView, se
       setP4State(current => ({ ...current, loading: true, error: "" }));
       try {
         const departmentId = activeDepartment.id || "";
-        const [readiness, context] = await Promise.all([
+        const [readiness, context, scenario] = await Promise.all([
           api(`/api/p4/readiness?departmentId=${encodeURIComponent(departmentId)}`),
           api(`/api/p4/resolve-context?departmentId=${encodeURIComponent(departmentId)}`),
+          api(`/api/p4/scenario-map?departmentId=${encodeURIComponent(departmentId)}`),
         ]);
-        if (!cancelled) setP4State({ loading: false, readiness, context, error: "" });
+        if (!cancelled) setP4State({ loading: false, readiness, context, scenario, error: "" });
       } catch (error) {
-        if (!cancelled) setP4State({ loading: false, readiness: null, context: null, error: error.message || String(error) });
+        if (!cancelled) setP4State({ loading: false, readiness: null, context: null, scenario: null, error: error.message || String(error) });
       }
     }
     loadP4();
     return () => { cancelled = true; };
   }, [activeDepartment.id]);
+  useEffect(() => {
+    document.body.classList.toggle("workflow-builder-mode", explorerTab === "workflow");
+    return () => document.body.classList.remove("workflow-builder-mode");
+  }, [explorerTab]);
+
+  function openWorkflowBuilderTab(label) {
+    const key = normalizedText(label);
+    if (key === "department") setExplorerTab("settings");
+    else if (key === "team agents") setExplorerTab("org");
+    else if (key === "workflow") setExplorerTab("workflow");
+    else if (key === "branches gates" || key === "readiness") setExplorerTab("readiness");
+    else if (key === "knowledge base" || key === "tools lanes" || key === "security") setExplorerTab("settings");
+    else if (key === "conversations") setView("work");
+    else if (key === "tests") setExplorerTab("readiness");
+    else if (key === "admin catalogs") setExplorerTab("admin");
+  }
   return h(Fragment, null,
-    h("section", { className: "department-explorer-shell" },
-      h("div", { className: "department-main-tabs", role: "tablist", "aria-label": "Department Explorer sections" },
+    h("section", { className: cn("department-explorer-shell", explorerTab === "workflow" && "workflow-shell-active") },
+      explorerTab !== "workflow" ? h("div", { className: "department-context-bar" },
+        h("div", null,
+          h("p", { className: "eyebrow" }, "Department Explorer"),
+          h("h2", null, activeDepartment.label || "AI Department"),
+          h("small", null, activeDepartment.id || "No department selected")
+        ),
+        h("div", { className: "department-context-actions" },
+          h(Select, {
+            value: activeDepartment.id || "",
+            onChange: event => {
+              setSelectedDepartmentId(event.target.value);
+              window.sessionStorage.setItem(DEPARTMENT_EXPLORER_DEPARTMENT_KEY, event.target.value);
+              setSelectedStaffId("");
+            },
+            "aria-label": "Select department for explorer",
+          },
+            allDepartments.map(row => h("option", { key: row.id, value: row.id }, `${row.label || row.id} (${row.status || row.lifecycleStatus || "Draft"})`))
+          ),
+          h(Badge, { tone: departmentStatusTone(activeDepartment, activeDepartment.isCurrentDepartment ? activeDepartment.id : "") }, departmentStatusLabel(activeDepartment, activeDepartment.isCurrentDepartment ? activeDepartment.id : "")),
+          h(Button, { variant: "outline", onClick: () => setView("applications") }, "Back to Departments")
+        )
+      ) : null,
+      explorerTab !== "workflow" ? h("div", { className: "department-main-tabs", role: "tablist", "aria-label": "Department Explorer sections" },
         h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "org", className: cn("department-main-tab", explorerTab === "org" && "active"), onClick: () => setExplorerTab("org") }, icon("user"), "Organization Chart"),
+        h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "scenario", className: cn("department-main-tab", explorerTab === "scenario" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("scenario"); } }, icon("chart"), "Scenario Explorer"),
+        h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "workflow", className: cn("department-main-tab", explorerTab === "workflow" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("workflow"); } }, icon("chart"), "Workflow Canvas"),
         h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "model", className: cn("department-main-tab", explorerTab === "model" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("model"); } }, icon("chart"), "Operating Model"),
         h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "readiness", className: cn("department-main-tab", explorerTab === "readiness" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("readiness"); } }, icon("shield"), "P4 Readiness"),
-        h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "settings", className: cn("department-main-tab", explorerTab === "settings" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("settings"); } }, icon("shield"), "Department Settings")
-      ),
+        h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "settings", className: cn("department-main-tab", explorerTab === "settings" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("settings"); } }, icon("shield"), "Department Settings"),
+        h("button", { type: "button", role: "tab", "aria-selected": explorerTab === "admin", className: cn("department-main-tab", explorerTab === "admin" && "active"), onClick: () => { setSelectedStaffId(""); setExplorerTab("admin"); } }, icon("database"), "Admin Catalogs")
+      ) : null,
       explorerTab === "settings" ? h(DepartmentSettingsView, { dashboard, fabric }) : null,
+      explorerTab === "admin" ? h(PlatformAdminView, { dashboard, embedded: true }) : null,
+      explorerTab === "scenario" ? h(P4ScenarioExplorerPanel, {
+        p4State,
+        setView,
+        onOpenStaff: staffId => { setSelectedStaffId(staffId); setExplorerTab("org"); },
+        onOpenAdmin: () => { setSelectedStaffId(""); setExplorerTab("admin"); },
+      }) : null,
+      explorerTab === "workflow" ? h(P4WorkflowCanvasPanel, {
+        p4State,
+        onNavigateBuilderTab: openWorkflowBuilderTab,
+        onExitBuilder: () => { setSelectedStaffId(""); setExplorerTab("scenario"); },
+        onOpenStaff: staffId => { setSelectedStaffId(staffId); setExplorerTab("org"); },
+        onOpenAdmin: target => {
+          if (target) window.sessionStorage.setItem("platformAdminFocus", JSON.stringify(target));
+          setSelectedStaffId("");
+          setExplorerTab("admin");
+        },
+      }) : null,
       explorerTab === "model" ? h(OperatingModelPanel, { dashboard, fabric }) : null,
       explorerTab === "readiness" ? h(P4DepartmentReadinessPanel, { p4State, department: activeDepartment }) : null,
       explorerTab === "org" && !selectedStaffId ? h(Card, { className: "department-chart-card chart-enter" },
@@ -4673,9 +8167,675 @@ function DepartmentExplorerView({ dashboard, runOne, openTaskDialog, setView, se
           h(Button, { variant: "outline", onClick: () => setSelectedStaffId("") }, "Back to org chart"),
           h("span", null, "Profile view")
         ),
-        h(StaffProfilePanel, { dashboard, fabric, staffId: selectedStaffId, runOne, openTaskDialog, setSelectedStaffId })
+        h(StaffProfilePanel, { dashboard, fabric, staffId: selectedStaffId, runOne, openTaskDialog, setSelectedStaffId, p4State })
       ) : null
     )
+  );
+}
+
+function p4ScenarioTone(status) {
+  const state = normalizedText(status || "");
+  if (state === "ready" || state === "active") return "success";
+  if (state === "approval required" || state === "approval_required" || state === "review") return "warn";
+  if (state.includes("missing") || state.includes("inactive") || state.includes("blocked")) return "danger";
+  return "neutral";
+}
+
+function scenarioTypeLabel(type) {
+  const labels = {
+    departmentPackage: "Department Package",
+    stage: "Stage",
+    staff: "AI Staff / Manager",
+    skillPack: "Skill Pack",
+    toolDataContract: "Tool/Data Contract",
+    lane: "Lane / Tool Adapter",
+    connection: "Connection",
+    database: "Database",
+  };
+  return labels[type] || promptRuleLabel(type);
+}
+
+function scenarioNodeId(type, objectId) {
+  return `${type}:${objectId || ""}`;
+}
+
+function scenarioListLabel(value, formatter = promptRuleLabel) {
+  const rows = listForUi(value);
+  return rows.length ? rows.map(formatter).join(", ") : "";
+}
+
+function P4ScenarioExplorerPanel({ p4State, setView, onOpenStaff, onOpenAdmin }) {
+  const scenario = p4State.scenario || {};
+  const nodes = scenario.nodes || [];
+  const stages = scenario.stages || [];
+  const summary = scenario.summary || {};
+  const nodesById = useMemo(() => Object.fromEntries(nodes.map(node => [node.id, node])), [nodes]);
+  const [selectedNodeId, setSelectedNodeId] = useState("");
+  const defaultNodeId = (stages[0] && stages[0].nodeIds && stages[0].nodeIds.stage) || (nodes[0] && nodes[0].id) || "";
+
+  useEffect(() => {
+    if (!nodes.length) return;
+    if (!selectedNodeId || !nodesById[selectedNodeId]) setSelectedNodeId(defaultNodeId);
+  }, [scenario.departmentId, nodes.length, defaultNodeId, selectedNodeId, nodesById]);
+
+  if (p4State.loading) {
+    return h(Card, { className: "scenario-explorer-panel chart-enter" },
+      h(CardHeader, { title: "Scenario Explorer", description: "Loading the department process map..." }),
+      h(CardContent, null, h(EmptyState, { title: "Loading scenario", body: "Resolving package, stages, staff, lanes, tools, data, and readiness." }))
+    );
+  }
+  if (p4State.error) {
+    return h(Card, { className: "scenario-explorer-panel chart-enter" },
+      h(CardHeader, { title: "Scenario Explorer", description: "The process map could not be resolved." }),
+      h(CardContent, null, h("div", { className: "form-error" }, p4State.error))
+    );
+  }
+  if (!nodes.length) {
+    return h(Card, { className: "scenario-explorer-panel chart-enter" },
+      h(CardHeader, { title: "Scenario Explorer", description: "No scenario map is available for this department yet." }),
+      h(CardContent, null, h(EmptyState, { title: "No process map", body: "Install or activate a department package with stage templates to see its scenario." }))
+    );
+  }
+
+  const selectedNode = nodesById[selectedNodeId] || nodesById[defaultNodeId] || nodes[0] || {};
+  const selectedStage = stages.find(stage => {
+    const ids = [
+      stage.nodeIds && stage.nodeIds.stage,
+      stage.nodeIds && stage.nodeIds.staff,
+      ...((stage.nodeIds && stage.nodeIds.skills) || []),
+      ...((stage.nodeIds && stage.nodeIds.lanes) || []),
+      ...((stage.toolDataContracts || []).map(row => scenarioNodeId("toolDataContract", row.id))),
+      ...((stage.connections || []).map(row => scenarioNodeId("connection", row.id))),
+      ...((stage.databases || []).map(row => scenarioNodeId("database", row.id))),
+    ].filter(Boolean);
+    return ids.includes(selectedNode.id);
+  }) || stages[0] || {};
+
+  function nodeFor(type, objectId) {
+    return nodesById[scenarioNodeId(type, objectId)];
+  }
+
+  function openAdminTarget() {
+    if (!selectedNode.editTarget || !selectedNode.editTarget.tab) return;
+    window.sessionStorage.setItem("platformAdminFocus", JSON.stringify(selectedNode.editTarget));
+    if (onOpenAdmin) onOpenAdmin();
+    else {
+      window.sessionStorage.setItem("departmentExplorerTab", "admin");
+      setView("explorer");
+    }
+  }
+
+  function openSelectedStaffProfile() {
+    const staffId = selectedNode.objectId || ((selectedNode.source || {}).id) || "";
+    if (staffId && onOpenStaff) onOpenStaff(staffId);
+  }
+
+  function clickableNodeCard(node, labelPrefix = "") {
+    if (!node) return null;
+    return h("button", {
+      key: node.id,
+      type: "button",
+      className: cn("scenario-node-card", selectedNode.id === node.id && "active"),
+      onClick: () => setSelectedNodeId(node.id),
+      title: node.objectId || node.id,
+    },
+      h("span", { className: "scenario-node-kicker" }, labelPrefix || scenarioTypeLabel(node.type)),
+      h("strong", null, node.label || friendlyId(node.objectId)),
+      node.summary ? h("small", null, shortText(node.summary, 110)) : h("small", null, node.objectId || node.id),
+      h(Badge, { tone: p4ScenarioTone(node.status) }, String(node.status || "ready").replace(/_/g, " "))
+    );
+  }
+
+  function detailRowsForNode(node, stage) {
+    const source = node.source || {};
+    const meta = node.metadata || {};
+    const rows = [
+      { label: "Type", value: scenarioTypeLabel(node.type) },
+      { label: "Record ID", value: node.objectId || node.id },
+      { label: "Status", value: String(node.status || "ready").replace(/_/g, " ") },
+    ];
+    if (node.type === "stage") {
+      rows.push(
+        { label: "Assigned staff", value: (stage.staff || {}).label || (stage.staff || {}).id },
+        { label: "Capability", value: meta.capabilityLabel || meta.capabilityId },
+        { label: "Quality gates", value: scenarioListLabel(meta.qualityGates) },
+        { label: "Outputs", value: scenarioListLabel(meta.outputs) }
+      );
+    } else if (node.type === "staff") {
+      const datasets = meta.datasets || {};
+      rows.push(
+        { label: "Blueprint", value: meta.staffBlueprint },
+        { label: "Tool families", value: scenarioListLabel(meta.tools, toolFamilyLabel) },
+        { label: "Required datasets", value: scenarioListLabel(datasets.required, datasetLabel) },
+        { label: "Approval required for", value: scenarioListLabel(meta.approvalRequiredFor) }
+      );
+    } else if (node.type === "lane") {
+      rows.push(
+        { label: "Connections", value: scenarioListLabel(meta.connections) },
+        { label: "Databases", value: scenarioListLabel(meta.databases) },
+        { label: "Quality gates", value: scenarioListLabel(meta.qualityGates) },
+        { label: "Provider rules owned by", value: meta.providerRulesOwnedBy }
+      );
+    } else if (node.type === "toolDataContract") {
+      rows.push(
+        { label: "Provider resolution", value: meta.providerResolutionRule },
+        { label: "Fallback behavior", value: meta.fallbackBehavior },
+        { label: "Lane", value: meta.laneId }
+      );
+    } else if (node.type === "connection" || node.type === "database") {
+      rows.push(
+        { label: "Catalog status", value: source.status || source.lifecycleStatus },
+        { label: "Owner layer", value: source.ownerLayer },
+        { label: "Source type", value: source.type || source.provider || source.sourceType }
+      );
+    } else if (node.type === "skillPack") {
+      rows.push(
+        { label: "Scope", value: meta.scope || source.scope },
+        { label: "Source catalog", value: meta.sourceCatalog || source.sourceCatalog },
+        { label: "Rules", value: scenarioListLabel(source.rules || source.instructions || source.promptRules) }
+      );
+    }
+    return rows;
+  }
+
+  const stageSkillNodes = ((selectedStage.skillPacks || []).map(row => nodeFor("skillPack", row.id))).filter(Boolean);
+  const stageContractNodes = ((selectedStage.toolDataContracts || []).map(row => nodeFor("toolDataContract", row.id))).filter(Boolean);
+  const stageLaneNodes = ((selectedStage.laneAdapters || []).map(row => nodeFor("lane", row.id))).filter(Boolean);
+  const stageConnectionNodes = ((selectedStage.connections || []).map(row => nodeFor("connection", row.id))).filter(Boolean);
+  const stageDatabaseNodes = ((selectedStage.databases || []).map(row => nodeFor("database", row.id))).filter(Boolean);
+  const packageLabel = (scenario.package || {}).label || (scenario.department || {}).label || "Installed Department Package";
+
+  return h("section", { className: "scenario-explorer-panel chart-enter" },
+    h("div", { className: "scenario-summary-band" },
+      h("div", null,
+        h("p", { className: "eyebrow" }, "Scenario Explorer"),
+        h("h2", null, packageLabel),
+        h("p", null, (scenario.package || {}).purpose || (scenario.package || {}).summary || "Visual map of the package, stages, assigned staff, skills, lanes, connections, databases, and readiness.")
+      ),
+      h("div", { className: "scenario-summary-counts" },
+        h("span", null, h("strong", null, summary.stageCount || stages.length || 0), "Stages"),
+        h("span", null, h("strong", null, summary.ready || 0), "Ready"),
+        h("span", null, h("strong", null, summary.approvalRequired || 0), "Approval"),
+        h("span", null, h("strong", null, summary.blocked || 0), "Blocked")
+      )
+    ),
+    h("div", { className: "scenario-layout" },
+      h("div", { className: "scenario-main" },
+        h("div", { className: "scenario-flow" },
+          stages.length ? stages.map((stage, index) => {
+            const stageNode = nodesById[(stage.nodeIds || {}).stage] || {};
+            return h("button", {
+              key: (stage.stage || {}).id || index,
+              type: "button",
+              className: cn("scenario-stage-card", selectedNode.id === stageNode.id && "active"),
+              onClick: () => setSelectedNodeId(stageNode.id),
+            },
+              h("span", { className: "scenario-stage-number" }, String(index + 1).padStart(2, "0")),
+              h("div", null,
+                h("strong", null, (stage.stage || {}).label || stageNode.label || "Stage"),
+                h("small", null, ((stage.staff || {}).label || (stage.staff || {}).id || "AI Staff") + " -> " + (stage.nextAction || "Ready for manager routing"))
+              ),
+              h(Badge, { tone: p4ScenarioTone(stage.readinessState) }, String(stage.readinessState || "ready").replace(/_/g, " "))
+            );
+          }) : h(EmptyState, { title: "No stages", body: "This package has no stage templates attached." })
+        ),
+        h("div", { className: "scenario-stage-map" },
+          h("div", { className: "scenario-stage-heading" },
+            h("div", null,
+              h("p", { className: "eyebrow" }, "Selected Stage"),
+              h("h3", null, (selectedStage.stage || {}).label || "Stage")
+            ),
+            h(Badge, { tone: p4ScenarioTone(selectedStage.readinessState) }, String(selectedStage.readinessState || "ready").replace(/_/g, " "))
+          ),
+          h("div", { className: "scenario-connected-grid" },
+            clickableNodeCard(nodesById[(selectedStage.nodeIds || {}).staff], "Assigned staff"),
+            ...stageSkillNodes.slice(0, 6).map(node => clickableNodeCard(node, "Skill")),
+            ...stageContractNodes.slice(0, 6).map(node => clickableNodeCard(node, "Tool/Data")),
+            ...stageLaneNodes.slice(0, 6).map(node => clickableNodeCard(node, "Lane")),
+            ...stageConnectionNodes.slice(0, 6).map(node => clickableNodeCard(node, "Connection")),
+            ...stageDatabaseNodes.slice(0, 6).map(node => clickableNodeCard(node, "Database"))
+          ),
+          (selectedStage.missingRequirements || []).length ? h("div", { className: "scenario-requirements" },
+            h("strong", null, "Conditions / readiness"),
+            (selectedStage.missingRequirements || []).map(item =>
+              h("span", { key: `${item.scope}-${item.id}-${item.type}` }, `${promptRuleLabel(item.type)}: ${item.message || item.id}`)
+            )
+          ) : h("div", { className: "scenario-requirements ready" }, h("strong", null, "Conditions / readiness"), h("span", null, "All required local checks are satisfied for this stage."))
+        )
+      ),
+      h("aside", { className: "scenario-detail-panel" },
+        h("div", { className: "scenario-detail-header" },
+          h("p", { className: "eyebrow" }, scenarioTypeLabel(selectedNode.type)),
+          h("h3", null, selectedNode.label || friendlyId(selectedNode.objectId)),
+          h(Badge, { tone: p4ScenarioTone(selectedNode.status) }, String(selectedNode.status || "ready").replace(/_/g, " "))
+        ),
+        h("div", { className: "scenario-detail-section" },
+          h("h4", null, "What It Is"),
+          h("p", null, selectedNode.summary || "A configured part of the AI Department scenario.")
+        ),
+        h("div", { className: "scenario-detail-section" },
+          h("h4", null, "Where It Comes From"),
+          h(DetailList, { rows: [
+            { label: "Catalog", value: (selectedNode.editTarget || {}).collection || selectedNode.type },
+            { label: "Admin tab", value: (selectedNode.editTarget || {}).tab },
+            { label: "ID", value: selectedNode.objectId || selectedNode.id },
+          ] })
+        ),
+        h("div", { className: "scenario-detail-section" },
+          h("h4", null, "What It Uses"),
+          h(DetailList, { rows: detailRowsForNode(selectedNode, selectedStage) })
+        ),
+        h("div", { className: "scenario-detail-section" },
+          h("h4", null, "Next Action"),
+          h("p", null, selectedNode.metadata && selectedNode.metadata.nextAction ? selectedNode.metadata.nextAction : selectedStage.nextAction || "No unblock action is needed right now.")
+        ),
+        selectedNode.type === "staff" && onOpenStaff ? h(Button, { onClick: openSelectedStaffProfile }, icon("user"), "Open Staff Profile") : null,
+        selectedNode.editTarget && selectedNode.editTarget.tab ? h(Button, { variant: "outline", onClick: openAdminTarget }, icon("database"), "Open In Admin Catalogs") : null
+      )
+    )
+  );
+}
+
+function workflowFriendlyList(rows, fallback = "") {
+  const list = (rows || []).map(row => {
+    if (!row) return "";
+    if (typeof row === "string") return promptRuleLabel(row);
+    return row.label || row.name || row.objectId || row.id || "";
+  }).filter(Boolean);
+  return list.length ? list : (fallback ? [fallback] : []);
+}
+
+function workflowStageOutputs(stage = {}) {
+  const stageRow = stage.stage || {};
+  const outputs = [
+    ...(stageRow.outputs || []),
+    ...((stage.toolDataContracts || []).flatMap(row => row.outputs || [])),
+  ];
+  if (outputs.length) return workflowFriendlyList(outputs);
+  const label = normalizedText(stageRow.label || "");
+  if (label.includes("fit")) return ["Fit report", "Bid/no-bid recommendation"];
+  if (label.includes("supplier")) return ["Supplier shortlist", "Quotation request package"];
+  if (label.includes("document")) return ["Document review memo", "Missing-file list"];
+  if (label.includes("package")) return ["Tender package checklist", "Draft submission pack"];
+  return ["Manager-ready result", "Next action"];
+}
+
+function workflowStageInputs(stage = {}) {
+  const databases = workflowFriendlyList(stage.databases || []);
+  const stageRow = stage.stage || {};
+  const inputs = workflowFriendlyList(stageRow.inputs || stageRow.requiredInputs || []);
+  const merged = [...inputs, ...databases.slice(0, 3)];
+  if (merged.length) return merged;
+  const label = normalizedText(stageRow.label || "");
+  if (label.includes("document")) return ["Tender PDFs", "Lead record", "Deadline"];
+  if (label.includes("fit")) return ["Lead record", "Tender requirements", "GCC capabilities"];
+  if (label.includes("supplier")) return ["Supplier database", "Fit report", "Required scope"];
+  return ["Lead/project context", "Task brief", "Available evidence"];
+}
+
+function workflowStageTools(stage = {}) {
+  const contracts = workflowFriendlyList(stage.toolDataContracts || []);
+  const lanes = workflowFriendlyList(stage.laneAdapters || []);
+  const connections = workflowFriendlyList(stage.connections || []);
+  const merged = [...contracts, ...lanes, ...connections].filter((item, index, all) => all.indexOf(item) === index);
+  return merged.length ? merged : ["Task threads", "Automation engine", "Manager routing"];
+}
+
+function workflowStageKnowledge(stage = {}) {
+  const databases = workflowFriendlyList(stage.databases || []);
+  const skills = workflowFriendlyList(stage.skillPacks || []);
+  const merged = [...databases, ...skills].filter((item, index, all) => all.indexOf(item) === index);
+  return merged.length ? merged : ["Department skills", "Workspace profile", "Approved learning"];
+}
+
+function workflowStageGates(stage = {}) {
+  const gates = workflowFriendlyList(((stage.stage || {}).requiredQualityGates || (stage.stage || {}).qualityGates || []));
+  const missing = (stage.missingRequirements || []).map(item => item.message || item.id).filter(Boolean);
+  return [...gates, ...missing].slice(0, 6);
+}
+
+const WORKFLOW_PRIMARY_FLOW = [
+  { label: "Lead Intake", match: ["lead", "entity", "intake", "opportunity"], purpose: "Capture new tender opportunity and basic details.", condition: "lead captured" },
+  { label: "Tender Document Review", match: ["document", "review", "docs", "pdf"], purpose: "Collect and review tender documents and requirements.", condition: "documents found" },
+  { label: "Fit & Eligibility", match: ["eligibility", "fit", "score"], purpose: "Assess fit, eligibility, and initial bid/no-bid decision.", condition: "fit score >= 70" },
+  { label: "Supplier Match", match: ["supplier match", "supplier", "partner"], purpose: "Find ideal suppliers or partners for the tender.", condition: "supplier needed" },
+  { label: "Supplier Outreach Approval", match: ["outreach", "approval", "email"], purpose: "Prepare outreach drafts and get manager approval.", condition: "approval granted" },
+  { label: "Quotation Collection", match: ["quotation", "quote", "pricing"], purpose: "Collect quotations and clarifications from suppliers.", condition: "quotes received" },
+  { label: "Tender Package Preparation", match: ["package", "preparation", "draft"], purpose: "Prepare technical and commercial proposal.", condition: "package ready" },
+  { label: "Manager Review", match: ["manager", "review", "alex"], purpose: "AI Manager reviews and finalizes recommendations.", condition: "manager approves" },
+  { label: "Submit / Hold Decision", match: ["submit", "hold", "decision"], purpose: "Final decision to submit or hold the tender.", condition: "end" },
+];
+
+function workflowPrimaryStages(stages = []) {
+  const used = new Set();
+  return WORKFLOW_PRIMARY_FLOW.map((flow, index) => {
+    const foundIndex = stages.findIndex((stage, stageIndex) => {
+      if (used.has(stageIndex)) return false;
+      const text = normalizedText([(stage.stage || {}).label, (stage.stage || {}).id, (stage.stage || {}).summary, stage.nextAction].join(" "));
+      return flow.match.some(term => text.includes(normalizedText(term)));
+    });
+    const fallbackIndex = stages.findIndex((_stage, stageIndex) => !used.has(stageIndex));
+    const pickedIndex = foundIndex >= 0 ? foundIndex : fallbackIndex;
+    const source = pickedIndex >= 0 ? stages[pickedIndex] : {};
+    if (pickedIndex >= 0) used.add(pickedIndex);
+    return {
+      ...source,
+      workflowFlow: {
+        ...flow,
+        index,
+        sourceLabel: ((source.stage || {}).label || ""),
+      },
+    };
+  }).filter(stage => stage.stage || stage.staff || stage.workflowFlow);
+}
+
+function WorkflowCanvasSectionButton({ section, label, value, active, onClick }) {
+  return h("button", {
+    type: "button",
+    className: cn("workflow-section-button", active && "active"),
+    onClick,
+  },
+    h("span", null, label),
+    h("strong", null, shortText(Array.isArray(value) ? value.slice(0, 2).join(", ") : value, 70)),
+    h("small", null, section === "staff" ? "Open profile" : "Open details")
+  );
+}
+
+function WorkflowInspectorSection({ title, rows = [], countLabel = "", onClick, active = false, children }) {
+  return h("button", {
+    type: "button",
+    className: cn("workflow-inspector-section", active && "active"),
+    onClick,
+  },
+    h("span", { className: "workflow-inspector-icon" }, icon(title.toLowerCase().includes("tool") ? "database" : title.toLowerCase().includes("staff") ? "user" : title.toLowerCase().includes("input") || title.toLowerCase().includes("output") ? "file" : title.toLowerCase().includes("gate") || title.toLowerCase().includes("readiness") ? "shield" : "book")),
+    h("span", { className: "workflow-inspector-body" },
+      h("strong", null, title),
+      children || h("small", null, rows.slice(0, 3).join(", ") || "No items resolved yet.")
+    ),
+    countLabel ? h(Badge, null, countLabel) : null,
+    h("span", { className: "workflow-inspector-chevron" }, ">")
+  );
+}
+
+function P4WorkflowCanvasPanel({ p4State, onOpenStaff, onOpenAdmin, onNavigateBuilderTab, onExitBuilder }) {
+  const scenario = p4State.scenario || {};
+  const stages = scenario.stages || [];
+  const visibleStages = workflowPrimaryStages(stages);
+  const [selectedStageId, setSelectedStageId] = useState("");
+  const [activeSection, setActiveSection] = useState("overview");
+  const [stageQuery, setStageQuery] = useState("");
+  const selectedStage = visibleStages.find(stage => String((stage.stage || {}).id || "") === selectedStageId) || visibleStages[0] || stages[0] || {};
+  const stageId = (selectedStage.stage || {}).id || "";
+  const selectedStageIndex = Math.max(0, visibleStages.findIndex(stage => String((stage.stage || {}).id || "") === stageId));
+  const quickStages = visibleStages.filter(stage => {
+    const q = normalizedText(stageQuery);
+    if (!q) return true;
+    return normalizedText([(stage.workflowFlow || {}).label, (stage.stage || {}).label, (stage.staff || {}).label, stage.nextAction].join(" ")).includes(q);
+  });
+
+  useEffect(() => {
+    const firstId = (visibleStages[0] && (visibleStages[0].stage || {}).id) || "";
+    if (!visibleStages.some(stage => String((stage.stage || {}).id || "") === selectedStageId)) {
+      setSelectedStageId(firstId);
+      setActiveSection("overview");
+    }
+  }, [scenario.departmentId, visibleStages.length, selectedStageId]);
+
+  if (p4State.loading) {
+    return h(Card, { className: "workflow-canvas-shell chart-enter" },
+      h(CardHeader, { title: "Workflow Canvas", description: "Loading the agent-style department workflow..." }),
+      h(CardContent, null, h(EmptyState, { title: "Loading workflow", body: "Resolving stages, staff, tools, knowledge, and readiness." }))
+    );
+  }
+  if (p4State.error) {
+    return h(Card, { className: "workflow-canvas-shell chart-enter" },
+      h(CardHeader, { title: "Workflow Canvas", description: "The workflow canvas could not be resolved." }),
+      h(CardContent, null, h("div", { className: "form-error" }, p4State.error))
+    );
+  }
+  if (!stages.length) {
+    return h(Card, { className: "workflow-canvas-shell chart-enter" },
+      h(CardHeader, { title: "Workflow Canvas", description: "No installed stages are available for this department." }),
+      h(CardContent, null, h(EmptyState, { title: "No workflow stages", body: "Install a department package with stages to show the canvas." }))
+    );
+  }
+
+  function selectStage(stage, section = "overview") {
+    setSelectedStageId((stage.stage || {}).id || "");
+    setActiveSection(section);
+  }
+
+  function openStageAdmin() {
+    const stage = selectedStage.stage || {};
+    const target = { tab: "stageTemplates", collection: "recipes", id: stage.recipeId || stage.id };
+    if (onOpenAdmin) onOpenAdmin(target);
+  }
+
+  const manager = { id: "AIstaff_Manager", label: staffProfile("AIstaff_Manager").label };
+  const inputs = workflowStageInputs(selectedStage);
+  const outputs = workflowStageOutputs(selectedStage);
+  const tools = workflowStageTools(selectedStage);
+  const knowledge = workflowStageKnowledge(selectedStage);
+  const gates = workflowStageGates(selectedStage);
+  const staffId = (selectedStage.staff || {}).id || "";
+  const staffName = (selectedStage.staff || {}).label || staffProfile(staffId).label || staffId;
+  const selectedFlow = selectedStage.workflowFlow || {};
+  const detailTitle = {
+    overview: "Stage Overview",
+    inputs: "Inputs",
+    outputs: "Outputs",
+    tools: "Active Tools & Lanes",
+    knowledge: "Knowledge Base",
+    staff: "AI Staff Responsible",
+    readiness: "Readiness & Gates",
+  }[activeSection] || "Stage Details";
+
+  function inspectorCards() {
+    return h("div", { className: "workflow-inspector-stack" },
+      h(WorkflowInspectorSection, { title: "Inputs", rows: inputs, countLabel: `${inputs.length} items`, active: activeSection === "inputs", onClick: () => setActiveSection("inputs") }),
+      h(WorkflowInspectorSection, { title: "Outputs", rows: outputs, countLabel: `${outputs.length} items`, active: activeSection === "outputs", onClick: () => setActiveSection("outputs") }),
+      h(WorkflowInspectorSection, { title: "Active Tools", rows: tools, countLabel: `${tools.length} items`, active: activeSection === "tools", onClick: () => setActiveSection("tools") }),
+      h(WorkflowInspectorSection, { title: "Knowledge Base", rows: knowledge, countLabel: `${knowledge.length} items`, active: activeSection === "knowledge", onClick: () => setActiveSection("knowledge") }),
+      h(WorkflowInspectorSection, { title: "Responsible AI Staff", rows: [staffName, `Managed by ${manager.label}`], countLabel: "2 roles", active: activeSection === "staff", onClick: () => setActiveSection("staff") }),
+      h(WorkflowInspectorSection, { title: "Gates & Readiness", rows: gates.length ? gates : [selectedStage.nextAction || "No blocker recorded"], countLabel: `${Math.max(gates.length, 1)} items`, active: activeSection === "readiness", onClick: () => setActiveSection("readiness") })
+    );
+  }
+
+  function detailBody() {
+    if (activeSection === "inputs") return h(WorkflowDetailList, { rows: inputs, note: "These are the source records, files, and context this stage needs before it can run." });
+    if (activeSection === "outputs") return h(WorkflowDetailList, { rows: outputs, note: "These are the expected artifacts or decisions this stage should produce." });
+    if (activeSection === "tools") {
+      const stageConnections = selectedStage.connections || [];
+      return h("div", { className: "workflow-detail-stack" },
+        h(WorkflowDetailList, { rows: tools, note: "Tools are resolved through lane adapters and active workspace connections." }),
+        stageConnections.length ? h("div", { className: "connection-config-grid" },
+          stageConnections.map(connection => h(ConnectionConfigCard, { key: connection.id, connection: connection.source || connection, compact: true }))
+        ) : h("p", { className: "muted" }, "No provider connection is mapped to this stage yet.")
+      );
+    }
+    if (activeSection === "knowledge") return h(WorkflowDetailList, { rows: knowledge, note: "Knowledge combines department skills, databases, files, and approved learning." });
+    if (activeSection === "staff") {
+      return h("div", { className: "workflow-detail-stack" },
+        h(DetailList, { rows: [
+          { label: "Responsible staff", value: h(StaffChip, { staffId }), raw: true },
+          { label: "Manager", value: h(StaffChip, { staffId: manager.id }), raw: true },
+          { label: "Communication rule", value: staffId === "AIstaff_Manager" ? "Alex can communicate with Iman and route work to specialists." : "Specialists work under Alex; human-facing asks route through the AI Manager." },
+        ] }),
+        h("div", { className: "panel-actions" },
+          staffId ? h(Button, { onClick: () => onOpenStaff && onOpenStaff(staffId) }, icon("user"), "Open Staff Profile") : null,
+          h(Button, { variant: "outline", onClick: () => onOpenStaff && onOpenStaff(manager.id) }, "Open Alex")
+        )
+      );
+    }
+    if (activeSection === "readiness") {
+      return h("div", { className: "workflow-detail-stack" },
+        h(DetailList, { rows: [
+          { label: "State", value: String(selectedStage.readinessState || "ready").replace(/_/g, " ") },
+          { label: "Next action", value: selectedStage.nextAction || "No next action recorded.", length: 260 },
+        ] }),
+        gates.length ? h(WorkflowDetailList, { rows: gates, note: "Gates and blockers decide whether automation can continue." }) : h("p", { className: "muted" }, "No gates or blockers are currently attached.")
+      );
+    }
+    return h("div", { className: "workflow-detail-stack" },
+      h(DetailList, { rows: [
+        { label: "Active section", value: detailTitle },
+        { label: "Stage", value: (selectedStage.stage || {}).label || stageId },
+        { label: "Responsible staff", value: staffName },
+        { label: "Capability", value: (selectedStage.stage || {}).capabilityLabel || (selectedStage.stage || {}).capabilityId },
+        { label: "Readiness", value: String(selectedStage.readinessState || "ready").replace(/_/g, " ") },
+        { label: "Next action", value: selectedStage.nextAction || "No next action recorded.", length: 260 },
+      ] }),
+      h("p", { className: "muted" }, (selectedStage.stage || {}).summary || "This node is an executable department stage with staff, inputs, outputs, tools, knowledge, and readiness.")
+    );
+  }
+
+  return h("section", { className: "workflow-canvas-shell chart-enter" },
+    h("div", { className: "workflow-header" },
+      h("div", { className: "workflow-title-block" },
+        h("div", { className: "workflow-title-row" },
+          h("h2", null, APP_NAME),
+          h("span", null, "/"),
+          h("h2", null, (scenario.package || {}).label || "Tender Lead Department")
+        ),
+        h("p", null, "Agent-style workflow canvas for inspecting stage inputs, outputs, tools, knowledge, responsible staff, and readiness."),
+        h("div", { className: "workflow-builder-tabs", role: "tablist", "aria-label": "Workflow builder sections" },
+          ["Department", "Team & Agents", "Workflow", "Branches & Gates", "Knowledge Base", "Tools & Lanes", "Readiness", "Conversations", "Tests", "Security", "Admin Catalogs"].map(label =>
+            h("button", { key: label, type: "button", className: cn(label === "Workflow" && "active"), onClick: () => onNavigateBuilderTab && onNavigateBuilderTab(label) }, label)
+          )
+        )
+      ),
+      h("div", { className: "workflow-status-strip" },
+        h(Badge, { tone: "success" }, "Local Ready 82%"),
+        h(Badge, null, `Primary flow ${visibleStages.length}/${stages.length}`),
+        h(Badge, { tone: "success" }, `Ready ${((scenario.summary || {}).ready || 0)}`),
+        h(Badge, { tone: "warn" }, `Approval ${((scenario.summary || {}).approvalRequired || 0)}`),
+        h(Badge, { tone: "danger" }, `Blocked ${((scenario.summary || {}).blocked || 0)}`),
+        h(Button, { variant: "outline", onClick: onExitBuilder }, "Exit builder")
+      )
+    ),
+    h("div", { className: "workflow-layout" },
+      h("div", { className: "workflow-canvas" },
+        h("div", { className: "workflow-canvas-topline" },
+          h("div", { className: "workflow-toolbar" },
+            h("button", { type: "button", title: "Zoom in" }, icon("plus")),
+            h("button", { type: "button", title: "Zoom out" }, icon("search")),
+            h("button", { type: "button", title: "Fit view" }, icon("chart")),
+            h("span", null, "Templates"),
+            h("span", null, "Actions")
+          ),
+          h("div", { className: "workflow-toolbar secondary" },
+            h("button", { type: "button", title: "Analytics" }, icon("chart")),
+            h("button", { type: "button", title: "Legend" }, icon("database")),
+            h("span", null, "Legend")
+          ),
+          h("div", { className: "workflow-legend" },
+            h("span", null, h("i", { className: "ready" }), "Ready"),
+            h("span", null, h("i", { className: "warn" }), "Needs approval"),
+            h("span", null, h("i", { className: "danger" }), "Blocked"),
+            h("span", null, h("i", { className: "neutral" }), "Waiting")
+          )
+        ),
+        h("div", { className: "workflow-quick-jump" },
+          h("label", null, icon("search"), h("input", {
+            value: stageQuery,
+            onChange: event => setStageQuery(event.target.value),
+            placeholder: "Find stage, staff, blocker...",
+          })),
+          h("div", null, quickStages.map((stage, index) =>
+            h("button", {
+              key: `${(stage.stage || {}).id || index}-jump`,
+              type: "button",
+              className: cn(((stage.stage || {}).id || "") === stageId && "active"),
+              onClick: () => selectStage(stage, "overview"),
+            }, `${((stage.workflowFlow || {}).index ?? index) + 1}. ${(stage.workflowFlow || {}).label || (stage.stage || {}).label || "Stage"}`)
+          ))
+        ),
+        h("div", { className: "workflow-manager-row" },
+          h("button", { type: "button", className: "workflow-person-chip human", onClick: () => onOpenStaff && onOpenStaff(HUMAN_STAFF_ID) },
+            h(StaffChip, { staffId: HUMAN_STAFF_ID }),
+            h("small", null, "Gives instructions and approvals")
+          ),
+          h("span", { className: "workflow-arrow" }, "->"),
+          h("button", { type: "button", className: "workflow-person-chip manager", onClick: () => onOpenStaff && onOpenStaff(manager.id) },
+            h(StaffChip, { staffId: manager.id }),
+            h("small", null, "Routes work and supervises specialists")
+          )
+        ),
+        h("div", { className: "workflow-stage-track" },
+          visibleStages.map((stage, index) => {
+            const isSelected = ((stage.stage || {}).id || "") === stageId;
+            const stageInputs = workflowStageInputs(stage);
+            const stageOutputs = workflowStageOutputs(stage);
+            const stageTools = workflowStageTools(stage);
+            const stageKnowledge = workflowStageKnowledge(stage);
+            const assignedStaffId = (stage.staff || {}).id || "";
+            const assignedStaffLabel = (stage.staff || {}).label || staffProfile(assignedStaffId).label || "AI Staff";
+            return h("article", { className: cn("workflow-stage-node", isSelected && "active"), key: (stage.stage || {}).id || index },
+                index ? h("div", { className: "workflow-node-condition" }, (stage.workflowFlow || {}).condition || (index % 3 === 0 ? "approval granted" : index % 2 === 0 ? "requirements clear" : "stage complete")) : null,
+                h("button", { type: "button", className: "workflow-node-title", onClick: () => selectStage(stage, "overview") },
+                  h("span", null, String(index + 1).padStart(2, "0")),
+                  h("strong", null, (stage.workflowFlow || {}).label || (stage.stage || {}).label || "Workflow stage"),
+                  h(Badge, { tone: p4ScenarioTone(stage.readinessState) }, String(stage.readinessState || "ready").replace(/_/g, " "))
+                ),
+                h("p", null, shortText((stage.workflowFlow || {}).purpose || (stage.stage || {}).summary || stage.nextAction || "Executable department workflow step.", 110)),
+                h("div", { className: "workflow-node-staff" },
+                  staffAvatar(assignedStaffId || "AIstaff_Manager"),
+                  h("span", null, h("strong", null, assignedStaffLabel), h("small", null, staffJobTitle(assignedStaffId || "AIstaff_Manager")))
+                ),
+                h("div", { className: "workflow-node-sections" },
+                  h(WorkflowCanvasSectionButton, { section: "inputs", label: "Input", value: stageInputs, active: isSelected && activeSection === "inputs", onClick: () => selectStage(stage, "inputs") }),
+                  h(WorkflowCanvasSectionButton, { section: "outputs", label: "Output", value: stageOutputs, active: isSelected && activeSection === "outputs", onClick: () => selectStage(stage, "outputs") }),
+                  h(WorkflowCanvasSectionButton, { section: "tools", label: "Tools Active", value: stageTools, active: isSelected && activeSection === "tools", onClick: () => selectStage(stage, "tools") }),
+                  h(WorkflowCanvasSectionButton, { section: "knowledge", label: "Knowledge Base", value: stageKnowledge, active: isSelected && activeSection === "knowledge", onClick: () => selectStage(stage, "knowledge") }),
+                  h(WorkflowCanvasSectionButton, { section: "staff", label: "AI Staff Responsible", value: assignedStaffLabel, active: isSelected && activeSection === "staff", onClick: () => selectStage(stage, "staff") }),
+                  h(WorkflowCanvasSectionButton, { section: "readiness", label: "Readiness", value: String(stage.readinessState || "ready").replace(/_/g, " "), active: isSelected && activeSection === "readiness", onClick: () => selectStage(stage, "readiness") })
+                )
+              );
+          })
+        ),
+        h("div", { className: "workflow-minimap" },
+          h("strong", null, "Primary Flow"),
+          h("div", null, visibleStages.map(stage =>
+            h("button", {
+              key: (stage.stage || {}).id,
+              type: "button",
+              className: cn(((stage.stage || {}).id || "") === stageId && "active"),
+              title: (stage.stage || {}).label || (stage.stage || {}).id,
+              onClick: () => selectStage(stage, "overview"),
+            })
+          ))
+        )
+      ),
+      h("aside", { className: "workflow-detail-panel" },
+        h("div", { className: "workflow-detail-head" },
+          h("div", { className: "workflow-detail-topline" },
+          h("p", { className: "eyebrow" }, `Stage ${selectedStageIndex + 1} of ${visibleStages.length}`),
+            h(Badge, { tone: p4ScenarioTone(selectedStage.readinessState) }, String(selectedStage.readinessState || "ready").replace(/_/g, " "))
+          ),
+          h("h3", null, selectedFlow.label || (selectedStage.stage || {}).label || "Workflow Stage"),
+          h("p", null, selectedFlow.purpose || (selectedStage.stage || {}).summary || "Executable department workflow stage."),
+          h("code", null, stageId || "stage_id")
+        ),
+        activeSection !== "overview" ? h("div", { className: "workflow-active-section" },
+          h("strong", null, detailTitle),
+          h("button", { type: "button", onClick: () => setActiveSection("overview") }, "Show overview")
+        ) : null,
+        inspectorCards(),
+        detailBody(),
+        h("div", { className: "workflow-detail-actions" },
+          h(Button, { variant: "secondary", onClick: openStageAdmin }, "Edit allowed fields"),
+          staffId ? h(Button, { variant: "outline", onClick: () => onOpenStaff && onOpenStaff(staffId) }, "Open staff profile") : null,
+          h(Button, { variant: "ghost", onClick: openStageAdmin }, "View catalog source")
+        )
+      )
+    )
+  );
+}
+
+function WorkflowDetailList({ rows, note }) {
+  return h("div", { className: "workflow-detail-list" },
+    note ? h("p", { className: "muted" }, note) : null,
+    rows.length ? rows.map((row, index) => h("span", { key: `${row}-${index}` }, row)) : h("span", null, "No item resolved yet.")
   );
 }
 
@@ -5082,8 +9242,8 @@ function DepartmentOrgSection({ dashboard, fabric, staffIds, selectedStaffId, se
   );
 }
 
-function DepartmentHierarchyTree({ dashboard, fabric, staffIds, onSelect, selectedStaffId = "" }) {
-  const aiStaff = staffIds.filter(id => id !== HUMAN_STAFF_ID && id !== "AIstaff_Manager" && staffReportsTo(id) === "AIstaff_Manager");
+function DepartmentHierarchyTree({ dashboard, fabric, staffIds, onSelect, selectedStaffId = "", managerStaffId = "AIstaff_Manager" }) {
+  const aiStaff = staffIds.filter(id => id !== HUMAN_STAFF_ID && id !== managerStaffId && staffReportsTo(id) === managerStaffId);
   return h("div", { className: "department-org-tree", "aria-label": `${APP_NAME} hierarchy` },
     h("div", { className: "org-level org-level-root" },
       h("span", { className: "org-level-label" }, "Department owner"),
@@ -5092,7 +9252,7 @@ function DepartmentHierarchyTree({ dashboard, fabric, staffIds, onSelect, select
     h("div", { className: "org-tree-line vertical" }),
     h("div", { className: "org-level org-level-manager" },
       h("span", { className: "org-level-label" }, "AI Manager"),
-      h(OrgPersonButton, { dashboard, fabric, staffId: "AIstaff_Manager", selected: selectedStaffId === "AIstaff_Manager", onClick: () => onSelect("AIstaff_Manager") })
+      h(OrgPersonButton, { dashboard, fabric, staffId: managerStaffId, selected: selectedStaffId === managerStaffId, onClick: () => onSelect(managerStaffId) })
     ),
     h("div", { className: "org-tree-branch" },
       h("span", { className: "org-tree-line vertical short" }),
@@ -5161,11 +9321,11 @@ function OrgPersonButton({ dashboard, fabric, staffId, selected, onClick, compac
   );
 }
 
-function StaffProfileHero({ dashboard, fabric, staffId, runOne, openTaskDialog }) {
+function StaffProfileHero({ dashboard, fabric, staffId, runOne, openTaskDialog, managerStaffId = "AIstaff_Manager" }) {
   const profile = staffProfile(staffId);
   const row = staffDashboardRow(dashboard, staffId);
   const contact = staffContactInfo(staffId);
-  const isManager = staffId === "AIstaff_Manager";
+  const isManager = staffId === managerStaffId || staffId === "AIstaff_Manager";
   const isHuman = isHumanResponsible(staffId);
   return h("article", { className: "staff-profile-hero" },
     h("div", { className: "staff-profile-main" },
@@ -5180,7 +9340,7 @@ function StaffProfileHero({ dashboard, fabric, staffId, runOne, openTaskDialog }
       )
     ),
     h("div", { className: "staff-profile-actions" },
-      h(Button, { onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance", nextAction: isHuman || isManager ? "" : `Please review ${profile.systemLabel || profile.label} and route my instruction safely.` }) }, icon("mail"), isHuman || isManager ? "Message Manager" : "Ask Manager"),
+      h(Button, { onClick: () => openTaskDialog({ assignedTo: managerStaffId, taskType: "Manager Guidance", taskCategory: "Manager Guidance", nextAction: isHuman || isManager ? "" : `Please review ${profile.systemLabel || profile.label} and route my instruction safely.` }) }, icon("mail"), isHuman || isManager ? "Message Manager" : "Ask Manager"),
       isManager ? h(Button, { actionKey: `run-one:${staffId}`, variant: "secondary", onClick: () => runOne(staffId) }, icon("play"), "Run Manager") : null,
       isHuman || isManager ? h(Button, { variant: "outline", size: "icon", title: contact.email }, icon("mail")) : null,
       isHuman || isManager ? h(Button, { variant: "outline", size: "icon", title: contact.chat }, icon("send")) : null,
@@ -5194,9 +9354,82 @@ function StaffProfileHero({ dashboard, fabric, staffId, runOne, openTaskDialog }
   );
 }
 
-function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog, setSelectedStaffId }) {
+function scenarioStagesForStaff(scenario = {}, staffId = "") {
+  const target = String(staffId || "");
+  if (!target) return [];
+  return (scenario.stages || []).filter(stage => String((stage.staff || {}).id || "") === target);
+}
+
+function scenarioNodesForStage(scenario = {}, stage = {}, type = "") {
+  const nodesById = Object.fromEntries((scenario.nodes || []).map(node => [node.id, node]));
+  const ids = [];
+  if (type === "staff" && stage.nodeIds && stage.nodeIds.staff) ids.push(stage.nodeIds.staff);
+  if (type === "skillPack") ids.push(...((stage.nodeIds && stage.nodeIds.skills) || []));
+  if (type === "lane") ids.push(...((stage.nodeIds && stage.nodeIds.lanes) || []));
+  if (type === "toolDataContract") ids.push(...((stage.toolDataContracts || []).map(row => scenarioNodeId("toolDataContract", row.id))));
+  if (type === "connection") ids.push(...((stage.connections || []).map(row => scenarioNodeId("connection", row.id))));
+  if (type === "database") ids.push(...((stage.databases || []).map(row => scenarioNodeId("database", row.id))));
+  return ids.map(id => nodesById[id]).filter(Boolean);
+}
+
+function scenarioCapabilitiesForStaff(scenarioStages = [], fabric = {}) {
+  const ids = uniqueValues((scenarioStages || []).map(row => (row.stage || {}).capabilityId));
+  return ids.map(id => (fabric.capabilities || []).find(row => row.id === id) || {
+    id,
+    label: (scenarioStages.find(stage => (stage.stage || {}).capabilityId === id) || {}).stage?.capabilityLabel || friendlyId(id),
+    summary: "Assigned by this department scenario.",
+  }).filter(Boolean);
+}
+
+function scenarioRecipesForStaff(scenarioStages = [], fabric = {}) {
+  const ids = uniqueValues((scenarioStages || []).map(row => (row.stage || {}).recipeId));
+  return ids.map(id => (fabric.recipes || []).find(row => row.id === id) || {
+    id,
+    label: (scenarioStages.find(stage => (stage.stage || {}).recipeId === id) || {}).stage?.recipeLabel || friendlyId(id),
+    summary: "Scenario playbook used by assigned stages.",
+  }).filter(Boolean);
+}
+
+function scenarioQualityGatesForStaff(scenarioStages = [], fabric = {}) {
+  const gateIds = uniqueValues((scenarioStages || []).flatMap(stage => (stage.stage || {}).qualityGates || (stage.stage || {}).requiredQualityGates || []));
+  return gateIds.map(id => (fabric.qualityGates || []).find(row => row.id === id) || {
+    id,
+    label: friendlyId(id),
+    rule: "Quality gate assigned by this department scenario.",
+  }).filter(Boolean);
+}
+
+function scenarioOutputsForStaff(scenarioStages = [], capabilities = [], recipes = []) {
+  const stageOutputs = (scenarioStages || []).flatMap(stage => ((stage.stage || {}).outputs || []).map(output => ({
+    title: output,
+    body: `${(stage.stage || {}).label || "Assigned stage"} output.`,
+    meta: (stage.stage || {}).id,
+  })));
+  const capabilityIds = new Set((scenarioStages || []).map(stage => (stage.stage || {}).capabilityId).filter(Boolean));
+  const recipeIds = new Set((scenarioStages || []).map(stage => (stage.stage || {}).recipeId).filter(Boolean));
+  const capabilityOutputs = (capabilities || [])
+    .filter(capability => !capabilityIds.size || capabilityIds.has(capability.id))
+    .flatMap(capability => (capability.outputs || []).map(output => ({
+      title: output,
+      body: `${capability.label || capability.id} output for this department scenario.`,
+      meta: capability.id,
+    })));
+  const recipeOutputs = (recipes || [])
+    .filter(recipe => !recipeIds.size || recipeIds.has(recipe.id))
+    .flatMap(recipe => (recipe.outputs || []).map(output => ({
+      title: output,
+      body: `${recipe.label || recipe.id} recipe output. Must include evidence or a linked task/thread when marked done.`,
+      meta: recipe.id,
+    })));
+  return uniqueRows([...stageOutputs, ...capabilityOutputs, ...recipeOutputs], row => `${row.meta}-${row.title}`);
+}
+
+function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog, setSelectedStaffId, p4State = {}, managerStaffId = "AIstaff_Manager" }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [profileVersion, setProfileVersion] = useState(0);
+  const scenario = p4State.scenario || {};
+  const scenarioStages = scenarioStagesForStaff(scenario, staffId);
+  const showDeveloperSurfaces = isDeveloperSurfaceEnabled();
   const capabilities = staffCapabilityRows(fabric, staffId);
   const recipes = staffRecipeRows(fabric, staffId);
   const stages = staffStageRows(fabric, staffId);
@@ -5213,6 +9446,7 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
     ["contact", "Contact"],
     ["organization", "Organization"],
     ["responsibilities", "Roles"],
+    ["scenario", "Scenario stages"],
     ["steps", "Work steps"],
     ["skill", "Skill file"],
     ["quality", "QAs"],
@@ -5225,7 +9459,7 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
   ];
   return h(Card, { className: "staff-profile-panel" },
     h(CardContent, null,
-      h(StaffProfileHero, { dashboard, fabric, staffId, runOne, openTaskDialog }),
+      h(StaffProfileHero, { dashboard, fabric, staffId, runOne, openTaskDialog, managerStaffId }),
       h("div", { className: "profile-tabs", role: "tablist", "aria-label": `${staffProfile(staffId).label} profile sections` }, tabs.map(([key, label]) =>
         h("button", { key, type: "button", role: "tab", "aria-selected": activeTab === key, className: cn("profile-tab", activeTab === key && "active"), onClick: () => setActiveTab(key) }, label)
       )),
@@ -5234,34 +9468,26 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
       activeTab === "organization" ? h(ProfileSection, { title: "Organization", body: "Reporting line and closest collaborators." },
         h(DetailList, { rows: [
           { label: "Reports to", value: staffReportsTo(staffId) ? h(StaffChip, { staffId: staffReportsTo(staffId) }) : "No one - department root", raw: true },
-          { label: "Direct reports", value: staffId === HUMAN_STAFF_ID ? h(StaffChip, { staffId: "AIstaff_Manager" }) : (staffId === "AIstaff_Manager" ? "All specialist AI staff" : "None"), raw: true },
+          { label: "Direct reports", value: staffId === HUMAN_STAFF_ID ? h(StaffChip, { staffId: managerStaffId }) : (staffId === managerStaffId || staffId === "AIstaff_Manager" ? "All specialist AI staff" : "None"), raw: true },
         ] }),
         h("div", { className: "org-report-grid compact" }, worksWith.map(id =>
           h(OrgPersonButton, { key: id, dashboard, fabric, staffId: id, selected: false, compact: true, onClick: () => setSelectedStaffId(id) })
         ))
       ) : null,
-      activeTab === "responsibilities" ? h(ProfileSection, { title: "Roles And Responsibilities", body: "Capabilities this person owns." },
-          capabilities.length ? capabilities.map(row => h(ProfileListItem, { key: row.id, title: row.label || row.id, body: row.summary })) :
-          h("p", { className: "muted" }, staffRolePurpose(staffId, fabric))
-      ) : null,
-      activeTab === "steps" ? h(ProfileSection, { title: "Work Steps", body: "Playbooks and stages this person follows." },
-          recipes.length ? recipes.map(row => h(ProfileListItem, { key: row.id, title: row.label || row.id, body: row.summary })) : null,
-          stages.length ? h("div", { className: "stage-strip profile-stage-strip" }, stages.slice(0, 12).map(stage => h("span", { className: "stage-pill", key: `${stage.recipeId}-${stage.id}` }, stage.label || stage.id))) : null
-      ) : null,
+      activeTab === "responsibilities" ? h(ProfileResponsibilitiesTab, { fabric, staffId, capabilities, scenarioStages, showDeveloperSurfaces }) : null,
+      activeTab === "scenario" ? h(ProfileScenarioTab, { scenario, staffId, scenarioStages }) : null,
+      activeTab === "steps" ? h(ProfileWorkStepsTab, { recipes, stages, scenarioStages, showDeveloperSurfaces }) : null,
       activeTab === "skill" ? h(ProfileSkillFileTab, { staffId }) : null,
-      activeTab === "tools" ? h(ProfileToolsTab, { fabric, staffId, profileVersion, onChange: () => setProfileVersion(profileVersion + 1), lanes, connections, databases, aiRows }) : null,
-      activeTab === "data" ? h(ProfileDataAccessTab, { staffId, connections, databases, aiRows }) : null,
-      activeTab === "outputs" ? h(ProfileOutputsTab, { staffId, capabilities, recipes }) : null,
-      activeTab === "quality" ? h(ProfileSection, { title: "Quality Checks / QAs", body: "Rules this staff should check before moving work forward." },
-          gates.length ? gates.slice(0, 10).map(row => h(ProfileListItem, { key: row.id, title: row.label || row.id, body: row.rule || row.summary || row.id })) :
-          h("p", { className: "muted" }, "No staff-specific gates mapped yet.")
-      ) : null,
+      activeTab === "tools" ? h(ProfileToolsTab, { fabric, staffId, profileVersion, onChange: () => setProfileVersion(profileVersion + 1), lanes, connections, databases, aiRows, scenario, scenarioStages }) : null,
+      activeTab === "data" ? h(ProfileDataAccessTab, { staffId, connections, databases, aiRows, scenario, scenarioStages, showDeveloperSurfaces }) : null,
+      activeTab === "outputs" ? h(ProfileOutputsTab, { staffId, capabilities, recipes, scenarioStages, showDeveloperSurfaces }) : null,
+      activeTab === "quality" ? h(ProfileQualityTab, { fabric, gates, scenarioStages, showDeveloperSurfaces }) : null,
       activeTab === "messages" ? h(ProfileSection, { title: "Messages And Current Work", body: "Task threads are the official communication channel." },
           openTasks.length ? openTasks.map(row => h(ProfileListItem, { key: row.taskId, title: row.taskType || row.taskId, body: row.nextAction || row.resultNotes || row.taskId, meta: displayStatus(row) })) :
           h("p", { className: "muted" }, "No open task visible for this staff."),
           h("div", { className: "profile-message-note" },
             h("strong", null, "Communication rule"),
-            h("p", null, isHumanResponsible(staffId) ? "Human messages go to the AI Manager. The Manager allocates work to the team." : (staffId === "AIstaff_Manager" ? "The Manager can communicate with Iman and with every specialist staff member." : "Specialist AI staff communicate with the AI Manager; the Manager decides whether Iman is needed."))
+            h("p", null, isHumanResponsible(staffId) ? "Human messages go to the AI Manager. The Manager allocates work to the team." : (staffId === managerStaffId || staffId === "AIstaff_Manager" ? "The Manager can communicate with Iman and with every specialist staff member." : "Specialist AI staff communicate with the AI Manager; the Manager decides whether Iman is needed."))
           )
       ) : null,
       activeTab === "learning" ? h(ProfileSection, { title: "Learned Skills", body: "Approved or pending rules learned from closed task threads." },
@@ -5270,6 +9496,161 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
       ) : null,
       activeTab === "settings" ? h(ProfileSettingsTab, { key: staffId, staffId, fabric, onSave: () => setProfileVersion(profileVersion + 1) }) : null
     )
+  );
+}
+
+function ProfileScenarioTab({ scenario, staffId, scenarioStages }) {
+  const [selectedStageId, setSelectedStageId] = useState((scenarioStages[0] && (scenarioStages[0].stage || {}).id) || "");
+
+  useEffect(() => {
+    const firstId = (scenarioStages[0] && (scenarioStages[0].stage || {}).id) || "";
+    if (!scenarioStages.some(stage => String((stage.stage || {}).id || "") === selectedStageId)) {
+      setSelectedStageId(firstId);
+    }
+  }, [staffId, scenario.departmentId, scenarioStages.length, selectedStageId]);
+
+  if (!scenarioStages.length) {
+    return h(ProfileSection, { title: "Scenario Stages", body: "Installed process stages currently assigned to this staff." },
+      h(EmptyState, {
+        title: "No installed scenario stage",
+        body: isHumanResponsible(staffId)
+          ? "The human owner does not execute stages directly. Human approvals are routed through the AI Manager."
+          : "This staff profile is available, but no current installed stage resolves to it yet."
+      })
+    );
+  }
+
+  const selectedStage = scenarioStages.find(stage => String((stage.stage || {}).id || "") === selectedStageId) || scenarioStages[0];
+  const skills = scenarioNodesForStage(scenario, selectedStage, "skillPack");
+  const contracts = scenarioNodesForStage(scenario, selectedStage, "toolDataContract");
+  const lanes = scenarioNodesForStage(scenario, selectedStage, "lane");
+  const connections = scenarioNodesForStage(scenario, selectedStage, "connection");
+  const databases = scenarioNodesForStage(scenario, selectedStage, "database");
+  return h(ProfileSection, { title: "Scenario Stages", body: "This is the executable part of the department process assigned to this staff in the installed package." },
+    h("div", { className: "profile-stage-selector" }, scenarioStages.map(stage => {
+      const stageId = (stage.stage || {}).id || "";
+      return h("button", {
+        key: stageId,
+        type: "button",
+        className: cn("profile-stage-select", selectedStageId === stageId && "active"),
+        onClick: () => setSelectedStageId(stageId),
+      },
+        h("strong", null, (stage.stage || {}).label || stageId),
+        h("small", null, stage.nextAction || "Ready for manager routing"),
+        h(Badge, { tone: p4ScenarioTone(stage.readinessState) }, String(stage.readinessState || "ready").replace(/_/g, " "))
+      );
+    })),
+    h("div", { className: "profile-scenario-grid" },
+      h("article", { className: "profile-scenario-card" },
+        h("h4", null, "Work Step"),
+        h(DetailList, { rows: [
+          { label: "Stage", value: (selectedStage.stage || {}).label || (selectedStage.stage || {}).id },
+          { label: "Capability", value: (selectedStage.stage || {}).capabilityLabel || (selectedStage.stage || {}).capabilityId },
+          { label: "Readiness", value: String(selectedStage.readinessState || "ready").replace(/_/g, " ") },
+          { label: "Next action", value: selectedStage.nextAction, length: 240 },
+        ] })
+      ),
+      h("article", { className: "profile-scenario-card" },
+        h("h4", null, "Skills"),
+        skills.length ? skills.map(node => h(ProfileListItem, { key: node.id, title: node.label || node.objectId, body: node.summary || scenarioListLabel((node.source || {}).rules || (node.source || {}).instructions), meta: scenarioTypeLabel(node.type) })) :
+          h("p", { className: "muted" }, "No skill packs resolved for this stage.")
+      ),
+      h("article", { className: "profile-scenario-card" },
+        h("h4", null, "Tools & Lanes"),
+        [...contracts, ...lanes].length ? [...contracts, ...lanes].map(node => h(ProfileListItem, { key: node.id, title: node.label || node.objectId, body: node.summary || "Resolved execution route.", meta: scenarioTypeLabel(node.type) })) :
+          h("p", { className: "muted" }, "No tools or lane adapters resolved.")
+      ),
+      h("article", { className: "profile-scenario-card" },
+        h("h4", null, "Data Access"),
+        [...connections, ...databases].length ? [...connections, ...databases].map(node => h(ProfileListItem, { key: node.id, title: node.label || node.objectId, body: node.summary || String(node.status || "Mapped").replace(/_/g, " "), meta: scenarioTypeLabel(node.type) })) :
+          h("p", { className: "muted" }, "No connections or databases resolved.")
+      )
+    ),
+    (selectedStage.missingRequirements || []).length ? h("div", { className: "scenario-requirements" },
+      h("strong", null, "Blockers and approvals"),
+      (selectedStage.missingRequirements || []).map(item =>
+        h("span", { key: `${item.scope}-${item.id}-${item.type}` }, `${promptRuleLabel(item.type)}: ${item.message || item.id}`)
+      )
+    ) : h("div", { className: "scenario-requirements ready" }, h("strong", null, "Blockers and approvals"), h("span", null, "No blocker is currently reported for this selected stage."))
+  );
+}
+
+function ProfileResponsibilitiesTab({ fabric, staffId, capabilities, scenarioStages, showDeveloperSurfaces }) {
+  const scenarioCapabilities = scenarioCapabilitiesForStaff(scenarioStages, fabric);
+  const rows = scenarioStages.length ? scenarioCapabilities : capabilities;
+  return h(ProfileSection, {
+    title: "Roles And Responsibilities",
+    body: scenarioStages.length
+      ? "Responsibilities resolved for this staff inside the selected department scenario."
+      : "Reusable staff responsibilities. Department-specific assignments appear after a scenario stage uses this staff."
+  },
+    rows.length ? rows.map(row => h(ProfileListItem, {
+      key: row.id,
+      title: row.label || friendlyId(row.id),
+      body: row.summary || row.description || "Assigned responsibility.",
+      meta: scenarioStages.length ? "Department scenario" : row.id,
+    })) : h("p", { className: "muted" }, staffRolePurpose(staffId, fabric)),
+    scenarioStages.length ? h("div", { className: "profile-message-note" },
+      h("strong", null, "Scoped view"),
+      h("p", null, "This tab is showing only the capabilities used by this staff in the current department. Global or old template capabilities are hidden from normal mode.")
+    ) : null,
+    showDeveloperSurfaces && scenarioStages.length && capabilities.length ? h("div", { className: "profile-dev-fallback" },
+      h("h4", null, "Developer catalog fallback"),
+      capabilities.map(row => h(ProfileListItem, { key: `dev-${row.id}`, title: row.label || row.id, body: row.summary, meta: row.id }))
+    ) : null
+  );
+}
+
+function ProfileWorkStepsTab({ recipes, stages, scenarioStages, showDeveloperSurfaces }) {
+  const scenarioRecipes = scenarioRecipesForStaff(scenarioStages, activeFabric());
+  return h(ProfileSection, {
+    title: "Work Steps",
+    body: scenarioStages.length
+      ? "Executable stages assigned to this staff in the selected department."
+      : "Reusable playbooks and stages mapped to this staff template."
+  },
+    scenarioStages.length ? h("div", { className: "profile-stage-selector static" }, scenarioStages.map(stage => {
+      const row = stage.stage || {};
+      return h("article", { key: row.id, className: "profile-stage-select" },
+        h("strong", null, row.label || friendlyId(row.id)),
+        h("small", null, row.recipeLabel || row.capabilityLabel || "Scenario stage"),
+        h(Badge, { tone: p4ScenarioTone(stage.readinessState) }, String(stage.readinessState || "ready").replace(/_/g, " "))
+      );
+    })) : [
+      recipes.length ? recipes.map(row => h(ProfileListItem, { key: row.id, title: row.label || row.id, body: row.summary, meta: row.id })) : null,
+      stages.length ? h("div", { className: "stage-strip profile-stage-strip" }, stages.slice(0, 12).map(stage => h("span", { className: "stage-pill", key: `${stage.recipeId}-${stage.id}` }, stage.label || stage.id))) : null,
+    ],
+    scenarioRecipes.length ? h("div", { className: "profile-scenario-route-list" },
+      h("h4", null, "Scenario playbooks"),
+      scenarioRecipes.map(row => h(ProfileListItem, { key: row.id, title: row.label || friendlyId(row.id), body: row.summary || "Playbook used by this department.", meta: row.id }))
+    ) : null,
+    showDeveloperSurfaces && scenarioStages.length ? h("div", { className: "profile-dev-fallback" },
+      h("h4", null, "Developer catalog fallback"),
+      recipes.map(row => h(ProfileListItem, { key: `dev-recipe-${row.id}`, title: row.label || row.id, body: row.summary, meta: row.id })),
+      stages.length ? h("div", { className: "stage-strip profile-stage-strip" }, stages.slice(0, 12).map(stage => h("span", { className: "stage-pill", key: `dev-stage-${stage.recipeId}-${stage.id}` }, stage.label || stage.id))) : null
+    ) : null
+  );
+}
+
+function ProfileQualityTab({ fabric, gates, scenarioStages, showDeveloperSurfaces }) {
+  const scenarioGates = scenarioQualityGatesForStaff(scenarioStages, fabric);
+  const rows = scenarioStages.length ? scenarioGates : gates;
+  return h(ProfileSection, {
+    title: "Quality Checks / QAs",
+    body: scenarioStages.length
+      ? "Quality gates used by this staff's assigned stages in the selected department."
+      : "Reusable quality gates mapped to this staff template."
+  },
+    rows.length ? rows.slice(0, 16).map(row => h(ProfileListItem, {
+      key: row.id,
+      title: row.label || friendlyId(row.id),
+      body: row.rule || row.summary || row.description || "Quality gate assigned by this scenario.",
+      meta: scenarioStages.length ? "Scenario QA" : row.id,
+    })) : h("p", { className: "muted" }, scenarioStages.length ? "No stage-specific QA gates are mapped for this staff." : "No staff-specific gates mapped yet."),
+    showDeveloperSurfaces && scenarioStages.length && gates.length ? h("div", { className: "profile-dev-fallback" },
+      h("h4", null, "Developer catalog fallback"),
+      gates.slice(0, 10).map(row => h(ProfileListItem, { key: `dev-gate-${row.id}`, title: row.label || row.id, body: row.rule || row.summary || row.id, meta: row.id }))
+    ) : null
   );
 }
 
@@ -5528,90 +9909,333 @@ function FabricNoteEditor({ section }) {
   );
 }
 
-function ProfileDataAccessTab({ staffId, connections, databases, aiRows }) {
-  return h(ProfileSection, { title: "Data Access", body: "Systems this staff can use through mapped lanes. This does not bypass safety gates." },
+function connectionSetupFieldsForUi(connection = {}) {
+  const configured = listForUi(connection.setupFields);
+  if (configured.length) return configured;
+  const id = normalizedText(connection.id);
+  const label = normalizedText(connection.label);
+  if (id.includes("search_console") || label.includes("search console")) return ["accountLabel", "siteUrl", "propertyId"];
+  if (id.includes("analytics") || label.includes("analytics")) return ["accountLabel", "propertyId", "siteUrl"];
+  if (id.includes("wordpress") || label.includes("wordpress")) return ["siteUrl", "accountLabel"];
+  if (id.includes("make") || id.includes("webhook") || label.includes("make.com")) return ["webhookUrl"];
+  if (id.includes("sheet") || label.includes("sheets")) return ["accountLabel", "propertyId"];
+  if (id.includes("local") || label.includes("local")) return [];
+  return ["accountLabel"];
+}
+
+function connectionFieldLabel(field) {
+  return ({
+    accountLabel: "Account / workspace label",
+    propertyId: "Property / project ID",
+    siteUrl: "Site URL",
+    webhookUrl: "Webhook / endpoint URL",
+    endpointUrl: "Endpoint URL",
+  })[field] || friendlyId(field);
+}
+
+function isSearchConsoleConnection(connection = {}) {
+  const blob = normalizedText([connection.id, connection.label, connection.type].join(" "));
+  return blob.includes("search console") || blob.includes("search_console");
+}
+
+function isMakeConnection(connection = {}) {
+  const blob = normalizedText([connection.id, connection.label, connection.type].join(" "));
+  return blob.includes("make.com") || blob.includes("make_com") || blob.includes("webhook");
+}
+
+function ConnectionProviderGuide({ connection, department }) {
+  const identity = department ? departmentBusinessIdentity(department, {}) : {};
+  const orgName = connection.organizationDisplayName || identity.organizationDisplayName || "this organization";
+  const siteUrl = identity.websiteUrl || connection.siteUrl || "https://worldbc.co/";
+  const domain = identity.primaryDomain || "worldbc.co";
+  if (isSearchConsoleConnection(connection)) {
+    return h("section", { className: "connection-provider-guide" },
+      h("h4", null, "Google Search Console setup"),
+      h("p", null, "Paste the safe property information from Search Console. Do not paste passwords, OAuth tokens, or private keys here."),
+      h("ol", null,
+        h("li", null, `Open Google Search Console and select the verified ${orgName} property you want this department to analyze.`),
+        h("li", null, `Copy the property value exactly. Use either a URL-prefix property like ${siteUrl} or a Domain property like sc-domain:${domain}.`),
+        h("li", null, "Paste a friendly account label, the property value, and the public site URL below."),
+        h("li", null, "Click Save setup, then Test connection. The local test checks whether the required setup fields are present.")
+      ),
+      h("div", { className: "connection-provider-note" },
+        h("strong", null, "Organization-scoped setup"),
+        h("span", null, "This configuration is saved under the selected department organization account. Later, the same account can hold a secure OAuth authorization record without changing the reusable tool catalog.")
+      )
+    );
+  }
+  if (isMakeConnection(connection)) {
+    return h("section", { className: "connection-provider-guide" },
+      h("h4", null, "Make.com WordPress draft publisher"),
+      h("p", null, `This webhook is saved for ${orgName}. It prepares a WordPress draft payload only after the editorial and SEO checklist is complete.`),
+      h("ol", null,
+        h("li", null, "Paste the Make.com webhook URL for this organization account."),
+        h("li", null, "Prepare title, clean HTML content, excerpt, one category ID, and tags before triggering."),
+        h("li", null, "Keep status as draft unless Iman explicitly says publish."),
+        h("li", null, "Ask Iman for confirmation before calling the webhook action.")
+      ),
+      h("div", { className: "connection-provider-note" },
+        h("strong", null, "Supervised action"),
+        h("span", null, "The webhook URL is operational. Do not call it automatically from drafts, thread replies, or local worker output without explicit approval.")
+      )
+    );
+  }
+  return h("section", { className: "connection-provider-guide" },
+    h("h4", null, "Connection setup"),
+    h("p", null, "Paste safe provider IDs, URLs, labels, and notes here. Do not paste passwords, OAuth tokens, API keys, or private credentials.")
+  );
+}
+
+function connectionStatusTone(status) {
+  const value = normalizedText(status);
+  if (["active", "available", "configured", "local", "passed"].includes(value)) return "success";
+  if (["needs setup", "planned", "draft"].includes(value)) return "warn";
+  if (["test failed", "disabled", "blocked"].includes(value)) return "danger";
+  return "neutral";
+}
+
+function connectionDraftFromRow(connection = {}) {
+  return {
+    status: connection.status || "Needs Setup",
+    type: connection.type || "",
+    accountLabel: connection.accountLabel || "",
+    propertyId: connection.propertyId || "",
+    siteUrl: connection.siteUrl || "",
+    webhookUrl: connection.webhookUrl || "",
+    endpointUrl: connection.endpointUrl || "",
+    setupFields: connectionSetupFieldsForUi(connection),
+    configurationNotes: connection.configurationNotes || "",
+    provider: connection.provider || "",
+    providerFamily: connection.providerFamily || "",
+  };
+}
+
+function ConnectionConfigCard({ connection, compact = false, onSaved, department = null, businessOnly = false }) {
+  const [expanded, setExpanded] = useState(false);
+  const [row, setRow] = useState(connection || {});
+  const [draft, setDraft] = useState(() => connectionDraftFromRow(connection || {}));
+  const [state, setState] = useState({ busy: false, message: "", error: "" });
+  useEffect(() => {
+    setRow(connection || {});
+    setDraft(connectionDraftFromRow(connection || {}));
+    setState({ busy: false, message: "", error: "" });
+  }, [connection && connection.id, connection && connection.status, connection && connection.updatedAt, connection && connection.lastTestAt, department && department.id]);
+  const setupFields = connectionSetupFieldsForUi({ ...row, ...draft });
+  const missing = setupFields.filter(field => !String(draft[field] || row[field] || "").trim());
+  const status = row.lastTestStatus || row.status || "Needs Setup";
+  const isGsc = isSearchConsoleConnection(row);
+  const identity = department ? departmentBusinessIdentity(department, {}) : {};
+  const exampleSite = identity.websiteUrl || row.siteUrl || "https://example.com/";
+  const exampleDomain = identity.primaryDomain || "example.com";
+  function update(key, value) {
+    setDraft(current => ({ ...current, [key]: value }));
+  }
+  async function saveConfig() {
+    setState({ busy: true, message: "", error: "" });
+    try {
+      const result = await api("/api/connection-config", {
+        method: "POST",
+        body: JSON.stringify({ connectionId: row.id, departmentId: department && department.id, ...draft, updatedBy: HUMAN_STAFF_ID }),
+      });
+      const next = result.connection || { ...row, ...draft };
+      setRow(next);
+      setDraft(connectionDraftFromRow(next));
+      setState({ busy: false, message: "Configuration saved.", error: "" });
+      if (onSaved) await onSaved(next);
+    } catch (error) {
+      setState({ busy: false, message: "", error: error.message || String(error) });
+    }
+  }
+  async function testConfig() {
+    setState({ busy: true, message: "", error: "" });
+    try {
+      const saved = await api("/api/connection-config", {
+        method: "POST",
+        body: JSON.stringify({ connectionId: row.id, departmentId: department && department.id, ...draft, updatedBy: HUMAN_STAFF_ID }),
+      });
+      const result = await api("/api/connection-test", {
+        method: "POST",
+        body: JSON.stringify({ connectionId: row.id, departmentId: department && department.id, updatedBy: HUMAN_STAFF_ID }),
+      });
+      const next = result.connection || saved.connection || { ...row, ...draft };
+      setRow(next);
+      setDraft(connectionDraftFromRow(next));
+      const test = result.test || {};
+      setState({ busy: false, message: test.message || "Connection test completed.", error: "" });
+      if (onSaved) await onSaved(next);
+    } catch (error) {
+      setState({ busy: false, message: "", error: error.message || String(error) });
+    }
+  }
+  return h("article", { className: cn("connection-config-card", compact && "compact") },
+    h("div", { className: "connection-config-head" },
+      h("div", null,
+        h("p", { className: "eyebrow" }, row.type || "Connected app"),
+        h("h4", null, row.label || row.id || "Connection"),
+        businessOnly ? null : h("small", null, row.id || "")
+      ),
+      h("div", { className: "connection-config-actions" },
+        h(Badge, { tone: connectionStatusTone(status) }, status || "Needs Setup"),
+        h(Button, { type: "button", variant: "outline", onClick: () => setExpanded(!expanded) }, expanded ? "Hide setup" : businessOnly ? "Set up" : "Configure")
+      )
+    ),
+    row.summary || row.description ? h("p", { className: "connection-config-summary" }, shortText(row.summary || row.description, 180)) : null,
+    department ? h("p", { className: "connection-config-summary" }, `Saved for: ${row.organizationDisplayName || departmentBusinessIdentity(department, {}).organizationDisplayName || "selected organization account"}`) : null,
+    h("div", { className: "connection-setup-strip" },
+      setupFields.length
+        ? setupFields.map(field => h("span", { key: field, className: cn("connection-setup-chip", !missing.includes(field) && "ready") },
+            !missing.includes(field) ? icon("check") : icon("alert"),
+            connectionFieldLabel(field)
+          ))
+        : h("span", { className: "connection-setup-chip ready" }, icon("check"), "No external setup fields required")
+    ),
+    row.lastTestAt || row.lastTestMessage ? h("p", { className: "connection-config-summary" },
+      row.lastTestAt ? `Last test: ${fmtDate(row.lastTestAt)}. ` : "",
+      row.lastTestMessage || ""
+    ) : null,
+    expanded ? h("div", { className: "connection-config-modal-backdrop", role: "presentation", onClick: () => setExpanded(false) },
+      h("div", { className: "connection-config-modal", role: "dialog", "aria-modal": "true", "aria-label": `Configure ${row.label || row.id || "connection"}`, onClick: event => event.stopPropagation() },
+        h("div", { className: "connection-config-modal-head" },
+          h("div", null,
+            h("p", { className: "eyebrow" }, businessOnly ? "Connected app setup" : "Tool connection setup"),
+            h("h3", null, row.label || row.id || "Connection"),
+            businessOnly ? null : h("small", null, row.id || "")
+          ),
+          h(Button, { type: "button", variant: "ghost", size: "icon", onClick: () => setExpanded(false), title: "Close setup" }, icon("x"))
+        ),
+        h(ConnectionProviderGuide, { connection: row, department }),
+        h("div", { className: "connection-config-form" },
+          h(Field, { label: "Status" }, h(Select, { value: draft.status || "Needs Setup", onChange: event => update("status", event.target.value) },
+            ["Needs Setup", "Configured", "Available", "Active", "Local", "Planned", "Disabled", "Test Failed", "Draft"].map(option => h("option", { key: option, value: option }, option))
+          )),
+          h(Field, { label: "Account / workspace label" }, h(Input, { value: draft.accountLabel || "", onChange: event => update("accountLabel", event.target.value), placeholder: isGsc ? `Example: ${(identity.organizationDisplayName || "Organization")} Search Console` : "Example: workspace operations account" })),
+          h(Field, { label: isGsc ? "Search Console property value" : "Property / project ID" }, h(Input, { value: draft.propertyId || "", onChange: event => update("propertyId", event.target.value), placeholder: isGsc ? `sc-domain:${exampleDomain} or ${exampleSite}` : "GA4 property, project, sheet ID..." })),
+          h(Field, { label: isGsc ? "Public site URL" : "Site URL" }, h(Input, { value: draft.siteUrl || "", onChange: event => update("siteUrl", event.target.value), placeholder: "https://example.com/" })),
+          h(Field, { label: "Webhook / endpoint URL" }, h(Input, { value: draft.webhookUrl || "", onChange: event => update("webhookUrl", event.target.value), placeholder: "Make.com webhook or provider endpoint" })),
+          h(Field, { label: "Setup fields needed", className: "wide" },
+            h(Textarea, { rows: 3, value: listForUi(draft.setupFields).join("\n"), onChange: event => update("setupFields", String(event.target.value || "").split(/[\n,;]+/).map(item => item.trim()).filter(Boolean)) })
+          ),
+          h(Field, { label: "Configuration notes", className: "wide" },
+            h(Textarea, { rows: 3, value: draft.configurationNotes || "", onChange: event => update("configurationNotes", event.target.value), placeholder: isGsc ? "Example: WorldBusiness Council property, verified owner is Iman, use last 16 months, dimensions query/page/country/device." : "What you need to provide, where credentials live, limits, owner, or approval notes." })
+          ),
+          state.error ? h("div", { className: "form-error wide" }, state.error) : null,
+          state.message ? h("div", { className: "designer-status wide" }, state.message) : null,
+          h("div", { className: "connection-config-footer wide" },
+            h("small", null, department ? "This popup stores safe metadata under this department organization account only. Do not paste secrets here." : "This popup stores safe metadata only. Do not paste secrets here."),
+            h("div", { className: "panel-actions" },
+              h(Button, { type: "button", variant: "outline", onClick: () => setExpanded(false) }, "Cancel"),
+              h(Button, { type: "button", variant: "outline", pending: state.busy, onClick: saveConfig }, icon("save"), "Save setup"),
+              h(Button, { type: "button", pending: state.busy, onClick: testConfig }, icon("play"), "Test connection")
+            )
+          )
+        )
+      )
+    ) : null
+  );
+}
+
+function ProfileDataAccessTab({ staffId, connections, databases, aiRows, scenario = {}, scenarioStages = [], showDeveloperSurfaces = false }) {
+  const scenarioConnections = scenarioStages.flatMap(stage => scenarioNodesForStage(scenario, stage, "connection"));
+  const scenarioDatabases = scenarioStages.flatMap(stage => scenarioNodesForStage(scenario, stage, "database"));
+  const uniqueScenarioConnections = uniqueRows(scenarioConnections);
+  const uniqueScenarioDatabases = uniqueRows(scenarioDatabases);
+  const showFallback = !scenarioStages.length || showDeveloperSurfaces;
+  const connectionRows = scenarioStages.length ? uniqueScenarioConnections : connections;
+  const databaseRows = scenarioStages.length ? uniqueScenarioDatabases : databases;
+  return h(ProfileSection, { title: "Data Access", body: "Department-scoped systems this staff can use through mapped lanes. Local runtime internals are hidden unless developer mode is enabled." },
+    scenarioStages.length ? h("div", { className: "profile-message-note" },
+      h("strong", null, "Resolved from installed scenario"),
+      h("p", null, `${uniqueScenarioConnections.length} connection${uniqueScenarioConnections.length === 1 ? "" : "s"} and ${uniqueScenarioDatabases.length} database${uniqueScenarioDatabases.length === 1 ? "" : "s"} are used by this staff's assigned stages.`)
+    ) : null,
     h("div", { className: "profile-section-grid" },
       h("div", { className: "access-column" },
         h("h4", null, "Connections"),
-        connections.length ? connections.map(row => h(ProfileListItem, { key: row.id, title: row.label || row.id, body: `${row.status || "Mapped"} | ${row.type || "Connection"}`, meta: row.id })) : h("p", { className: "muted" }, "No mapped connections.")
+        connectionRows.length ? connectionRows.map(row => h(ConnectionConfigCard, { key: row.id, connection: row.source || row, compact: true })) :
+          h("p", { className: "muted" }, scenarioStages.length ? "No connection is required by this staff's current department stages." : "No mapped connections.")
       ),
       h("div", { className: "access-column" },
         h("h4", null, "Databases"),
-        databases.length ? databases.map(row => h(ProfileListItem, { key: row.id, title: row.label || row.id, body: `${row.status || "Mapped"} | ${row.type || "Database"}`, meta: row.id })) : h("p", { className: "muted" }, "No mapped databases.")
+        databaseRows.length ? databaseRows.map(row => h(ProfileListItem, { key: row.id, title: row.label || row.objectId || friendlyId(row.id), body: `${row.status || "Mapped"} | ${row.summary || row.type || "Database"}`, meta: row.objectId || row.id })) :
+          h("p", { className: "muted" }, scenarioStages.length ? "No dataset is required by this staff's current department stages." : "No mapped databases.")
       )
     ),
-    h("div", { className: "access-column" },
+    showFallback ? h("div", { className: "access-column" },
       h("h4", null, "AI Support"),
       aiRows.length ? aiRows.map(row => h(ProfileListItem, { key: row.id, title: row.label || row.id, body: `${row.model || ""} ${row.usage || ""}`.trim(), meta: row.reasoningEffort || row.id })) : h("p", { className: "muted" }, "No mapped AI support.")
-    ),
+    ) : null,
     h("div", { className: "profile-message-note" },
       h("strong", null, "Access rule"),
       h("p", null, staffId === "AIstaff_Manager" ? "Manager may route work and escalate to Human, but still cannot send emails from chat replies." : "Specialist staff use these systems only through assigned tasks and Manager routing.")
-    )
+    ),
+    showDeveloperSurfaces && scenarioStages.length ? h("div", { className: "profile-dev-fallback" },
+      h("h4", null, "Developer catalog fallback"),
+      connections.map(row => h(ConnectionConfigCard, { key: `dev-conn-${row.id}`, connection: row, compact: true })),
+      databases.map(row => h(ProfileListItem, { key: `dev-db-${row.id}`, title: row.label || row.id, body: `${row.status || "Mapped"} | ${row.type || "Database"}`, meta: row.id }))
+    ) : null
   );
 }
 
-function ProfileOutputsTab({ staffId, capabilities, recipes }) {
-  const capabilityOutputs = capabilities.flatMap(capability => (capability.outputs || []).map(output => ({
-    title: output,
-    body: `${capability.label || capability.id} output owned by ${staffProfile(staffId).label}.`,
-    meta: capability.id,
-  })));
-  const recipeOutputs = recipes.flatMap(recipe => (recipe.outputs || []).map(output => ({
-    title: output,
-    body: `${recipe.label || recipe.id} recipe output. Must include evidence or a linked task/thread when marked done.`,
-    meta: recipe.id,
-  })));
-  const rows = [...capabilityOutputs, ...recipeOutputs].filter((row, index, all) => all.findIndex(item => item.title === row.title && item.meta === row.meta) === index);
-  return h(ProfileSection, { title: "Outputs", body: "What this staff must produce before work can be considered complete." },
+function ProfileOutputsTab({ staffId, capabilities, recipes, scenarioStages = [], showDeveloperSurfaces = false }) {
+  const rows = scenarioStages.length ? scenarioOutputsForStaff(scenarioStages, capabilities, recipes) : scenarioOutputsForStaff([], capabilities, recipes);
+  return h(ProfileSection, {
+    title: "Outputs",
+    body: scenarioStages.length
+      ? "Outputs this staff is expected to produce inside the selected department scenario."
+      : "Reusable outputs mapped to this staff template."
+  },
     rows.length ? rows.map(row => h(ProfileListItem, { key: `${row.meta}-${row.title}`, title: friendlyId(row.title), body: row.body, meta: row.meta })) :
-      h("p", { className: "muted" }, "No staff-specific outputs are mapped yet."),
+      h("p", { className: "muted" }, scenarioStages.length ? "This staff's scenario stages do not define a fixed output yet. The output will be captured from the project/task result." : "No staff-specific outputs are mapped yet."),
     h("div", { className: "profile-message-note" },
       h("strong", null, "Completion rule"),
       h("p", null, "A task is not complete unless the output exists, the status changed, and evidence is recorded in the task/thread or CRM.")
-    )
+    ),
+    showDeveloperSurfaces && scenarioStages.length ? h("div", { className: "profile-dev-fallback" },
+      h("h4", null, "Developer catalog fallback"),
+      scenarioOutputsForStaff([], capabilities, recipes).map(row => h(ProfileListItem, { key: `dev-output-${row.meta}-${row.title}`, title: friendlyId(row.title), body: row.body, meta: row.meta }))
+    ) : null
   );
 }
 
-function ProfileToolsTab({ fabric, staffId, onChange, lanes, connections, databases, aiRows }) {
-  const activeIds = new Set(staffToolIds(fabric, staffId));
-  const override = staffProfileOverride(staffId);
-  const catalogIds = new Set(STAFF_TOOL_CATALOG.map(tool => tool.id));
-  const mappedRows = [
-    ...lanes.map(row => ({ id: row.id, label: row.label || row.id, description: row.routeType || "Mapped work route", locked: true })),
-    ...connections.map(row => ({ id: row.id, label: row.label || row.id, description: row.type || "Mapped connector", locked: false })),
-    ...databases.map(row => ({ id: row.id, label: row.label || row.id, description: row.type || "Mapped database", locked: false })),
-    ...aiRows.map(row => ({ id: row.id, label: row.label || row.id, description: row.usage || row.model || "Mapped AI support", locked: false })),
-  ].filter(row => row.id && !catalogIds.has(row.id));
-  const toolRows = [...STAFF_TOOL_CATALOG, ...mappedRows].filter((row, index, rows) => rows.findIndex(item => item.id === row.id) === index);
-  function toggleTool(tool, enabled) {
-    if (tool.locked) return;
-    const current = new Set(override.tools || []);
-    const disabled = new Set(override.disabledTools || []);
-    if (enabled) {
-      current.add(tool.id);
-      disabled.delete(tool.id);
-    } else {
-      current.delete(tool.id);
-      disabled.add(tool.id);
-    }
-    saveStaffProfileOverride(staffId, { tools: Array.from(current), disabledTools: Array.from(disabled) });
-    onChange();
-  }
-  return h(ProfileSection, { title: "Tools & Lanes", body: "Tools can be added or removed for this staff. Lanes are locked work routes; their usage rules live in Department Settings -> Lanes & Tools." },
-    h("div", { className: "tools-list" }, toolRows.map(tool => {
-      const enabled = activeIds.has(tool.id) || Boolean(tool.locked);
-      return h("article", { className: cn("tool-row", enabled && "enabled", tool.locked && "locked"), key: tool.id },
+function ProfileToolsTab({ fabric, staffId, onChange, lanes, connections, databases, aiRows, scenario = {}, scenarioStages = [] }) {
+  const scenarioContracts = scenarioStages.flatMap(stage => scenarioNodesForStage(scenario, stage, "toolDataContract"));
+  const scenarioLanes = scenarioStages.flatMap(stage => scenarioNodesForStage(scenario, stage, "lane"));
+  const scenarioConnections = scenarioStages.flatMap(stage => scenarioNodesForStage(scenario, stage, "connection"));
+  const scenarioDatabases = scenarioStages.flatMap(stage => scenarioNodesForStage(scenario, stage, "database"));
+  const uniqueScenarioRoutes = [...scenarioContracts, ...scenarioLanes].filter((row, index, rows) => rows.findIndex(item => item.id === row.id) === index);
+  const scenarioExternalRows = [...scenarioContracts, ...scenarioLanes, ...scenarioConnections, ...scenarioDatabases]
+    .filter((row, index, rows) => rows.findIndex(item => item.id === row.id) === index);
+  const scenarioIds = new Set(scenarioExternalRows.flatMap(node => [node.objectId, node.id].filter(Boolean)));
+  const fallbackRows = [
+    ...lanes.map(row => ({ id: row.id, label: row.label || row.id, summary: row.routeType || "Mapped work route", type: "lane" })),
+    ...connections.map(row => ({ id: row.id, label: row.label || row.id, summary: row.type || "Mapped connector", type: "connection" })),
+    ...databases.map(row => ({ id: row.id, label: row.label || row.id, summary: row.type || "Mapped database", type: "database" })),
+    ...aiRows.map(row => ({ id: row.id, label: row.label || row.id, summary: row.usage || row.model || "Mapped AI support", type: "AI support" })),
+  ].filter(row => row.id && (scenarioIds.size ? scenarioIds.has(row.id) : true));
+  const visibleRows = (scenarioExternalRows.length ? scenarioExternalRows : fallbackRows)
+    .filter((row, index, rows) => rows.findIndex(item => (item.objectId || item.id) === (row.objectId || row.id)) === index);
+  return h(ProfileSection, { title: "Tools & Lanes", body: "Only tools resolved for this department and this staff member are shown here. Local routing and audit internals run in the AI Department runtime; they are not external connections to configure." },
+    uniqueScenarioRoutes.length ? h("div", { className: "profile-scenario-route-list" },
+      h("h4", null, "Resolved by assigned scenario stages"),
+      uniqueScenarioRoutes.map(node => h(ProfileListItem, { key: node.id, title: node.label || node.objectId, body: node.summary || "Resolved route for one or more installed stages.", meta: scenarioTypeLabel(node.type) }))
+    ) : null,
+    h("div", { className: "tools-list" }, visibleRows.length ? visibleRows.map(tool => {
+      const itemId = tool.objectId || tool.id;
+      const itemType = scenarioTypeLabel(tool.type) || tool.type || "Mapped";
+      return h("article", { className: "tool-row enabled locked", key: tool.id || itemId },
         h("div", null,
           h("strong", null, tool.label || tool.id),
-          h("p", null, tool.description || tool.id)
+          h("p", null, tool.summary || tool.description || "Resolved for this department staff member.")
         ),
         h("div", { className: "tool-row-actions" },
-          tool.locked ? h(Badge, null, "Mandatory") : h(Button, { variant: enabled ? "outline" : "secondary", onClick: () => toggleTool(tool, !enabled) }, enabled ? "Remove" : "Add"),
-          h(Badge, null, enabled ? "Enabled" : "Off")
+          h(Badge, null, itemType),
+          h(Badge, null, "Resolved")
         )
       );
-    }))
+    }) : h(EmptyState, { title: "No staff-specific tools", body: "This staff is available, but no installed SEO stage currently assigns a lane, connection, or dataset to this profile." })),
+    scenarioStages.length ? h("div", { className: "profile-message-note" },
+      h("strong", null, "Clean view"),
+      h("p", null, "Old tender/global catalog tools and local runtime internals are hidden here. Configure external accounts from the department Tools setup console; inspect reusable catalog objects only in developer/admin mode.")
+    ) : null
   );
 }
 
@@ -5725,18 +10349,19 @@ function LearnedSkillCard({ row, compact = false, onStaffClick }) {
 }
 
 function SettingsView({ dashboard }) {
-  const [section, setSection] = useState("departmentTemplates");
+  const [section, setSection] = useState("connections");
   const [config, setConfig] = useState({ loading: true, error: "", fabric: fabricOrFallback(dashboard), versions: [], backups: [] });
   const fabric = fabricOrFallback({ ...(dashboard || {}), capabilityFabric: config.fabric || (dashboard && dashboard.capabilityFabric) });
   const sections = [
-    ["workspaceProfile", "Workspace Defaults"],
+    ["workspaceProfile", "Organization Defaults"],
+    ["connections", "Tools"],
+    ["staffTemplates", "Staff Templates"],
     ["departmentTemplates", "Department Templates"],
     ["staffProfiles", "Staff Profiles"],
     ["capabilities", "Capabilities"],
     ["recipes", "Playbooks"],
     ["stages", "Work Steps"],
-    ["lanes", "Tools & Lanes"],
-    ["connections", "Connected Apps"],
+    ["lanes", "Tool Lanes"],
     ["databases", "Knowledge Sources"],
     ["aiSupport", "AI Brain"],
     ["qualityGates", "QA Gates"],
@@ -5749,6 +10374,7 @@ function SettingsView({ dashboard }) {
   ];
   const totals = {
     workspaceProfile: 1,
+    staffTemplates: (fabric.staffArchetypes || []).length,
     departmentTemplates: (fabric.departmentTemplates || []).length,
     staffProfiles: (fabric.staffProfiles || []).length,
     capabilities: (fabric.capabilities || []).length,
@@ -5791,16 +10417,18 @@ function SettingsView({ dashboard }) {
   return h(Fragment, null,
     h(Card, { className: "settings-hero" },
       h(CardHeader, {
-        eyebrow: "Settings -> Department Designer",
-        title: "Configurable AI Department Platform",
-        description: `${APP_NAME} is now the first department template. Edit workspace-level profiles, playbooks, tools, QA gates, KPIs, outputs, reports, and safe overrides from one place.`,
+        eyebrow: "Platform Settings",
+        title: section === "connections" ? "Tools" : "Configurable AI Department Platform",
+        description: section === "connections"
+          ? "Configure and test organization-level connections here. Departments can only select from these platform tools."
+          : `${APP_NAME} is now the first department template. Edit workspace-level profiles, playbooks, tools, QA gates, KPIs, outputs, reports, and safe overrides from one place.`,
         action: h("div", { className: "panel-actions" },
           h(Badge, { tone: fabric.errors && fabric.errors.length ? "danger" : "success" }, fabric.errors && fabric.errors.length ? `${fabric.errors.length} registry issue(s)` : "Registry active"),
           h(Button, { actionKey: "department-config:refresh", variant: "outline", onClick: loadConfig }, icon("refresh"), "Refresh")
         ),
       }),
       h(CardContent, null,
-        h("p", { className: "muted" }, "Platform Core handles tasks, threads, routing, safety, reports, backups, and connectors. Department Templates define reusable teams. Workspace Overrides personalize the department for the client."),
+        h("p", { className: "muted" }, "Platform Settings owns real tool connections and tests. Department workspaces only assign active tools and define how staff may use them."),
         config.error ? h("div", { className: "form-error" }, config.error) : null,
         h("div", { className: "designer-summary-strip" },
           h("span", null, h("strong", null, totals.departmentTemplates || 0), "Templates"),
@@ -5818,6 +10446,7 @@ function SettingsView({ dashboard }) {
       )
     ),
     collectionSections.has(section) ? h(DesignerCollectionSection, { collection: section, fabric, refresh: loadConfig }) : null,
+    section === "staffTemplates" ? h(PlatformStaffTemplatesPanel, { rows: fabric.staffArchetypes || [], catalogs: fabric, loading: config.loading, onRefresh: loadConfig }) : null,
     section === "workspaceProfile" ? h(WorkspaceProfileEditor, { fabric, refresh: loadConfig }) : null,
     section === "stages" ? h(SettingsStagesSection, { fabric }) : null,
     section === "governance" ? h(GovernanceDesignerSection, { fabric }) : null,
@@ -5894,8 +10523,8 @@ function WorkspaceProfileEditor({ fabric, refresh }) {
         h(Field, { label: "Approved sender identities", className: "wide" },
           h(Textarea, { rows: 3, value: listText(profile.approvedSenderIdentities), onChange: event => setProfileValue("approvedSenderIdentities", event.target.value), placeholder: "One sender identity per line or comma-separated" })
         ),
-        h(Field, { label: "Active connections", className: "wide" },
-          h(Textarea, { rows: 3, value: listText(profile.activeConnections), onChange: event => setProfileValue("activeConnections", event.target.value) })
+        h(Field, { label: "Default assigned tools", className: "wide" },
+          h(Textarea, { rows: 3, value: listText(profile.activeConnections), onChange: event => setProfileValue("activeConnections", event.target.value), placeholder: "Optional defaults only. Configure/test actual tools in Settings -> Tools." })
         ),
         h(Field, { label: "Approved databases", className: "wide" },
           h(Textarea, { rows: 3, value: listText(profile.approvedDatabases), onChange: event => setProfileValue("approvedDatabases", event.target.value) })
@@ -5996,7 +10625,62 @@ function designerOwner(item = {}) {
   return item.ownerStaff || item.owner || item.aiManager || item.humanManager || item.managerId || "";
 }
 
+function ConnectionsDesignerSection({ fabric, refresh }) {
+  const rows = platformConnectionRows(fabric);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const filtered = rows.filter(row => {
+    const blob = [row.id, row.label, row.status, row.type, row.requiredFor, row.configurationNotes].flat().join(" ").toLowerCase();
+    if (query.trim() && !blob.includes(query.trim().toLowerCase())) return false;
+    if (filter === "active") return row.platformActive;
+    if (filter === "setup") return !row.platformActive;
+    if (filter === "api") return normalizedText(`${row.type} ${row.provider} ${row.label}`).includes("api") || normalizedText(row.id).includes("api");
+    if (filter === "automation") return normalizedText(`${row.type} ${row.provider} ${row.label}`).includes("automation") || normalizedText(row.id).includes("webhook") || normalizedText(row.id).includes("windmill");
+    if (filter === "local") return normalizedText(`${row.type} ${row.provider} ${row.label} ${row.id}`).includes("local");
+    return true;
+  });
+  const summary = {
+    configured: rows.filter(row => row.platformActive).length,
+    needsSetup: rows.filter(row => !row.platformActive).length,
+  };
+  return h(Card, { className: "designer-section-card" },
+    h(CardHeader, {
+      eyebrow: "Platform Settings -> Tools",
+      title: "Tools",
+      description: "Configure and test external APIs, automation bridges, local connectors, and publishing endpoints once. Departments later choose from the active tools in their own settings.",
+      action: h("div", { className: "panel-actions" },
+        h(Badge, { tone: "success" }, `${summary.configured} active`),
+        h(Badge, { tone: summary.needsSetup ? "warn" : "success" }, `${summary.needsSetup} need setup`),
+        h(Button, { variant: "outline", onClick: refresh }, icon("refresh"), "Refresh")
+      ),
+    }),
+    h(CardContent, null,
+      h("div", { className: "application-toolbar" },
+        h("label", { className: "filter-dropdown" },
+          h("span", null, "Filter"),
+          h("select", { value: filter, onChange: event => setFilter(event.target.value), "aria-label": "Tool filter" },
+            h("option", { value: "all" }, `All tools (${rows.length})`),
+            h("option", { value: "active" }, `Active (${summary.configured})`),
+            h("option", { value: "setup" }, `Needs setup (${summary.needsSetup})`),
+            h("option", { value: "api" }, "APIs"),
+            h("option", { value: "automation" }, "Automation / webhooks"),
+            h("option", { value: "local" }, "Local tools")
+          )
+        ),
+        h("label", { className: "search-field" }, icon("search"), h("input", { value: query, onChange: event => setQuery(event.target.value), placeholder: "Search connections, providers, status..." })),
+        h("span", { className: "toolbar-count" }, `${filtered.length} of ${rows.length}`)
+      ),
+      filtered.length ? h("div", { className: "connection-config-grid" }, filtered.map(row =>
+        h(ConnectionConfigCard, { key: row.id, connection: row, onSaved: refresh })
+      )) : h(EmptyState, { title: "No tools found", body: "Adjust the filter, or add a connection record through Platform Admin if a new provider is needed." })
+    )
+  );
+}
+
 function DesignerCollectionSection({ collection, fabric, refresh }) {
+  if (collection === "connections") {
+    return h(ConnectionsDesignerSection, { fabric, refresh });
+  }
   const meta = designerMeta(collection);
   const [editor, setEditor] = useState(null);
   const rows = Array.isArray(fabric[collection]) ? fabric[collection] : [];
@@ -6391,10 +11075,16 @@ function isTechnicalReportRow(row = {}) {
     row.staffId,
     row.learningId,
     row["Report ID"],
+    row.idempotencyKey,
   ].filter(Boolean).join(" "));
-  const text = normalizedText(Object.values(row || {}).filter(value => typeof value !== "object").join(" "));
+  const text = normalizedText([
+    Object.values(row || {}).filter(value => typeof value !== "object").join(" "),
+    (() => {
+      try { return JSON.stringify(row || {}); } catch (error) { return ""; }
+    })(),
+  ].join(" "));
   return (
-    /\bsmoke\b|\be2e\b|process engine smoke/.test(text) ||
+    /\bsmoke\b|\be2e\b|process engine smoke|safety smoke|batch 1 dry-run|local smoke test|route test/.test(text) ||
     /^test[_-]/.test(idText) ||
     /[_-]smoke[_-]?test/.test(idText) ||
     idText.includes("crmcontroller e2e")
@@ -6459,7 +11149,66 @@ function percentage(done, target) {
   return Math.min(100, Math.round((Number(done || 0) / numericTarget) * 100));
 }
 
-function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
+function activityRunResult(run = {}) {
+  return run.resultPayload || run.result || {};
+}
+
+function activityRunWorkflowOutput(run = {}) {
+  const result = activityRunResult(run);
+  return result.result || result;
+}
+
+function wordpressDraftFromActivityRun(run = {}) {
+  const result = activityRunResult(run);
+  const output = activityRunWorkflowOutput(run);
+  return result.wordpressDraft || output.wordpressDraft || {
+    id: result.wordpressDraftId || output.wordpressDraftId || "",
+    url: result.wordpressDraftUrl || output.wordpressDraftUrl || "",
+    status: result.wordpressDraftStatus || output.wordpressDraftStatus || "",
+    createdAt: result.wordpressDraftCreatedAt || output.wordpressDraftCreatedAt || "",
+  };
+}
+
+function activityInputPayload(run = {}) {
+  return ((run.requestPayload || {}).input) || run.input || {};
+}
+
+function isRealWordPressDraftRun(run = {}) {
+  const output = activityRunWorkflowOutput(run);
+  const input = activityInputPayload(run);
+  const wordpressDraft = wordpressDraftFromActivityRun(run);
+  const status = normalizedText(output.status || "");
+  return run.activityName === "worldbc.wordpress.create_draft" &&
+    normalizedText(run.status) === "done" &&
+    run.approvalState === "Approved" &&
+    !run.dryRun &&
+    !input.dryRun &&
+    !status.includes("dry_run") &&
+    (Boolean(wordpressDraft.id || wordpressDraft.url) || status.includes("draft_requested"));
+}
+
+function departmentGoalActual(goal = {}, metrics = {}) {
+  const metric = normalizedText(goal.metricType || "");
+  if (metric.includes("published") || metric.includes("wordpress")) return Math.max(Number(goal.currentCount || 0), metrics.realWordPressDrafts || 0);
+  if (metric.includes("approval") || metric.includes("package") || metric.includes("draft")) return Math.max(Number(goal.currentCount || 0), metrics.contentPackagesReady || 0);
+  if (metric.includes("workflow")) return Math.max(Number(goal.currentCount || 0), metrics.workflowDone || 0);
+  return Number(goal.currentCount || 0);
+}
+
+function reportRowMatchesDepartment(row = {}, department = {}) {
+  if (!department || !department.id) return true;
+  if (row.departmentId && row.departmentId === department.id) return true;
+  if (departmentHasTenderWork(department)) {
+    return Boolean(row.applicationId || row.opportunityId || row.entityId || row.queueId || !row.departmentId);
+  }
+  const text = normalizedText(Object.values(row || {}).filter(value => typeof value !== "object").join(" "));
+  if (departmentHasSeoWork(department)) {
+    return /seo|worldbc|worldbusiness|wordpress|search console|content|article|keyword/.test(text);
+  }
+  return !row.applicationId && !row.opportunityId;
+}
+
+function buildOperatingReportModel(dashboard = {}, periodFilter = {}, department = {}) {
   const showTechnicalData = Boolean(periodFilter.showTechnicalData);
   const applications = reportRows(dashboard.applications || [], showTechnicalData);
   const tasks = reportRows(dashboard.tasks || [], showTechnicalData);
@@ -6468,6 +11217,7 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
   const recentRuns = reportRows(dashboard.recentRuns || [], showTechnicalData);
   const recentReports = reportRows(dashboard.recentReports || [], showTechnicalData);
   const skillUpdates = reportRows(dashboard.skillUpdates || [], showTechnicalData);
+  const activityRuns = reportRows(dashboard.activityRuns || [], showTechnicalData).filter(row => !department.id || row.departmentId === department.id);
   const emailRows = reportRows(flattenEmailQueue(dashboard.emailQueue || {}), showTechnicalData);
   const reportDashboard = { ...dashboard, applications, tasks, followUps, recentEvents, recentRuns, recentReports, skillUpdates, emailQueue: { queue: emailRows } };
   const summary = deriveSummary(reportDashboard);
@@ -6477,8 +11227,10 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
   const autopilot = sync.autopilot || {};
   const autopilotProgress = autopilot.progress || {};
   const autopilotTargets = autopilot.targets || {};
-  const humanTasks = reportRows(collectHumanTaskRows(dashboard), showTechnicalData).filter(row => !isTerminal(row));
-  const blockedEmails = emailRows.filter(row => noticeTone(`${row.sendStatus || ""} ${row.approvalStatus || ""} ${row.lastError || ""}`) === "danger");
+  const humanTasks = reportRows(collectHumanTaskRows(dashboard), showTechnicalData).filter(row => !isTerminal(row) && reportRowMatchesDepartment(row, department));
+  const blockedEmails = emailRows
+    .filter(row => reportRowMatchesDepartment(row, department))
+    .filter(row => noticeTone(`${row.sendStatus || ""} ${row.approvalStatus || ""} ${row.lastError || ""}`) === "danger");
   const waitingReplies = applications.filter(row => normalizedText(`${row.currentStage} ${row.currentStatus}`).includes("waiting"));
   const packageReady = applications.filter(row => /package prepared|package verified|tender package ready|submitted/i.test(`${row.currentStage || ""} ${row.currentStatus || ""}`));
   const applicationsInPeriod = applications.filter(row => rowTimeInPeriod(row, ["lastUpdated", "createdAt", "Created At"], period));
@@ -6488,6 +11240,30 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
   const humanTasksInPeriod = humanTasks.filter(row => rowTimeInPeriod(row, ["createdAt", "Created At", "runAfter", "dueAt", "lastMessageAt"], period));
   const blockedEmailsInPeriod = blockedEmails.filter(row => rowTimeInPeriod(row, ["sentAt", "createdAt", "Created At", "approvedAt", "notBefore"], period));
   const emailRowsInPeriod = emailRows.filter(row => rowTimeInPeriod(row, ["sentAt", "Sent At", "createdAt", "Created At", "approvedAt", "Approved At", "notBefore", "Not Before"], period));
+  const activityRunsInPeriod = activityRuns.filter(row => rowTimeInPeriod(row, ["createdAt", "updatedAt"], period));
+  const workflowRuns = activityRuns.filter(row => row.activityName === "worldbc.seo.run_workflow");
+  const workflowDone = workflowRuns.filter(row => normalizedText(row.status) === "done");
+  const workflowDoneInPeriod = workflowDone.filter(row => rowTimeInPeriod(row, ["createdAt", "updatedAt"], period));
+  const contentPackagesReady = workflowDone.filter(row => {
+    const output = activityRunWorkflowOutput(row);
+    return normalizedText(output.status).includes("ready_for_approval") || Boolean((output.outputs || {}).wordpressPayload);
+  });
+  const contentPackagesReadyInPeriod = contentPackagesReady.filter(row => rowTimeInPeriod(row, ["createdAt", "updatedAt"], period));
+  const wordpressRuns = activityRuns.filter(row => row.activityName === "worldbc.wordpress.create_draft");
+  const wordpressValidated = wordpressRuns.filter(row => normalizedText(row.status) === "done");
+  const wordpressValidatedInPeriod = wordpressValidated.filter(row => rowTimeInPeriod(row, ["createdAt", "updatedAt"], period));
+  const realWordPressDrafts = wordpressRuns.filter(isRealWordPressDraftRun);
+  const realWordPressDraftsInPeriod = realWordPressDrafts.filter(row => rowTimeInPeriod(row, ["createdAt", "updatedAt"], period));
+  const activityFailures = activityRuns.filter(row => normalizedText(row.status) === "failed");
+  const activityFailuresInPeriod = activityFailures.filter(row => rowTimeInPeriod(row, ["createdAt", "updatedAt"], period));
+  const activityApprovalWaits = activityRuns.filter(row => normalizedText(row.status).includes("pending approval") || normalizedText(row.approvalState).includes("pending"));
+  const departmentGoals = departmentGoalsFromRow(department);
+  const departmentMetrics = {
+    workflowDone: workflowDone.length,
+    contentPackagesReady: contentPackagesReady.length,
+    wordpressValidated: wordpressValidated.length,
+    realWordPressDrafts: realWordPressDrafts.length,
+  };
   const lateFollowUpsInPeriod = followUps.filter(row => row.overdue && rowTimeInPeriod(row, ["dueAt", "runAfter"], period));
   const openTasks = tasks.filter(row => !isTerminal(row));
   const dueOpenTasks = openTasks.filter(reportTaskDue);
@@ -6517,6 +11293,8 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
     .slice(0, 8);
   const healthScore =
     blockedEmails.length +
+    activityApprovalWaits.length +
+    activityFailures.length +
     followUps.filter(row => row.overdue).length +
     dueOpenTasks.filter(row => row.overdue).length +
     Number(sync.failedActions || 0) +
@@ -6525,6 +11303,8 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
   const healthStatus = healthScore >= 8 ? "Blocked" : healthScore > 0 ? "Needs Attention" : "Operational";
   const systemHealthScore = Math.max(0, Math.min(100, 100 - (
     blockedEmails.length * 12 +
+    activityApprovalWaits.length * 8 +
+    activityFailures.length * 10 +
     humanTasks.length * 6 +
     Number(sync.failedActions || 0) * 10 +
     followUps.filter(row => row.overdue).length * 6 +
@@ -6534,13 +11314,19 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
   const periodRunCount = countRowsInPeriod(recentRuns, ["Run Timestamp", "runAt"], period);
   const crmRunsInPeriod = recentRuns.filter(row => rowTimeInPeriod(row, ["Run Timestamp", "runAt"], period) && /crm|health|sync|audit/i.test(`${row["Run Type"] || ""} ${row["Actions Completed"] || ""}`));
   const reportRunsInPeriod = recentReports.filter(row => rowTimeInPeriod(row, ["Date"], period));
-  const targetCards = [
+  const targetRows = departmentGoals.length ? departmentGoals.map(goal => [
+    goal.label,
+    departmentGoalActual(goal, departmentMetrics),
+    goal.targetCount || 1,
+    `${goal.periodType || "Current period"} ${goal.targetUnit || "outputs"} - ${goal.progressSource || "department goal"}`
+  ]) : [
     ["Sheet sync", autopilotProgress.sheetSyncs || 0, Math.max(1, autopilotTargets.sheetSyncs || 1), "current-state sync target"],
     ["CRM health", crmRunsInPeriod.length || autopilotProgress.crmHealthChecks || 0, Math.max(1, Math.min(periodDays, 7)), "health checks in selected period"],
     ["Runner attempts", autopilotProgress.runnerAttempts || 0, autopilotTargets.runnerAttemptsWhenDue || 1, "process due staff work"],
     ["Tasks closed", tasksDoneInPeriod.length || autopilotProgress.tasksProcessed || 0, Math.max(1, dueOpenTasks.length || autopilotTargets.tasksProcessed || 1), "move open queue to done/blocked/approval"],
     ["Reports written", reportRunsInPeriod.length, Math.max(1, Math.min(periodDays, 7)), "manager-readable evidence trail"],
-  ].map(([label, done, target, detail]) => {
+  ];
+  const targetCards = targetRows.map(([label, done, target, detail]) => {
     const numericTarget = Math.max(1, Number(target || 1));
     const numericDone = Number(done || 0);
     const score = percentage(numericDone, numericTarget);
@@ -6548,25 +11334,41 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
   });
   const mainBottleneck =
     humanTasks.length ? `${humanTasks.length} human decision${humanTasks.length === 1 ? "" : "s"} need Iman's answer before the cycle can continue.` :
+    activityApprovalWaits.length ? `${activityApprovalWaits.length} automation approval${activityApprovalWaits.length === 1 ? "" : "s"} are waiting before external work can run.` :
+    activityFailures.length ? `${activityFailures.length} automation run${activityFailures.length === 1 ? "" : "s"} failed and should be reviewed.` :
     blockedEmails.length ? `${blockedEmails.length} supplier outreach row${blockedEmails.length === 1 ? "" : "s"} are blocked by safety gates.` :
     Number(sync.failedActions || 0) ? `${sync.failedActions} local sync action${Number(sync.failedActions || 0) === 1 ? "" : "s"} failed and should be repaired.` :
     dueOpenTasks.length ? `${dueOpenTasks.length} due task${dueOpenTasks.length === 1 ? "" : "s"} need staff execution.` :
     riskCount ? `${riskCount} Lead path${riskCount === 1 ? "" : "s"} need movement or deadline review.` :
     "No critical blocker is visible in the current dashboard snapshot.";
   const recommendedAction =
-    humanTasks.length ? "Open Tasks and answer Alex's human-facing threads first." :
+    humanTasks.length ? `Open Tasks and answer ${departmentManagerDisplayName(department)}'s human-facing threads first.` :
+    activityApprovalWaits.length ? "Open Automation approvals and approve only the activity you want Windmill to execute." :
+    activityFailures.length ? "Open Automation, review failed Windmill runs, and rerun after fixing the route or configuration." :
     blockedEmails.length ? "Open the blocked outreach safety item and keep it stopped until scope/content/package checks pass." :
     Number(sync.failedActions || 0) ? "Review System Health and rerun sync after fixing failed local actions." :
     dueOpenTasks.length ? "Run the next due task or the KPI cycle to keep the queue moving." :
-    riskCount ? "Review the Leads section and assign the next owner for stale/deadline-risk tender cases." :
+    riskCount ? "Open Departments -> Tender Leads and assign the next owner for stale/deadline-risk tender cases." :
     "Let the KPI cycle continue or ask Alex for the next plan.";
   const executiveSummary = {
-    currentStatus: `Alex sees the department as ${healthStatus.toLowerCase()} for ${period.label.toLowerCase()}.`,
-    changed: `${applicationsInPeriod.length} Lead update${applicationsInPeriod.length === 1 ? "" : "s"}, ${emailsSentInPeriod.length} supplier message${emailsSentInPeriod.length === 1 ? "" : "s"} sent, ${tasksDoneInPeriod.length} closed task${tasksDoneInPeriod.length === 1 ? "" : "s"}, and ${periodEventCount + periodRunCount} activity item${periodEventCount + periodRunCount === 1 ? "" : "s"} in this period.`,
+    currentStatus: `${departmentManagerDisplayName(department)} sees the department as ${healthStatus.toLowerCase()} for ${period.label.toLowerCase()}.`,
+    changed: departmentHasSeoWork(department)
+      ? `${contentPackagesReadyInPeriod.length} content package${contentPackagesReadyInPeriod.length === 1 ? "" : "s"} ready, ${workflowDoneInPeriod.length} workflow run${workflowDoneInPeriod.length === 1 ? "" : "s"} completed, ${wordpressValidatedInPeriod.length} WordPress validation${wordpressValidatedInPeriod.length === 1 ? "" : "s"}, and ${activityRunsInPeriod.length} automation activity item${activityRunsInPeriod.length === 1 ? "" : "s"} in this period.`
+      : `${applicationsInPeriod.length} Lead update${applicationsInPeriod.length === 1 ? "" : "s"}, ${emailsSentInPeriod.length} supplier message${emailsSentInPeriod.length === 1 ? "" : "s"} sent, ${tasksDoneInPeriod.length} closed task${tasksDoneInPeriod.length === 1 ? "" : "s"}, and ${periodEventCount + periodRunCount} activity item${periodEventCount + periodRunCount === 1 ? "" : "s"} in this period.`,
     bottleneck: mainBottleneck,
     nextAction: recommendedAction,
   };
-  const kpiCards = [
+  const isSeoReport = departmentHasSeoWork(department);
+  const kpiCards = isSeoReport ? [
+    { label: "Content Packages Ready", value: contentPackagesReady.length, scope: "Current state", detail: `${contentPackagesReadyInPeriod.length} prepared in ${period.label.toLowerCase()}`, tone: contentPackagesReady.length ? "ok" : "warn", trendSeries: buildReportTrendSeries(contentPackagesReady, ["createdAt", "updatedAt"], period) },
+    { label: "Workflow Runs Done", value: workflowDone.length, scope: "Current state", detail: `${workflowDoneInPeriod.length} completed in period`, tone: workflowDone.length ? "ok" : "warn", trendSeries: buildReportTrendSeries(workflowDone, ["createdAt", "updatedAt"], period) },
+    { label: "WordPress Validations", value: wordpressValidated.length, scope: "Current state", detail: `${wordpressValidatedInPeriod.length} validated in period`, tone: wordpressValidated.length ? "ok" : "warn", trendSeries: buildReportTrendSeries(wordpressValidated, ["createdAt", "updatedAt"], period) },
+    { label: "Published / Draft Requests", value: realWordPressDrafts.length, scope: "Approval-gated", detail: `${realWordPressDraftsInPeriod.length} real requests in period`, tone: realWordPressDrafts.length ? "ok" : "warn", trendSeries: buildReportTrendSeries(realWordPressDrafts, ["createdAt", "updatedAt"], period) },
+    { label: "Pending Approvals", value: activityApprovalWaits.length, scope: "Current state", detail: "External work remains supervised", tone: activityApprovalWaits.length ? "warn" : "ok", trendSeries: buildReportTrendSeries(activityApprovalWaits, ["createdAt", "updatedAt"], period) },
+    { label: "Automation Failures", value: activityFailures.length, scope: "Current state", detail: `${activityFailuresInPeriod.length} failed in period`, tone: activityFailures.length ? "danger" : "ok", trendSeries: buildReportTrendSeries(activityFailures, ["createdAt", "updatedAt"], period) },
+    { label: "Human Inbox", value: humanTasks.length, scope: "Current state", detail: `${humanTasksInPeriod.length} created/changed in period`, tone: humanTasks.length ? "warn" : "ok", trendSeries: buildReportTrendSeries(humanTasks, ["createdAt", "Created At", "runAfter", "dueAt", "lastMessageAt"], period) },
+    { label: "Live Activity", value: activityRunsInPeriod.length, scope: "Selected period", detail: "Windmill and local activity runs", tone: activityRunsInPeriod.length ? "ok" : "warn", trendSeries: buildReportTrendSeries(activityRunsInPeriod, ["createdAt", "updatedAt"], period) },
+  ] : [
     { label: "Active Leads", value: applications.length || (summary.activeEntities || 0), scope: "Current state", detail: `${applicationsInPeriod.length} updated in ${period.label.toLowerCase()}`, tone: "ok", trendSeries: buildReportTrendSeries(applications, ["lastUpdated", "createdAt", "Created At"], period) },
     { label: "Leads Updated", value: applicationsInPeriod.length, scope: "Selected period", detail: `${riskCount} current risk item(s)`, tone: riskCount ? "warn" : "ok", trendSeries: buildReportTrendSeries(applicationsInPeriod, ["lastUpdated", "createdAt", "Created At"], period) },
     { label: "Tender Packages Ready", value: packageReadyInPeriod.length, scope: "Selected period", detail: `${packageReady.length} ready/current total`, tone: packageReadyInPeriod.length ? "ok" : "warn", trendSeries: buildReportTrendSeries(packageReady, ["lastUpdated", "createdAt", "Created At"], period) },
@@ -6586,6 +11388,14 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
     tone: item.rows.some(row => row.risk !== "On Track") ? "warn" : "ok",
   }));
   const liveActivity = [
+    ...activityRunsInPeriod.slice(0, 12).map(row => ({
+      kind: "Automation",
+      time: row.updatedAt || row.createdAt,
+      actor: row.requestedBy || "AIstaff_Manager",
+      title: row.activityName || "Activity run",
+      body: [row.status, row.approvalState, row.error || ((activityRunWorkflowOutput(row) || {}).summary)].filter(Boolean).join(" | "),
+      tone: normalizedText(row.status) === "failed" ? "danger" : (normalizedText(row.status).includes("pending") ? "warn" : "ok"),
+    })),
     ...recentEvents.filter(row => rowTimeInPeriod(row, ["DateTime"], period)).slice(0, 12).map(row => ({
       kind: "Event",
       time: row.DateTime,
@@ -6634,7 +11444,25 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
       opportunityId: row.opportunityId,
       time: row.sentAt || row.createdAt || row["Created At"] || row.approvedAt,
     })),
-    ...reportRows(collectManagerReviewItems(dashboard.managerReview || {}), showTechnicalData).filter(item => !item.internalOnly).map(item => ({
+    ...activityApprovalWaits.map(row => ({
+      kind: "Automation Approval",
+      title: row.activityName || "Approval required",
+      owner: department.aiManager || "AIstaff_Manager",
+      status: row.status || row.approvalState || "Pending Approval",
+      body: "External or approval-gated activity is waiting before Windmill can continue.",
+      next: "Approve only if the generated package and destination are correct.",
+      time: row.createdAt || row.updatedAt,
+    })),
+    ...activityFailures.map(row => ({
+      kind: "Automation Failure",
+      title: row.activityName || "Failed activity",
+      owner: department.aiManager || "AIstaff_Manager",
+      status: row.status || "Failed",
+      body: row.error || ((activityRunWorkflowOutput(row) || {}).summary) || "Windmill activity failed.",
+      next: "Open Automation, review the run, and rerun after fixing configuration or payload.",
+      time: row.createdAt || row.updatedAt,
+    })),
+    ...reportRows(collectManagerReviewItems(dashboard.managerReview || {}), showTechnicalData).filter(item => !item.internalOnly && reportRowMatchesDepartment(item.row || item, department)).map(item => ({
       kind: item.kind,
       title: item.title,
       owner: item.staff || "AIstaff_Manager",
@@ -6664,6 +11492,8 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
   }));
   const crmEnabled = sync.crmSyncEnabled !== false;
   const systemHealth = [
+    { label: "Windmill", value: ((sync.windmill || {}).configured ? "Connected" : "Setup needed"), status: ((sync.windmill || {}).workspace || "Automation engine"), tone: ((sync.windmill || {}).configured ? "ok" : "warn") },
+    { label: "Automation runs", value: String(activityRunsInPeriod.length), status: `${activityFailures.length} failed, ${activityApprovalWaits.length} waiting approval`, tone: activityFailures.length ? "danger" : (activityApprovalWaits.length ? "warn" : "ok") },
     { label: "CRM sync", value: crmEnabled ? (sync.lastSheetSync ? fmtDate(sync.lastSheetSync) : "Not synced") : "Disabled", status: crmEnabled ? (sync.lastSyncError ? "Error" : "Healthy") : "Local-only mode", tone: crmEnabled && sync.lastSyncError ? "danger" : "ok" },
     { label: "Pending local changes", value: String(sync.pendingActions || 0), status: "Local-first queue", tone: Number(sync.pendingActions || 0) ? "warn" : "ok" },
     { label: "Failed local changes", value: String(sync.failedActions || 0), status: sync.failedActions ? "Needs repair" : "Clear", tone: Number(sync.failedActions || 0) ? "danger" : "ok" },
@@ -6683,7 +11513,7 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
     currentBlocked: queueCount("blocked") || blockedEmails.length,
     rows: blockedEmailsInPeriod.slice(0, 5),
   };
-  const healthIssues = Number(sync.failedActions || 0) + Number(sync.pendingActions || 0) + blockedEmails.length + humanTasks.length + followUps.filter(row => row.overdue).length;
+  const healthIssues = Number(sync.failedActions || 0) + Number(sync.pendingActions || 0) + blockedEmails.length + humanTasks.length + activityApprovalWaits.length + activityFailures.length + followUps.filter(row => row.overdue).length;
   return {
     summary,
     labels,
@@ -6693,7 +11523,7 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
     healthStatus,
     systemHealthScore,
     healthIssues,
-    defaultPanel: humanTasks.length || blockedEmails.length || followUps.some(row => row.overdue) ? "blockers" : "targets",
+    defaultPanel: humanTasks.length || activityApprovalWaits.length || activityFailures.length || blockedEmails.length || followUps.some(row => row.overdue) ? "blockers" : "targets",
     targetCards,
     kpiCards,
     pipelineStages: stages,
@@ -6709,6 +11539,12 @@ function buildOperatingReportModel(dashboard = {}, periodFilter = {}) {
     systemHealth,
     learningItems: skillUpdates.slice(0, 12),
     sync,
+    activityRuns,
+    activityFailures,
+    activityApprovalWaits,
+    departmentGoals,
+    departmentMetrics,
+    workObjectLabel: departmentWorkObjectLabel(department),
   };
 }
 
@@ -6811,7 +11647,38 @@ function StaffWorkloadChart({ rows = [] }) {
   );
 }
 
-function ReportsView({ dashboard, approveSkillUpdate, runOne, snoozeFollowUp, setView, openTaskDialog, openRef }) {
+function currentReportDepartment(dashboard = {}, explicitDepartment = null) {
+  if (explicitDepartment && explicitDepartment.id) return explicitDepartment;
+  const fabric = fabricOrFallback(dashboard);
+  return (fabric.departments || []).find(row => row.isCurrentDepartment) ||
+    (fabric.departments || []).find(row => normalizedText(row.status || "") === "active") ||
+    (fabric.departments || [])[0] ||
+    { id: "department_local_default", label: APP_NAME, status: "Active", aiManager: "AIstaff_Manager", humanManager: HUMAN_STAFF_ID };
+}
+
+function DepartmentReportScopeHeader({ department, model }) {
+  const connections = listForUi(department.activeConnections);
+  const datasets = listForUi(department.approvedDatasets);
+  return h("section", { className: "department-report-scope" },
+    h("div", null,
+      h("p", { className: "eyebrow" }, "Department Report"),
+      h("h2", null, department.label || "AI Department"),
+      h("p", null, department.purpose || `Activity, blockers, staff work, tools, and outputs for ${department.label || "this department"}.`)
+    ),
+    h("div", { className: "department-report-scope-grid" },
+      h("article", null, h("span", null, "Status"), h("strong", null, department.status || department.lifecycleStatus || "Active")),
+      h("article", null, h("span", null, "AI Manager"), h("strong", null, departmentManagerDisplayName(department))),
+      h("article", null, h("span", null, "Activities"), h("strong", null, model.liveActivity.length)),
+      h("article", null, h("span", null, "Blockers"), h("strong", null, model.blockers.length))
+    ),
+    h("div", { className: "overview-meta-row" },
+      (connections.length ? connections : ["No active connections listed"]).slice(0, 5).map(item => h("span", { key: `connection-${item}` }, item)),
+      (datasets.length ? datasets : ["No approved datasets listed"]).slice(0, 5).map(item => h("span", { key: `dataset-${item}` }, item))
+    )
+  );
+}
+
+function ReportsView({ dashboard, approveSkillUpdate = () => {}, runOne = () => {}, snoozeFollowUp = () => {}, setView, openTaskDialog, openRef, department = null, embedded = false }) {
   const [periodFilter, setPeriodFilter] = useState({
     preset: "7",
     days: 7,
@@ -6820,24 +11687,58 @@ function ReportsView({ dashboard, approveSkillUpdate, runOne, snoozeFollowUp, se
     showTechnicalData: false,
   });
   const [selectedReportPanel, setSelectedReportPanel] = useState("auto");
-  const model = buildOperatingReportModel(dashboard, periodFilter);
+  const [activityState, setActivityState] = useState({ loading: false, activityRuns: [], windmill: {}, error: "" });
+  const reportDepartment = currentReportDepartment(dashboard, department);
+  useEffect(() => {
+    let cancelled = false;
+    if (!reportDepartment || !reportDepartment.id) return undefined;
+    setActivityState(current => ({ ...current, loading: true, error: "" }));
+    api(`/api/activity-runs?departmentId=${encodeURIComponent(reportDepartment.id)}&limit=80`)
+      .then(result => {
+        if (cancelled) return;
+        setActivityState({
+          loading: false,
+          activityRuns: result.activityRuns || [],
+          windmill: result.windmill || {},
+          error: "",
+        });
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setActivityState(current => ({ ...current, loading: false, error: error.message || String(error) }));
+      });
+    return () => { cancelled = true; };
+  }, [reportDepartment && reportDepartment.id]);
+  const scopedDashboard = departmentHasTenderWork(reportDepartment) ? dashboard : { ...dashboard, applications: [] };
+  const reportDashboard = {
+    ...scopedDashboard,
+    activityRuns: activityState.activityRuns,
+    windmill: activityState.windmill,
+    localSync: {
+      ...(scopedDashboard.localSync || {}),
+      windmill: activityState.windmill && Object.keys(activityState.windmill).length ? activityState.windmill : ((scopedDashboard.localSync || {}).windmill || {}),
+    },
+  };
+  const model = buildOperatingReportModel(reportDashboard, periodFilter, reportDepartment);
+  const workObjectLabel = departmentWorkObjectLabel(reportDepartment);
   const activeReportPanel = selectedReportPanel === "closed"
     ? ""
     : selectedReportPanel === "auto" ? model.defaultPanel : selectedReportPanel;
-  return h("div", { className: "operating-report" },
-    h(OperatingReportHero, { model, dashboard, openTaskDialog }),
+  return h("div", { className: cn("operating-report", embedded && "embedded") },
+    h(DepartmentReportScopeHeader, { department: reportDepartment, model }),
+    h(OperatingReportHero, { model, dashboard: scopedDashboard, openTaskDialog, department: reportDepartment, workObjectLabel }),
     h(ReportPeriodControls, { filter: periodFilter, setFilter: setPeriodFilter, period: model.period }),
     h(ReportKpiStrip, { cards: model.kpiCards }),
-    h(ReportCommandGrid, { model, selected: activeReportPanel, setSelected: setSelectedReportPanel }),
+    h(ReportCommandGrid, { model, selected: activeReportPanel, setSelected: setSelectedReportPanel, workObjectLabel }),
     activeReportPanel ? h(ReportSelectedPanel, { selected: activeReportPanel, setSelected: setSelectedReportPanel, model, setView, openRef, runOne, snoozeFollowUp, approveSkillUpdate }) : null
   );
 }
 
-function ReportCommandGrid({ model, selected, setSelected }) {
+function ReportCommandGrid({ model, selected, setSelected, workObjectLabel = "Leads" }) {
   const modules = [
     { id: "blockers", label: "Do First", value: model.blockers.length, tone: model.blockers.length ? "danger" : "ok", detail: model.blockers.length ? "Human decisions, blockers, or overdue checks" : "No visible blocker", icon: "shield" },
     { id: "targets", label: "KPI Progress", value: model.targetCards.filter(item => item.gap > 0).length, tone: model.targetCards.some(item => item.gap > 0) ? "warn" : "ok", detail: "Target vs actual, gap, and cycle state", icon: "chart" },
-    { id: "pipeline", label: "Leads", value: model.applicationRisks.length, tone: model.applicationRisks.some(item => item.risk !== "On Track") ? "warn" : "ok", detail: "Pipeline, latest movement, and deadline risk", icon: "file" },
+    { id: "pipeline", label: workObjectLabel, value: model.applicationRisks.length, tone: model.applicationRisks.some(item => item.risk !== "On Track") ? "warn" : "ok", detail: "Pipeline, latest movement, and deadline risk", icon: "file" },
     { id: "staff", label: "AI Staff", value: model.staffStatus.length, tone: model.staffStatus.some(row => Number(row.openTasks || 0) || Number(row.openFollowUps || 0)) ? "warn" : "ok", detail: "Workload, active ownership, and wake-ups", icon: "user" },
     { id: "health", label: "System Health", value: model.healthIssues, tone: Number(model.sync.failedActions || 0) ? "danger" : model.healthIssues ? "warn" : "ok", detail: "Sync, email safety, activity, and learning", icon: "database" },
   ];
@@ -6867,7 +11768,7 @@ function ReportSelectedPanel({ selected, setSelected, model, setView, openRef, r
   const title = ({
     blockers: "Do First",
     targets: "KPI Progress",
-    pipeline: "Leads",
+    pipeline: model.workObjectLabel || "Projects / Cases",
     staff: "AI Staff",
     health: "System Health",
   })[selected] || "Details";
@@ -6923,13 +11824,15 @@ function ReportPeriodControls({ filter, setFilter, period }) {
   );
 }
 
-function OperatingReportHero({ model, dashboard, openTaskDialog }) {
+function OperatingReportHero({ model, dashboard, openTaskDialog, department = {}, workObjectLabel = "Tender Leads" }) {
   const tone = noticeTone(model.healthStatus);
   return h("section", { className: cn("report-hero", tone) },
     h("div", null,
       h("p", { className: "eyebrow" }, "AI Department Command Report"),
-      h("h1", null, "AI Operating System for Tender Leads"),
-      h("p", { className: "report-hero-subtitle" }, "Alex coordinates Lead review, tender document analysis, supplier matching, quotation outreach, follow-ups, CRM sync, and package readiness."),
+      h("h1", null, department.label || "AI Department"),
+      h("p", { className: "report-hero-subtitle" }, departmentHasTenderWork(department)
+        ? "Alex coordinates Lead review, tender document analysis, supplier matching, quotation outreach, follow-ups, CRM sync, and package readiness."
+        : `Activity report for ${workObjectLabel.toLowerCase()}, staff work, tools, readiness, blockers, and supervised outputs.`),
       h("div", { className: "report-executive-summary" },
         [
           ["Current status", model.executiveSummary.currentStatus],
@@ -6952,7 +11855,7 @@ function OperatingReportHero({ model, dashboard, openTaskDialog }) {
     h("div", { className: "report-hero-status" },
       h(Badge, { tone }, model.healthStatus),
       h(ReportDonut, { score: model.systemHealthScore, tone, label: "System health" }),
-      h(Button, { onClick: () => openTaskDialog({ assignedTo: "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), "Message Alex")
+      h(Button, { onClick: () => openTaskDialog({ assignedTo: department.aiManager || "AIstaff_Manager", taskType: "Manager Guidance", taskCategory: "Manager Guidance" }) }, icon("send"), `Message ${departmentManagerDisplayName(department)}`)
     )
   );
 }
@@ -6988,8 +11891,9 @@ function DailyTargetsPanel({ model }) {
 
 function PipelineOverviewPanel({ model, setView, openRef }) {
   const total = model.pipelineStages.reduce((sum, item) => sum + item.rows.length, 0) || 1;
+  const workObjectLabel = model.workObjectLabel || "Projects / Cases";
   return h(Card, { className: "report-panel pipeline-overview" },
-    h(CardHeader, { title: "Lead Pipeline Overview", description: "Where tender Leads sit from intake to quotes, package readiness, and submission status.", action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Open Leads") }),
+    h(CardHeader, { title: `${workObjectLabel} Overview`, description: `Where ${workObjectLabel.toLowerCase()} sit by stage, latest movement, and readiness inside the selected department.`, action: h(Button, { variant: "secondary", onClick: () => setView("applications") }, "Open Departments") }),
     h(CardContent, null,
       h(ReportStackedBar, { segments: model.pipelineSegments }),
       h(DeadlineRiskChart, { items: model.deadlineRisk, labels: model.labels, openRef }),
@@ -7257,25 +12161,72 @@ function OpportunityDetail({ dashboard, labels, opportunityId, setView, openRef,
   );
 }
 
+function taskDialogIsSeo(value = {}) {
+  return normalizedText([value.departmentId, value.departmentLabel, value.departmentPurpose].join(" ")).includes("seo");
+}
+
+function taskTypesForDialog(value = {}) {
+  if (taskDialogIsSeo(value)) {
+    return [
+      "Manager Guidance",
+      "SEO Article Workflow",
+      "Source Text Review",
+      "Keyword Research",
+      "Content Brief",
+      "Article Draft",
+      "SEO QA",
+      "WordPress Draft Package",
+      "Performance Review",
+      "Report",
+    ];
+  }
+  return ["Manager Guidance", "Lead Review", "Tender Document Review", "Fit / Eligibility", "Supplier Match", "Supplier Discovery", "Quotation Outreach", "Tender Package", "Follow-up", "CRM Health", "Report"];
+}
+
+function staffIdsForTaskDialog(value = {}, staff = []) {
+  const fabric = activeFabric();
+  const department = (fabric.departments || []).find(row => row && row.id === value.departmentId) || {};
+  const template = (fabric.departmentTemplates || []).find(row => row && row.id === department.templateId) || {};
+  const departmentStaff = uniqueValues([
+    department.humanManager,
+    department.aiManager,
+    ...(department.staffProfiles || []),
+    ...(template.staffProfiles || []),
+  ]);
+  const runtimeStaff = (staff || []).map(row => row.staffId);
+  return Array.from(new Set([...departmentStaff, ...STAFF_ORDER, ...runtimeStaff, ...registryStaffIds(fabric)])).filter(Boolean);
+}
+
 function TaskDialog({ value, setValue, onClose, onSubmit, staff }) {
-  const staffIds = Array.from(new Set([...STAFF_ORDER, ...(staff || []).map(row => row.staffId)])).filter(Boolean);
+  const staffIds = staffIdsForTaskDialog(value, staff);
   const update = (key, val) => setValue({ ...value, [key]: val });
-  const isManagerMessage = value.assignedTo === "AIstaff_Manager" && value.taskType === "Manager Guidance";
+  const managerId = value.departmentManagerId || "AIstaff_Manager";
+  const isManagerMessage = value.assignedTo === managerId && value.taskType === "Manager Guidance";
+  const managerLabel = staffProfile(managerId).label;
+  const taskTypes = taskTypesForDialog(value);
+  const entityLabel = taskDialogIsSeo(value) ? "Content / source ID" : "Related Entity";
+  const caseLabel = taskDialogIsSeo(value) ? "SEO project / article" : "Lead";
+  const messagePlaceholder = taskDialogIsSeo(value)
+    ? `Tell ${managerLabel} the article topic, source text/transcript, target audience, keyword idea, or WordPress action you want handled.`
+    : "Tell Alex the Lead ID, tender files, supplier question, or tender decision you want handled...";
+  const taskPlaceholder = taskDialogIsSeo(value)
+    ? "What exactly should the SEO staff do? Example: turn this transcript into an Investopedia-style WordPress draft package."
+    : "What exactly should the staff do for this lead/tender case?";
   return h("div", { className: "dialog-overlay" },
     h("form", { className: "dialog-card react-dialog", onSubmit },
       h("div", { className: "dialog-head" }, h("div", null, h("p", { className: "eyebrow" }, isManagerMessage ? "Manager" : "Task"), h("h2", null, isManagerMessage ? "Message Manager" : "Create Staff Task")), h(Button, { type: "button", variant: "ghost", size: "icon", onClick: onClose }, icon("x"))),
       h("div", { className: "form-grid" },
         h(Field, { label: "Assigned Staff" }, h(Select, { value: value.assignedTo, onChange: event => update("assignedTo", event.target.value) }, staffIds.map(id => h("option", { key: id, value: id }, staffProfile(id).label)))),
-        h(Field, { label: "Task Type" }, h(Select, { value: value.taskType, onChange: event => update("taskType", event.target.value) }, ["Manager Guidance", "Lead Review", "Tender Document Review", "Fit / Eligibility", "Supplier Match", "Supplier Discovery", "Quotation Outreach", "Tender Package", "Follow-up", "CRM Health", "Report"].map(type => h("option", { key: type, value: type }, type)))),
+        h(Field, { label: "Task Type" }, h(Select, { value: value.taskType, onChange: event => update("taskType", event.target.value) }, taskTypes.map(type => h("option", { key: type, value: type }, type)))),
         h(Field, { label: "Task Category" }, h(Select, { value: value.taskCategory || "", onChange: event => update("taskCategory", event.target.value) }, TASK_CATEGORIES.map(category => h("option", { key: category, value: category }, category)))),
-        h(Field, { label: "Related Entity" }, h(Input, { value: value.entityId, onChange: event => update("entityId", event.target.value), placeholder: "Search/select entity in next version" })),
-        h(Field, { label: "Lead" }, h(Input, { value: value.relatedApplicationId, onChange: event => update("relatedApplicationId", event.target.value), placeholder: "Lead ID" })),
+        h(Field, { label: entityLabel }, h(Input, { value: value.entityId, onChange: event => update("entityId", event.target.value), placeholder: taskDialogIsSeo(value) ? "Example: transcript-001 or article-topic-001" : "Search/select entity in next version" })),
+        h(Field, { label: caseLabel }, h(Input, { value: value.relatedApplicationId, onChange: event => update("relatedApplicationId", event.target.value), placeholder: taskDialogIsSeo(value) ? "Optional SEO project/article ID" : "Lead ID" })),
         h(Field, { label: "Run After" }, h(Input, { type: "datetime-local", value: value.runAfter, onChange: event => update("runAfter", event.target.value) })),
         h(Field, { label: "Due At" }, h(Input, { type: "datetime-local", value: value.dueAt, onChange: event => update("dueAt", event.target.value) })),
         h(Field, { label: "Priority" }, h(Select, { value: value.priority, onChange: event => update("priority", event.target.value) }, ["High", "Medium", "Low", "Critical", "Test"].map(priority => h("option", { key: priority, value: priority }, priority)))),
-        h(Field, { label: isManagerMessage ? "Message" : "Next Action", className: "wide" }, h(Textarea, { value: value.nextAction, onChange: event => update("nextAction", event.target.value), placeholder: isManagerMessage ? "Tell Alex the Lead ID, tender files, supplier question, or tender decision you want handled..." : "What exactly should the staff do for this lead/tender case?", rows: 5, required: true }))
+        h(Field, { label: isManagerMessage ? "Message" : "Next Action", className: "wide" }, h(Textarea, { value: value.nextAction, onChange: event => update("nextAction", event.target.value), placeholder: isManagerMessage ? messagePlaceholder : taskPlaceholder, rows: 5, required: true }))
       ),
-      isManagerMessage ? h("p", { className: "dialog-help" }, "Alex will interpret this with the Manager Brain, reply in the thread, and allocate specialist work when needed. No email is sent from this message.") : null,
+      isManagerMessage ? h("p", { className: "dialog-help" }, `${managerLabel} will receive this as a manager task and can route specialist work when needed. No email or external action is sent from this message.`) : null,
       h("div", { className: "dialog-actions" }, h(Button, { type: "button", variant: "ghost", onClick: onClose }, "Cancel"), h(Button, { actionKey: "task:save", type: "submit" }, isManagerMessage ? "Send to Manager" : "Create Task"))
     )
   );

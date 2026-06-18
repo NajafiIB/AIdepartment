@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "architecture": "Capability Orchestration Fabric",
   "status": "Active",
-  "lastReviewed": "2026-06-10",
+  "lastReviewed": "2026-06-18",
   "solutionModules": [
     {
       "id": "solution_swiss_planner_apply_department",
@@ -35,6 +35,28 @@
       "operatingRule": "Department -> Capability -> Playbook -> Work Step -> Tool Lane -> QA Gate -> Output.",
       "locked": false,
       "workspaceEditable": true
+    },
+    {
+      "id": "solution_seo_demand_engine_department",
+      "label": "SEO Demand Engine Department",
+      "summary": "Use transcript/source inputs, Search Console and Analytics data, case studies, AI content generation, internal linking, WordPress publishing, and post-publish learning to run an SEO content demand engine.",
+      "owner": "AIstaff_SEOManager",
+      "lifecycleStatus": "Draft",
+      "modulesUsing": [
+        "Local Transcript Reader",
+        "Google Search Console",
+        "Google Analytics",
+        "wordpress_api",
+        "Make.com",
+        "Local Worker"
+      ],
+      "operatingRule": "Source text/data -> keyword evidence -> opportunity strategy -> case study mapping -> brief -> article drafts -> QA -> approval -> WordPress/Make.com publish -> performance learning.",
+      "locked": false,
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "capabilities": [
@@ -396,6 +418,303 @@
         "skill_update_candidate"
       ],
       "confidence": "High"
+    },
+    {
+      "id": "seo_source_intake",
+      "label": "SEO Source And Transcript Intake",
+      "summary": "Read pasted transcripts, lessons, briefs, or strategy notes and convert them into structured department requirements, workflow steps, and source evidence.",
+      "lifecycleStatus": "Draft",
+      "ownerStaff": "AIstaff_SEOSourceAnalyst",
+      "recipes": [
+        "recipe_seo_source_intake"
+      ],
+      "requiredConnections": [
+        "local_text_reader"
+      ],
+      "recommendedConnections": [],
+      "databases": [
+        "db_source_transcripts"
+      ],
+      "aiSupport": [
+        "ai_research_reasoning"
+      ],
+      "automations": [],
+      "qualityGates": [
+        "gate_source_text_extract_complete"
+      ],
+      "outputs": [
+        "source_intelligence_brief"
+      ],
+      "confidence": "Medium",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "seo_data_analysis",
+      "label": "Search Console And Analytics Review",
+      "summary": "Read Google Search Console and Analytics data by website, keyword, page, impressions, clicks, ranking movement, and growth trajectory.",
+      "lifecycleStatus": "Draft",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "recipes": [
+        "recipe_seo_data_analysis"
+      ],
+      "requiredConnections": [
+        "google_search_console"
+      ],
+      "recommendedConnections": [
+        "google_analytics",
+        "google_sheets_seo_workspace"
+      ],
+      "databases": [
+        "db_websites_portfolio",
+        "db_search_console_keywords",
+        "db_google_analytics_pages",
+        "db_seo_performance_history"
+      ],
+      "aiSupport": [
+        "ai_seo_strategy_reasoning"
+      ],
+      "automations": [],
+      "qualityGates": [
+        "gate_search_console_connected",
+        "gate_keyword_opportunity_evidence"
+      ],
+      "outputs": [
+        "keyword_performance_dashboard"
+      ],
+      "confidence": "Medium",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "seo_keyword_strategy",
+      "label": "Keyword Opportunity Strategy",
+      "summary": "Find reoptimization and new-content opportunities based on what each website already partially ranks for, not generic keyword-volume guesses.",
+      "lifecycleStatus": "Draft",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "recipes": [
+        "recipe_seo_keyword_strategy"
+      ],
+      "requiredConnections": [
+        "google_search_console"
+      ],
+      "recommendedConnections": [
+        "google_analytics"
+      ],
+      "databases": [
+        "db_search_console_keywords",
+        "db_existing_content_inventory",
+        "db_seo_keyword_opportunities"
+      ],
+      "aiSupport": [
+        "ai_seo_strategy_reasoning"
+      ],
+      "automations": [],
+      "qualityGates": [
+        "gate_keyword_opportunity_evidence"
+      ],
+      "outputs": [
+        "ranked_keyword_opportunities"
+      ],
+      "confidence": "Medium",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "seo_case_study_mapping",
+      "label": "Case Study And Unique Evidence Mapping",
+      "summary": "Match target keywords to company case studies, first-hand experience, proof, examples, and unique data so content is not generic.",
+      "lifecycleStatus": "Draft",
+      "ownerStaff": "AIstaff_CaseStudyMapper",
+      "recipes": [
+        "recipe_seo_case_study_mapping"
+      ],
+      "requiredConnections": [
+        "google_sheets_seo_workspace"
+      ],
+      "recommendedConnections": [
+        "local_text_reader"
+      ],
+      "databases": [
+        "db_case_studies",
+        "db_seo_keyword_opportunities"
+      ],
+      "aiSupport": [
+        "ai_seo_strategy_reasoning"
+      ],
+      "automations": [],
+      "qualityGates": [
+        "gate_case_study_specificity"
+      ],
+      "outputs": [
+        "case_study_match"
+      ],
+      "confidence": "Medium",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "seo_content_generation",
+      "label": "SEO Brief And Article Draft Generation",
+      "summary": "Generate content briefs and five article drafts per approved keyword across one or more websites, using matched case studies and SEO metadata.",
+      "lifecycleStatus": "Draft",
+      "ownerStaff": "AIstaff_SEOContentWriter",
+      "recipes": [
+        "recipe_seo_content_generation"
+      ],
+      "requiredConnections": [
+        "codex_worker"
+      ],
+      "recommendedConnections": [
+        "google_sheets_seo_workspace"
+      ],
+      "databases": [
+        "db_seo_content_briefs",
+        "db_seo_article_drafts",
+        "db_case_studies"
+      ],
+      "aiSupport": [
+        "ai_seo_content_writing"
+      ],
+      "automations": [],
+      "qualityGates": [
+        "gate_content_not_generic",
+        "gate_seo_metadata_check"
+      ],
+      "outputs": [
+        "seo_content_brief",
+        "seo_article_drafts"
+      ],
+      "confidence": "Medium",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "seo_internal_linking",
+      "label": "Internal Link Planning",
+      "summary": "Suggest relevant internal links and anchor text from the site inventory before content is approved for publishing.",
+      "lifecycleStatus": "Draft",
+      "ownerStaff": "AIstaff_InternalLinkBuilder",
+      "recipes": [
+        "recipe_seo_internal_linking"
+      ],
+      "requiredConnections": [
+        "internal_site_crawler"
+      ],
+      "recommendedConnections": [
+        "wordpress_api"
+      ],
+      "databases": [
+        "db_existing_content_inventory",
+        "db_seo_article_drafts"
+      ],
+      "aiSupport": [
+        "ai_seo_strategy_reasoning"
+      ],
+      "automations": [],
+      "qualityGates": [
+        "gate_internal_links_check"
+      ],
+      "outputs": [
+        "internal_link_plan"
+      ],
+      "confidence": "Medium",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "seo_publishing_ops",
+      "label": "Supervised WordPress And Make.com Publishing",
+      "summary": "Prepare WordPress publishing payloads or Make.com scenario triggers, but hold external publishing until Iman approves.",
+      "lifecycleStatus": "Draft",
+      "ownerStaff": "AIstaff_WordPressPublisher",
+      "recipes": [
+        "recipe_seo_publishing_ops"
+      ],
+      "requiredConnections": [
+        "wordpress_api"
+      ],
+      "recommendedConnections": [
+        "make_com_webhook"
+      ],
+      "databases": [
+        "db_seo_article_drafts",
+        "db_published_urls"
+      ],
+      "aiSupport": [
+        "ai_email_safety_reasoning"
+      ],
+      "automations": [],
+      "qualityGates": [
+        "gate_publish_approval",
+        "gate_post_publish_url_logged"
+      ],
+      "outputs": [
+        "wordpress_publish_package",
+        "published_url_log"
+      ],
+      "confidence": "High",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "seo_performance_learning",
+      "label": "SEO Performance Learning Loop",
+      "summary": "Track published URLs, keyword movement, clicks, impressions, and lessons for the next content round.",
+      "lifecycleStatus": "Draft",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "recipes": [
+        "recipe_seo_performance_learning"
+      ],
+      "requiredConnections": [
+        "google_search_console"
+      ],
+      "recommendedConnections": [
+        "google_analytics",
+        "make_com_webhook"
+      ],
+      "databases": [
+        "db_published_urls",
+        "db_seo_performance_history"
+      ],
+      "aiSupport": [
+        "ai_seo_strategy_reasoning"
+      ],
+      "automations": [],
+      "qualityGates": [
+        "gate_keyword_opportunity_evidence",
+        "gate_post_publish_url_logged"
+      ],
+      "outputs": [
+        "seo_learning_report"
+      ],
+      "confidence": "Medium",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "recipes": [
@@ -844,6 +1163,290 @@
         "routed_task",
         "skill_update_candidate"
       ]
+    },
+    {
+      "id": "recipe_seo_source_intake",
+      "capabilityId": "seo_source_intake",
+      "label": "Read Source Text And Extract Department Requirements",
+      "summary": "Use pasted transcripts and notes to identify workflow, staff, tools, datasets, outputs, and gates.",
+      "ownerStaff": "AIstaff_SEOSourceAnalyst",
+      "stages": [
+        {
+          "id": "stage_read_transcript",
+          "label": "Read Transcript",
+          "lanes": [
+            "lane_local_transcript_reader"
+          ],
+          "qualityGates": [
+            "gate_source_text_extract_complete"
+          ]
+        },
+        {
+          "id": "stage_extract_requirements",
+          "label": "Extract Operating Requirements",
+          "lanes": [
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_safe_routing"
+          ]
+        }
+      ],
+      "outputs": [
+        "source_intelligence_brief"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "recipe_seo_data_analysis",
+      "capabilityId": "seo_data_analysis",
+      "label": "Analyze Search Performance By Website",
+      "summary": "Load website/search data and prepare keyword/page performance views.",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "stages": [
+        {
+          "id": "stage_connect_search_console",
+          "label": "Connect Search Console",
+          "lanes": [
+            "lane_search_console_api"
+          ],
+          "qualityGates": [
+            "gate_search_console_connected"
+          ]
+        },
+        {
+          "id": "stage_analyze_clicks_impressions",
+          "label": "Analyze Clicks And Impressions",
+          "lanes": [
+            "lane_search_console_api",
+            "lane_google_analytics_api"
+          ],
+          "qualityGates": [
+            "gate_keyword_opportunity_evidence"
+          ]
+        }
+      ],
+      "outputs": [
+        "keyword_performance_dashboard"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "recipe_seo_keyword_strategy",
+      "capabilityId": "seo_keyword_strategy",
+      "label": "Rank Reoptimization And New Content Opportunities",
+      "summary": "Use existing rank/impression/click patterns to decide what to reoptimize or create next.",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "stages": [
+        {
+          "id": "stage_find_half_ranked_keywords",
+          "label": "Find Half-Ranked Keywords",
+          "lanes": [
+            "lane_search_console_api"
+          ],
+          "qualityGates": [
+            "gate_keyword_opportunity_evidence"
+          ]
+        },
+        {
+          "id": "stage_prioritize_opportunities",
+          "label": "Prioritize Opportunities",
+          "lanes": [
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_keyword_opportunity_evidence"
+          ]
+        }
+      ],
+      "outputs": [
+        "ranked_keyword_opportunities"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "recipe_seo_case_study_mapping",
+      "capabilityId": "seo_case_study_mapping",
+      "label": "Map Case Studies To Keywords",
+      "summary": "Select relevant first-hand proof and data for each keyword/content angle.",
+      "ownerStaff": "AIstaff_CaseStudyMapper",
+      "stages": [
+        {
+          "id": "stage_select_case_study",
+          "label": "Select Case Study",
+          "lanes": [
+            "lane_local_transcript_reader",
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_case_study_specificity"
+          ]
+        }
+      ],
+      "outputs": [
+        "case_study_match"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "recipe_seo_content_generation",
+      "capabilityId": "seo_content_generation",
+      "label": "Generate SEO Briefs And Article Drafts",
+      "summary": "Create briefs and multiple article drafts from keyword plus case study evidence.",
+      "ownerStaff": "AIstaff_SEOContentWriter",
+      "stages": [
+        {
+          "id": "stage_generate_content_brief",
+          "label": "Generate Content Brief",
+          "lanes": [
+            "lane_seo_content_worker"
+          ],
+          "qualityGates": [
+            "gate_case_study_specificity",
+            "gate_seo_metadata_check"
+          ]
+        },
+        {
+          "id": "stage_generate_article_drafts",
+          "label": "Generate Article Drafts",
+          "lanes": [
+            "lane_seo_content_worker"
+          ],
+          "qualityGates": [
+            "gate_content_not_generic"
+          ]
+        }
+      ],
+      "outputs": [
+        "seo_content_brief",
+        "seo_article_drafts"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "recipe_seo_internal_linking",
+      "capabilityId": "seo_internal_linking",
+      "label": "Build Internal Link Plan",
+      "summary": "Add relevant internal links and anchors before publishing.",
+      "ownerStaff": "AIstaff_InternalLinkBuilder",
+      "stages": [
+        {
+          "id": "stage_crawl_existing_content",
+          "label": "Crawl Existing Content",
+          "lanes": [
+            "lane_internal_link_crawler"
+          ],
+          "qualityGates": [
+            "gate_internal_links_check"
+          ]
+        }
+      ],
+      "outputs": [
+        "internal_link_plan"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "recipe_seo_publishing_ops",
+      "capabilityId": "seo_publishing_ops",
+      "label": "Prepare And Publish With Approval",
+      "summary": "Prepare WordPress/Make.com payloads and block until human approval.",
+      "ownerStaff": "AIstaff_WordPressPublisher",
+      "stages": [
+        {
+          "id": "stage_prepare_wordpress_payload",
+          "label": "Prepare WordPress Payload",
+          "lanes": [
+            "lane_wordpress_publisher"
+          ],
+          "qualityGates": [
+            "gate_publish_approval"
+          ]
+        },
+        {
+          "id": "stage_trigger_make_or_publish",
+          "label": "Trigger Make.com Or Publish",
+          "lanes": [
+            "lane_make_com_automation",
+            "lane_wordpress_publisher"
+          ],
+          "qualityGates": [
+            "gate_publish_approval",
+            "gate_post_publish_url_logged"
+          ]
+        }
+      ],
+      "outputs": [
+        "wordpress_publish_package",
+        "published_url_log"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "recipe_seo_performance_learning",
+      "capabilityId": "seo_performance_learning",
+      "label": "Track SEO Performance And Learn",
+      "summary": "Track rankings/clicks/impressions after publishing and create next-round learning.",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "stages": [
+        {
+          "id": "stage_collect_post_publish_metrics",
+          "label": "Collect Post-Publish Metrics",
+          "lanes": [
+            "lane_search_console_api",
+            "lane_google_analytics_api"
+          ],
+          "qualityGates": [
+            "gate_post_publish_url_logged"
+          ]
+        },
+        {
+          "id": "stage_create_learning_report",
+          "label": "Create Learning Report",
+          "lanes": [
+            "lane_ai_reasoning"
+          ],
+          "qualityGates": [
+            "gate_keyword_opportunity_evidence"
+          ]
+        }
+      ],
+      "outputs": [
+        "seo_learning_report"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "lanes": [
@@ -1043,6 +1646,177 @@
       "qualityGates": [
         "gate_sync_error_check"
       ]
+    },
+    {
+      "id": "lane_local_transcript_reader",
+      "label": "Local Transcript Reader",
+      "routeType": "local source reader",
+      "ownerStaff": "AIstaff_SEOSourceAnalyst",
+      "connections": [
+        "local_text_reader"
+      ],
+      "databases": [
+        "db_source_transcripts"
+      ],
+      "aiSupport": [
+        "ai_research_reasoning"
+      ],
+      "qualityGates": [
+        "gate_source_text_extract_complete"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "lane_search_console_api",
+      "label": "Search Console API / Export",
+      "routeType": "external analytics API",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "connections": [
+        "google_search_console"
+      ],
+      "databases": [
+        "db_search_console_keywords",
+        "db_websites_portfolio"
+      ],
+      "aiSupport": [
+        "ai_seo_strategy_reasoning"
+      ],
+      "qualityGates": [
+        "gate_search_console_connected",
+        "gate_keyword_opportunity_evidence"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "lane_google_analytics_api",
+      "label": "Google Analytics API / Export",
+      "routeType": "external analytics API",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "connections": [
+        "google_analytics"
+      ],
+      "databases": [
+        "db_google_analytics_pages",
+        "db_seo_performance_history"
+      ],
+      "aiSupport": [
+        "ai_seo_strategy_reasoning"
+      ],
+      "qualityGates": [
+        "gate_keyword_opportunity_evidence"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "lane_seo_content_worker",
+      "label": "SEO Content Worker",
+      "routeType": "human-supervised AI worker",
+      "ownerStaff": "AIstaff_SEOContentWriter",
+      "connections": [
+        "codex_worker",
+        "google_sheets_seo_workspace"
+      ],
+      "databases": [
+        "db_seo_content_briefs",
+        "db_seo_article_drafts",
+        "db_case_studies"
+      ],
+      "aiSupport": [
+        "ai_seo_content_writing"
+      ],
+      "qualityGates": [
+        "gate_case_study_specificity",
+        "gate_content_not_generic",
+        "gate_seo_metadata_check"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "lane_internal_link_crawler",
+      "label": "Internal Link Crawler",
+      "routeType": "website crawl / internal link map",
+      "ownerStaff": "AIstaff_InternalLinkBuilder",
+      "connections": [
+        "internal_site_crawler"
+      ],
+      "databases": [
+        "db_existing_content_inventory"
+      ],
+      "aiSupport": [
+        "ai_seo_strategy_reasoning"
+      ],
+      "qualityGates": [
+        "gate_internal_links_check"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "lane_wordpress_publisher",
+      "label": "WordPress Publisher",
+      "routeType": "CMS publishing",
+      "ownerStaff": "AIstaff_WordPressPublisher",
+      "connections": [
+        "wordpress_api"
+      ],
+      "databases": [
+        "db_published_urls",
+        "db_seo_article_drafts"
+      ],
+      "aiSupport": [
+        "ai_email_safety_reasoning"
+      ],
+      "qualityGates": [
+        "gate_publish_approval",
+        "gate_post_publish_url_logged"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "lane_make_com_automation",
+      "label": "Make.com Scenario Trigger",
+      "routeType": "external automation",
+      "ownerStaff": "AIstaff_WordPressPublisher",
+      "connections": [
+        "make_com_webhook"
+      ],
+      "databases": [
+        "db_published_urls",
+        "db_seo_performance_history"
+      ],
+      "aiSupport": [],
+      "qualityGates": [
+        "gate_publish_approval",
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "connections": [
@@ -1136,6 +1910,156 @@
       "requiredFor": [
         "workflow_automation"
       ]
+    },
+    {
+      "id": "local_text_reader",
+      "label": "Local Transcript / Text Reader",
+      "status": "Available",
+      "type": "local source reader",
+      "requiredFor": [
+        "seo_source_intake"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-18T12:40:17Z",
+      "updatedBy": "Human_Iman",
+      "setupFields": [],
+      "lastTestStatus": "Passed",
+      "lastTestMessage": "Local connection is available.",
+      "configurationNotes": "",
+      "lastTestAt": "2026-06-18T12:40:17Z"
+    },
+    {
+      "id": "google_search_console",
+      "label": "Google Search Console",
+      "status": "Needs Setup",
+      "type": "search performance API",
+      "requiredFor": [
+        "seo_data_analysis",
+        "seo_keyword_strategy"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T14:34:31Z",
+      "updatedBy": "Human_Iman",
+      "setupFields": [
+        "accountLabel",
+        "siteUrl",
+        "propertyId"
+      ],
+      "configurationNotes": "Reusable Search Console tool definition. Organization-specific property values are saved under each department organization account.",
+      "accountLabel": "",
+      "propertyId": "",
+      "siteUrl": "",
+      "lastTestStatus": "Needs Setup",
+      "lastTestAt": "2026-06-17T14:34:31Z",
+      "lastTestMessage": "Configure this connection from a department organization account.",
+      "webhookUrl": "",
+      "provider": "",
+      "endpointUrl": "",
+      "providerFamily": ""
+    },
+    {
+      "id": "google_analytics",
+      "label": "Google Analytics",
+      "status": "Needs Setup",
+      "type": "analytics API",
+      "requiredFor": [
+        "seo_data_analysis",
+        "seo_performance_learning"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman",
+      "setupFields": [
+        "accountLabel",
+        "propertyId",
+        "siteUrl"
+      ],
+      "configurationNotes": ""
+    },
+    {
+      "id": "wordpress_api",
+      "label": "WordPress API",
+      "status": "Needs Setup",
+      "type": "publishing CMS",
+      "requiredFor": [
+        "seo_publishing_ops"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman",
+      "setupFields": [
+        "siteUrl",
+        "accountLabel"
+      ],
+      "configurationNotes": ""
+    },
+    {
+      "id": "make_com_webhook",
+      "label": "Make.com Webhook / Scenario",
+      "status": "Needs Setup",
+      "type": "external automation",
+      "requiredFor": [
+        "seo_publishing_ops",
+        "seo_performance_learning"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:55:12Z",
+      "updatedBy": "Codex_Test",
+      "setupFields": [
+        "webhookUrl"
+      ],
+      "configurationNotes": "",
+      "lastTestStatus": "Needs Setup",
+      "lastTestAt": "2026-06-17T13:55:12Z",
+      "lastTestMessage": "Missing setup fields: webhook/endpoint URL."
+    },
+    {
+      "id": "google_sheets_seo_workspace",
+      "label": "SEO Workspace Sheet",
+      "status": "Needs Setup",
+      "type": "workspace database",
+      "requiredFor": [
+        "seo_keyword_strategy",
+        "seo_content_generation"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman",
+      "setupFields": [
+        "accountLabel",
+        "propertyId"
+      ],
+      "configurationNotes": ""
+    },
+    {
+      "id": "internal_site_crawler",
+      "label": "Internal Site Crawler",
+      "status": "Planned",
+      "type": "website crawl / internal link map",
+      "requiredFor": [
+        "seo_internal_linking"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman",
+      "setupFields": [
+        "siteUrl"
+      ],
+      "configurationNotes": ""
     }
   ],
   "databases": [
@@ -1363,6 +2287,127 @@
       "status": "Post-win",
       "type": "GCClab CRM table",
       "key": "Order ID"
+    },
+    {
+      "id": "db_source_transcripts",
+      "label": "Source Transcripts / Pasted Text",
+      "status": "Local",
+      "type": "local source documents",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_websites_portfolio",
+      "label": "Website Portfolio",
+      "status": "Needs Data",
+      "type": "workspace dataset",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_search_console_keywords",
+      "label": "Search Console Keyword Data",
+      "status": "Needs Connection",
+      "type": "Google Search Console export/API",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_google_analytics_pages",
+      "label": "Google Analytics Page Data",
+      "status": "Needs Connection",
+      "type": "Google Analytics API/export",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_existing_content_inventory",
+      "label": "Existing Content Inventory",
+      "status": "Needs Data",
+      "type": "website crawl/export",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_case_studies",
+      "label": "Case Studies / First-Hand Evidence",
+      "status": "Needs Data",
+      "type": "workspace knowledge base",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_seo_keyword_opportunities",
+      "label": "SEO Keyword Opportunities",
+      "status": "Draft",
+      "type": "local generated table",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_seo_content_briefs",
+      "label": "SEO Content Briefs",
+      "status": "Draft",
+      "type": "local generated table",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_seo_article_drafts",
+      "label": "SEO Article Drafts",
+      "status": "Draft",
+      "type": "local generated table",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_published_urls",
+      "label": "Published URLs",
+      "status": "Needs Connection",
+      "type": "WordPress/Make.com result log",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "db_seo_performance_history",
+      "label": "SEO Performance History",
+      "status": "Needs Connection",
+      "type": "Search Console / Analytics trend data",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "aiSupport": [
@@ -1405,6 +2450,30 @@
       "reasoningEffort": "minimal",
       "ownerStaff": "AIstaff_ApplicationPackSender",
       "usage": "Check outbound wording for unsafe internal/system language."
+    },
+    {
+      "id": "ai_seo_strategy_reasoning",
+      "label": "SEO strategy reasoning",
+      "model": "gpt-5-mini or configured SEO model",
+      "reasoningEffort": "medium",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "usage": "Cluster keywords, identify opportunity patterns, classify intent, and prioritize reoptimization/new-page work.",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "ai_seo_content_writing",
+      "label": "SEO content writing",
+      "model": "Codex / higher reasoning when needed",
+      "reasoningEffort": "high",
+      "ownerStaff": "AIstaff_SEOContentWriter",
+      "usage": "Create structured content briefs and article drafts with case-study-specific evidence.",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "qualityGates": [
@@ -1522,6 +2591,96 @@
       "id": "gate_safe_routing",
       "label": "Safe Routing",
       "rule": "Specialist staff talk to Manager first; only Manager talks to Human."
+    },
+    {
+      "id": "gate_source_text_extract_complete",
+      "label": "Source Text Extracted",
+      "rule": "Transcript/text inputs must be converted into clear workflow steps, tools, datasets, staff needs, and approval gates before department design work continues.",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "gate_search_console_connected",
+      "label": "Search Console Connected",
+      "rule": "Keyword opportunity work cannot be treated as data-backed until Search Console property access or a reviewed export is available.",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "gate_keyword_opportunity_evidence",
+      "label": "Keyword Evidence Required",
+      "rule": "Every recommended keyword must cite Search Console/Analytics evidence, current ranking/impressions/clicks, or a clearly marked manual source.",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "gate_case_study_specificity",
+      "label": "Case Study Specificity",
+      "rule": "Content drafts must include a matched first-hand case study, company proof, data point, or unique insight; generic filler is blocked.",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "gate_content_not_generic",
+      "label": "Non-Generic Content",
+      "rule": "Drafts must include useful, original, entity-specific information and cannot be only generic SEO text.",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "gate_seo_metadata_check",
+      "label": "SEO Metadata Check",
+      "rule": "Drafts require SEO title target 50-60 characters, meta description/excerpt target 140-160 characters with no quotes, one primary long-tail keyword, 3-8 supporting keywords, suggested URL slug, clean WordPress HTML, H2/H3 headings, short paragraphs, key takeaways, nofollow external references, categories[] with no more than one category, tags[], and a final checklist before any Make.com webhook action.",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "gate_internal_links_check",
+      "label": "Internal Links Check",
+      "rule": "Internal link suggestions must point to existing relevant pages or be marked as missing inventory.",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "gate_publish_approval",
+      "label": "Publish Approval Required",
+      "rule": "WordPress publishing, Make.com scenario triggering, and external site changes require Iman approval. Always prepare draft status unless Iman explicitly says publish, and ask for confirmation before calling the Make.com webhook action.",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "gate_post_publish_url_logged",
+      "label": "Published URL Logged",
+      "rule": "Every published article must log URL, keyword, website, date, approval, and source draft before performance tracking starts.",
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "automations": [
@@ -1604,8 +2763,41 @@
       "templateId": "template_gcc_lab_tender_lead_department",
       "humanManager": "Human_Iman",
       "aiManager": "AIstaff_Manager",
-      "status": "Active",
-      "workspaceEditable": true
+      "status": "Paused",
+      "businessIdentity": {
+        "id": "identity_department_gcc_lab_tender_leads",
+        "departmentId": "department_gcc_lab_tender_leads",
+        "organizationDisplayName": "GCC lab",
+        "legalOrganizationName": "GCC lab",
+        "websiteUrl": "",
+        "primaryDomain": "",
+        "industrySector": "Testing, calibration, inspection, and tender services",
+        "defaultLanguage": "English/Persian mixed accepted",
+        "approvedBrandTone": "Concise, professional, evidence-based business communication",
+        "managerDisplayName": "Iman",
+        "managerTitle": "Human Manager",
+        "publicDescription": "Tender lead review, supplier matching, quotation collection, and tender package preparation for GCC lab.",
+        "activeConnections": [
+          "local_runtime",
+          "local_sqlite",
+          "email_queue"
+        ],
+        "approvedDatabases": [
+          "Lead",
+          "Companies",
+          "Contacts",
+          "Tasks List",
+          "LeadMatchedSuppliers",
+          "Files Manager",
+          "Docs"
+        ],
+        "workspaceEditable": true
+      },
+      "workspaceEditable": true,
+      "lifecycleStatus": "Paused",
+      "isCurrentDepartment": false,
+      "updatedAt": "2026-06-17T14:02:37Z",
+      "updatedBy": "Human_Iman"
     },
     {
       "id": "department_swiss_planner_applications",
@@ -1623,8 +2815,13 @@
       ],
       "humanManager": "Human_Iman",
       "aiManager": "AIstaff_Manager",
-      "status": "Active",
-      "workspaceEditable": true
+      "status": "Archived",
+      "workspaceEditable": true,
+      "lifecycleStatus": "Archived",
+      "isCurrentDepartment": false,
+      "updatedAt": "2026-06-17T13:27:47Z",
+      "updatedBy": "Human_Iman",
+      "archived": true
     },
     {
       "id": "department_sample_sales_research_ai_department_20260610182900",
@@ -1643,10 +2840,15 @@
       "humanManager": "Human_Iman",
       "aiManager": "AIstaff_Manager",
       "purpose": "Research companies, qualify leads, prepare outreach plans, and track follow-ups.",
-      "status": "Active",
+      "status": "Archived",
       "workspaceEditable": true,
       "createdAt": "2026-06-10T18:29:00Z",
-      "createdBy": "Human_Iman"
+      "createdBy": "Human_Iman",
+      "lifecycleStatus": "Archived",
+      "isCurrentDepartment": false,
+      "updatedAt": "2026-06-17T13:27:47Z",
+      "updatedBy": "Human_Iman",
+      "archived": true
     },
     {
       "id": "department_seo_optimizer_of_worldbc_co_20260610183912",
@@ -1665,10 +2867,338 @@
       "humanManager": "Human_Iman",
       "aiManager": "AIstaff_Manager",
       "purpose": "Checks the Google Analytics, Prepares the Content  and Save in Wordpress site",
-      "status": "Active",
+      "status": "Archived",
       "workspaceEditable": true,
       "createdAt": "2026-06-10T18:39:12Z",
-      "createdBy": "Human_Iman"
+      "createdBy": "Human_Iman",
+      "lifecycleStatus": "Archived",
+      "isCurrentDepartment": false,
+      "updatedAt": "2026-06-17T13:27:47Z",
+      "updatedBy": "Human_Iman",
+      "archived": true
+    },
+    {
+      "id": "department_seo_demand_engine",
+      "label": "SEO Demand Engine Department",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "templateId": "template_seo_demand_engine_department",
+      "ownershipMode": "ownedDepartment",
+      "humanFacingSurface": "SEO Manager project threads",
+      "sponsoredParticipantsSee": [
+        "tasks",
+        "uploads",
+        "confirmations",
+        "approvals",
+        "outputs"
+      ],
+      "humanManager": "Human_Iman",
+      "aiManager": "AIstaff_SEOManager",
+      "aiManagerAlias": "Sofia",
+      "purpose": "Build an AI-led SEO demand engine from transcript/source inputs, Search Console data, case studies, content generation, internal links, and supervised publishing.",
+      "projectTypes": [
+        "SEO Demand Engine",
+        "Keyword Opportunity",
+        "Content Brief",
+        "Article Draft",
+        "WordPress Publish Package",
+        "SEO Learning Report"
+      ],
+      "approvalPolicy": "Publishing to WordPress, triggering Make.com scenarios, connecting external accounts, and applying learned SEO rules require Iman approval.",
+      "goals": [
+        {
+          "id": "goal_seo_monthly_published_content",
+          "label": "Publish SEO content",
+          "description": "Create approved, SEO-ready WordPress draft articles and publish only after Iman confirms the Make.com action.",
+          "metricType": "published_content_count",
+          "targetCount": 10,
+          "currentCount": 0,
+          "targetUnit": "Content pieces",
+          "periodType": "Weekly",
+          "periodStart": "2026-06-18",
+          "periodEnd": "",
+          "status": "Active",
+          "ownerStaff": "AIstaff_SEOManager",
+          "progressSource": "Manual/local alpha until WordPress publish log is connected",
+          "nextAction": "Prepare SEO article packages, request Iman approval, then send approved drafts through the Make.com WordPress publisher.",
+          "requiresApprovalForTargetChange": true,
+          "workspaceEditable": true,
+          "progressPercent": 0,
+          "remainingCount": 10,
+          "updatedAt": "2026-06-18T09:03:48Z",
+          "updatedBy": "Human_Iman",
+          "createdAt": "2026-06-17T15:10:00Z",
+          "createdBy": "Human_Iman"
+        }
+      ],
+      "activeConnections": [
+        "local_text_reader",
+        "codex_worker",
+        "google_search_console",
+        "google_analytics",
+        "make_com_webhook",
+        "wordpress_api"
+      ],
+      "approvedDatasets": [
+        "db_source_transcripts",
+        "db_search_console_keywords",
+        "db_seo_keyword_opportunities",
+        "db_seo_content_briefs",
+        "db_seo_article_drafts",
+        "db_seo_performance_history"
+      ],
+      "businessIdentity": {
+        "approvedDatabases": [
+          "db_source_transcripts",
+          "db_search_console_keywords",
+          "db_seo_keyword_opportunities",
+          "db_seo_content_briefs",
+          "db_seo_article_drafts",
+          "db_seo_performance_history"
+        ],
+        "defaultLanguage": "English",
+        "approvedEmailSignature": "",
+        "activeConnections": [
+          "local_text_reader",
+          "codex_worker",
+          "google_search_console",
+          "google_analytics",
+          "make_com_webhook",
+          "wordpress_api"
+        ],
+        "connectionConfigs": {
+          "google_search_console": {
+            "connectionId": "google_search_console",
+            "scope": "department_organization_account",
+            "organizationAccountId": "identity_department_seo_demand_engine",
+            "status": "Configured",
+            "accountLabel": "WorldBusiness Council Search Console",
+            "propertyId": "sc-domain:worldbc.co",
+            "siteUrl": "https://worldbc.co/",
+            "setupFields": [
+              "accountLabel",
+              "siteUrl",
+              "propertyId"
+            ],
+            "configurationNotes": "WorldBusiness Council / Worldbc.co Search Console property. Confirm the exact Search Console property value; Domain properties usually use sc-domain:worldbc.co.",
+            "lastTestStatus": "Passed",
+            "lastTestAt": "2026-06-17T21:15:29Z",
+            "lastTestMessage": "Organization configuration check passed. OAuth can be connected when you are ready.",
+            "updatedAt": "2026-06-17T21:15:29Z",
+            "updatedBy": "Human_Iman",
+            "webhookUrl": "",
+            "type": "search performance API",
+            "provider": "",
+            "providerFamily": "",
+            "endpointUrl": ""
+          },
+          "make_com_webhook": {
+            "accountLabel": "WorldBusiness Council Make.com WordPress Publisher",
+            "requestContract": {
+              "method": "POST",
+              "contentType": "application/json",
+              "requiredFields": [
+                "title",
+                "content",
+                "excerpt",
+                "categories",
+                "tags"
+              ],
+              "optionalFields": [
+                "slug",
+                "status",
+                "primaryKeyword",
+                "supportingKeywords"
+              ],
+              "defaultStatus": "draft"
+            },
+            "openApiSpec": {
+              "openapi": "3.1.0",
+              "info": {
+                "title": "WorldBC WordPress Publisher (via Make Webhook)",
+                "version": "1.0.0",
+                "description": "Creates a WordPress blog post draft by sending optimized article content to a Make.com webhook. The Make scenario handles publishing to WordPress."
+              },
+              "servers": [
+                {
+                  "url": "https://hook.eu2.make.com"
+                }
+              ],
+              "paths": {
+                "/{secure-runtime-webhook-path}": {
+                  "post": {
+                    "operationId": "createWordpressPost",
+                    "summary": "Create a WordPress post draft",
+                    "description": "Sends article title, HTML content, SEO excerpt, categories, and tags to Make.com, which creates a WordPress post. Default status is draft.",
+                    "requestBody": {
+                      "required": true,
+                      "content": {
+                        "application/json": {
+                          "schema": {
+                            "type": "object",
+                            "required": [
+                              "title",
+                              "content",
+                              "excerpt",
+                              "categories",
+                              "tags"
+                            ],
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "description": "Post title / H1, SEO optimized."
+                              },
+                              "content": {
+                                "type": "string",
+                                "description": "Full article body in clean WordPress HTML."
+                              },
+                              "excerpt": {
+                                "type": "string",
+                                "description": "SEO excerpt/meta description."
+                              },
+                              "categories": {
+                                "type": "array",
+                                "items": {
+                                  "type": "integer"
+                                },
+                                "description": "Exactly one WordPress category ID unless user provides a supported alternative."
+                              },
+                              "tags": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "WordPress tags."
+                              },
+                              "slug": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "draft",
+                                  "publish"
+                                ],
+                                "default": "draft"
+                              },
+                              "primaryKeyword": {
+                                "type": "string"
+                              },
+                              "supportingKeywords": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "editorialPolicy": {
+              "role": "Editorial + SEO assistant for a WordPress blog",
+              "tone": "Investopedia.com style: professional, clear, credible, and easy to understand.",
+              "mustAskConfirmationBeforeWebhook": true,
+              "defaultPostStatus": "draft",
+              "publishingRule": "Always publish as draft unless Iman explicitly says publish.",
+              "requiredPrePublishOutputs": [
+                "SEO title, target 50-60 characters",
+                "Meta description / excerpt, target 140-160 characters, no quotes",
+                "Primary long-tail keyword, specific and intent-based",
+                "3-8 supporting keywords",
+                "Suggested URL slug",
+                "Clean WordPress HTML content",
+                "categories[] with no more than one category ID",
+                "tags[]",
+                "Final internal checklist"
+              ],
+              "articleRequirements": [
+                "900-1600 words unless user requests otherwise",
+                "Use structured H2/H3 headings; H1 is title only and not repeated in body",
+                "Use short paragraphs and bullets where useful",
+                "Include a short Key takeaways section at the end",
+                "Include external links to famous/reputable resources in text as [1], [2]",
+                "Provide reference list after Key takeaways",
+                "Reference links must be nofollow"
+              ],
+              "seoRules": [
+                "Pick a specific long-tail keyword matching user intent, audience, outcome, and context",
+                "Use the primary keyword naturally in title if possible, first 100 words, one H2, conclusion, and excerpt if natural",
+                "Avoid keyword stuffing"
+              ],
+              "categoryPolicy": "If categories/tags are not provided by the user, use the category knowledge-base file to select the ideal category ID. Never use more than one category.",
+              "wordpressHtmlRules": [
+                "Send HTML in content",
+                "Use clean <h2>, <h3>, <p>, <ul><li> HTML",
+                "No inline styles unless requested"
+              ],
+              "finalChecklist": [
+                "excerpt length",
+                "HTML is WordPress-friendly",
+                "title length",
+                "includes headings",
+                "categories/tags arrays",
+                "approval received before webhook"
+              ]
+            },
+            "referencePolicy": "External reputable links must appear in text as [1], [2]; reference list after Key takeaways; links use rel=\"nofollow\".",
+            "requiresHumanConfirmation": true,
+            "categorySelectionPolicy": "If categories/tags are not provided by the user, use the category knowledge-base file to select the ideal category ID. Never use more than one category.",
+            "defaultPostStatus": "draft",
+            "contentChecklist": [
+              "excerpt length",
+              "HTML is WordPress-friendly",
+              "title length",
+              "includes headings",
+              "categories/tags arrays",
+              "approval received before webhook"
+            ],
+            "siteUrl": "https://worldbc.co/",
+            "webhookUrl": "",
+            "operationId": "createWordpressPost",
+            "setupFields": [],
+            "configurationNotes": "WorldBusiness Council Make.com scenario for supervised WordPress draft publishing. The webhook URL is passed as secure runtime input from the local environment, not stored in the catalog. Do not call automatically. Prepare the full SEO/article checklist and ask Iman for confirmation before calling createWordpressPost.",
+            "status": "Configured",
+            "updatedAt": "2026-06-17T14:50:23Z",
+            "updatedBy": "Human_Iman",
+            "connectionId": "make_com_webhook",
+            "scope": "department_organization_account",
+            "organizationAccountId": "identity_department_seo_demand_engine",
+            "lastTestStatus": "Passed",
+            "lastTestAt": "2026-06-17T14:50:23Z",
+            "lastTestMessage": "Organization webhook configuration check passed. Webhook action remains blocked until Iman explicitly confirms."
+          }
+        },
+        "websiteUrl": "https://worldbc.co/",
+        "approvedBrandTone": "Professional, credible, evidence-led, and useful for business leaders.",
+        "legalOrganizationName": "WorldBusiness Council",
+        "managerTitle": "Human Manager",
+        "registeredAddress": "",
+        "industrySector": "Business council, B2B content, investor and partnership intelligence",
+        "publicDescription": "SEO demand engine for WorldBusiness Council / Worldbc.co using transcripts, Search Console, Analytics, case studies, content generation, internal links, and supervised publishing.",
+        "commercialRegistrationNumber": "",
+        "organizationDisplayName": "WorldBusiness Council",
+        "vatOrTaxId": "",
+        "managerDisplayName": "Iman",
+        "primaryDomain": "worldbc.co",
+        "id": "identity_department_seo_demand_engine",
+        "departmentId": "department_seo_demand_engine",
+        "updatedAt": "2026-06-18T09:11:01Z",
+        "updatedBy": "Human_Iman"
+      },
+      "defaultLanguage": "English",
+      "status": "Active",
+      "lifecycleStatus": "Active",
+      "isCurrentDepartment": true,
+      "workspaceEditable": true,
+      "archived": false,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-18T09:11:01Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "departmentTemplates": [
@@ -1874,6 +3404,59 @@
       "createdBy": "Human_Iman",
       "updatedAt": "2026-06-10T18:39:12Z",
       "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "template_seo_demand_engine_department",
+      "label": "SEO Demand Engine Department",
+      "purpose": "Use Search Console and Analytics data to find SEO opportunities, map case studies, generate content briefs/articles, prepare WordPress/Make.com publishing packages, and track learning.",
+      "solutionModuleId": "solution_seo_demand_engine_department",
+      "ownershipModes": [
+        "ownedDepartment"
+      ],
+      "projectTypes": [
+        "SEO Demand Engine",
+        "Keyword Opportunity",
+        "Content Brief",
+        "Article Draft",
+        "WordPress Publish Package",
+        "SEO Learning Report"
+      ],
+      "communicationModel": "Human talks to SEO Manager Sofia. Specialist SEO staff work under Sofia and do not publish or trigger external automation without approval.",
+      "capabilities": [
+        "seo_source_intake",
+        "seo_data_analysis",
+        "seo_keyword_strategy",
+        "seo_case_study_mapping",
+        "seo_content_generation",
+        "seo_internal_linking",
+        "seo_publishing_ops",
+        "seo_performance_learning"
+      ],
+      "staffProfiles": [
+        "Human_Iman",
+        "AIstaff_SEOManager",
+        "AIstaff_SEOSourceAnalyst",
+        "AIstaff_SEOExpert",
+        "AIstaff_CaseStudyMapper",
+        "AIstaff_SEOContentWriter",
+        "AIstaff_InternalLinkBuilder",
+        "AIstaff_WordPressPublisher",
+        "AIstaff_SEOQAAnalyst"
+      ],
+      "templateFamilies": [
+        "Department Templates",
+        "SEO Staff Models",
+        "Tool/Data Contracts",
+        "Workflow Plans",
+        "Output Templates"
+      ],
+      "status": "Draft",
+      "locked": false,
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "workspaceOverrides": [
@@ -1920,6 +3503,27 @@
       "workspaceEditable": true,
       "createdAt": "2026-06-10T18:39:12Z",
       "createdBy": "Human_Iman"
+    },
+    {
+      "id": "override_seo_demand_engine",
+      "workspaceId": "workspace_iman_swiss_planner",
+      "departmentId": "department_seo_demand_engine",
+      "humanManager": "Human_Iman",
+      "aiManagerAlias": "Sofia",
+      "defaultLanguage": "English",
+      "status": "Draft",
+      "workspaceEditable": true,
+      "activeConnections": [
+        "local_text_reader",
+        "codex_worker"
+      ],
+      "approvedDatabases": [
+        "db_source_transcripts"
+      ],
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "staffProfiles": [
@@ -2129,6 +3733,292 @@
       "canCreateHumanFacingThreads": false,
       "reportsTo": "AIstaff_Manager",
       "visibilityMode": "ownedDepartment"
+    },
+    {
+      "id": "AIstaff_SEOManager",
+      "label": "SEO Department Manager",
+      "alias": "Sofia",
+      "profileTitle": "SEO Demand Engine Manager",
+      "role": "Routes SEO workflow, asks Iman for publishing/tool approvals, and coordinates the SEO staff.",
+      "managerId": "Human_Iman",
+      "intelligenceLevel": "Expert",
+      "contactPolicy": "Routes SEO workflow, asks Iman for publishing/tool approvals, and coordinates the SEO staff.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_manager_orchestrator",
+        "archetype_report_maker"
+      ],
+      "primaryArchetypeId": "archetype_manager_orchestrator",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules and department approval policy before taking tool or publishing action.",
+      "communicationScope": "manager_human_and_staff",
+      "canContactHuman": true,
+      "canCreateHumanFacingThreads": true,
+      "reportsTo": "Human_Iman",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "AIstaff_SEOSourceAnalyst",
+      "label": "Source / Transcript Analyst",
+      "alias": "Tess",
+      "profileTitle": "Transcript And Source Intelligence Analyst",
+      "role": "Reads transcripts, lessons, briefs, and strategy notes to extract reusable operating requirements.",
+      "managerId": "AIstaff_SEOManager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Reads transcripts, lessons, briefs, and strategy notes to extract reusable operating requirements.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_thinking_analyst",
+        "archetype_file_qa"
+      ],
+      "primaryArchetypeId": "archetype_thinking_analyst",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules and department approval policy before taking tool or publishing action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_SEOManager",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "AIstaff_SEOExpert",
+      "label": "SEO Expert",
+      "alias": "Nora",
+      "profileTitle": "SEO Strategy, Analytics And Reporting Expert",
+      "role": "Uses SEO lanes such as Search Console, Analytics, Keyword Planner, Ahrefs/Semrush, GCP, and local exports to diagnose opportunities, choose analysis templates, and produce manager-ready SEO recommendations and reports.",
+      "managerId": "AIstaff_SEOManager",
+      "intelligenceLevel": "Expert",
+      "contactPolicy": "Works under the SEO Manager. Explains active/missing tools, data coverage, confidence, and recommended next action; does not change tracking, GCP, Search Console, or publishing settings without approval.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_seo_analyzer",
+        "archetype_thinking_analyst",
+        "archetype_report_maker"
+      ],
+      "primaryArchetypeId": "archetype_seo_analyzer",
+      "modelTier": "balanced",
+      "analysisTemplateId": "",
+      "toolOperatingMode": "Use the SEO Analyzer template. Resolve active lanes from department-assigned platform tools; if Analytics, Keyword Planner, Ahrefs/Semrush, or GCP are missing, continue only with available evidence and state limitations.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_SEOManager",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-18T13:05:00Z",
+      "createdBy": "Platform Admin",
+      "updatedAt": "2026-06-18T13:05:00Z",
+      "updatedBy": "Platform Admin"
+    },
+    {
+      "id": "AIstaff_SearchConsoleAnalyst",
+      "label": "Search Console Analyst",
+      "alias": "Quinn",
+      "profileTitle": "Search Console And Analytics Analyst",
+      "role": "Reads Search Console and Analytics exports/API data to identify website, keyword, page, click, and impression patterns.",
+      "managerId": "AIstaff_SEOManager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Reads Search Console and Analytics exports/API data to identify website, keyword, page, click, and impression patterns.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_thinking_analyst",
+        "archetype_crm_operator"
+      ],
+      "primaryArchetypeId": "archetype_thinking_analyst",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules and department approval policy before taking tool or publishing action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_SEOManager",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-18T13:05:00Z",
+      "updatedBy": "Platform Admin",
+      "status": "Deprecated",
+      "lifecycleStatus": "Deprecated",
+      "deprecatedBy": "AIstaff_SEOExpert"
+    },
+    {
+      "id": "AIstaff_SEOKeywordStrategist",
+      "label": "Keyword Opportunity Strategist",
+      "alias": "Kai",
+      "profileTitle": "SEO Keyword Opportunity Strategist",
+      "role": "Ranks reoptimization and new-content opportunities from actual website data.",
+      "managerId": "AIstaff_SEOManager",
+      "intelligenceLevel": "Expert",
+      "contactPolicy": "Ranks reoptimization and new-content opportunities from actual website data.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_thinking_analyst"
+      ],
+      "primaryArchetypeId": "archetype_thinking_analyst",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules and department approval policy before taking tool or publishing action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_SEOManager",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-18T13:05:00Z",
+      "updatedBy": "Platform Admin",
+      "status": "Deprecated",
+      "lifecycleStatus": "Deprecated",
+      "deprecatedBy": "AIstaff_SEOExpert"
+    },
+    {
+      "id": "AIstaff_CaseStudyMapper",
+      "label": "Case Study Mapper",
+      "alias": "Cora",
+      "profileTitle": "Case Study And Evidence Mapper",
+      "role": "Matches target keywords with first-hand case studies, proof, company examples, and unique insight.",
+      "managerId": "AIstaff_SEOManager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Matches target keywords with first-hand case studies, proof, company examples, and unique insight.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_thinking_analyst",
+        "archetype_file_qa"
+      ],
+      "primaryArchetypeId": "archetype_thinking_analyst",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules and department approval policy before taking tool or publishing action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_SEOManager",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "AIstaff_SEOContentWriter",
+      "label": "SEO Content Writer",
+      "alias": "Hermes",
+      "profileTitle": "SEO Brief And Article Writer",
+      "role": "Creates SEO briefs and article drafts from keyword evidence and case-study context.",
+      "managerId": "AIstaff_SEOManager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Creates SEO briefs and article drafts from keyword evidence and case-study context.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_document_maker"
+      ],
+      "primaryArchetypeId": "archetype_document_maker",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules and department approval policy before taking tool or publishing action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_SEOManager",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "AIstaff_InternalLinkBuilder",
+      "label": "Internal Link Builder",
+      "alias": "Iris",
+      "profileTitle": "Internal Link And Content Inventory Specialist",
+      "role": "Finds existing pages, internal link opportunities, anchors, and missing content inventory.",
+      "managerId": "AIstaff_SEOManager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Finds existing pages, internal link opportunities, anchors, and missing content inventory.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_thinking_analyst"
+      ],
+      "primaryArchetypeId": "archetype_thinking_analyst",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules and department approval policy before taking tool or publishing action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_SEOManager",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "AIstaff_WordPressPublisher",
+      "label": "WordPress Publisher",
+      "alias": "Priya",
+      "profileTitle": "Supervised WordPress And Make.com Publisher",
+      "role": "Prepares WordPress publish packages or Make.com triggers and waits for approval before external action.",
+      "managerId": "AIstaff_SEOManager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Prepares WordPress publish packages or Make.com triggers and waits for approval before external action.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_crm_operator",
+        "archetype_file_qa"
+      ],
+      "primaryArchetypeId": "archetype_crm_operator",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules and department approval policy before taking tool or publishing action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_SEOManager",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "AIstaff_SEOQAAnalyst",
+      "label": "SEO QA Analyst",
+      "alias": "Vera",
+      "profileTitle": "SEO QA And Performance Learning Analyst",
+      "role": "Checks content quality, metadata, links, duplicate risk, published URLs, and performance learning.",
+      "managerId": "AIstaff_SEOManager",
+      "intelligenceLevel": "Senior",
+      "contactPolicy": "Checks content quality, metadata, links, duplicate risk, published URLs, and performance learning.",
+      "avatarKind": "abstract-ai",
+      "workspaceEditable": true,
+      "locked": false,
+      "archetypeIds": [
+        "archetype_file_qa",
+        "archetype_report_maker"
+      ],
+      "primaryArchetypeId": "archetype_file_qa",
+      "toolOperatingMode": "Use inherited Staff Archetype plugin rules and department approval policy before taking tool or publishing action.",
+      "communicationScope": "staff_to_manager_only",
+      "canContactHuman": false,
+      "canCreateHumanFacingThreads": false,
+      "reportsTo": "AIstaff_SEOManager",
+      "visibilityMode": "ownedDepartment",
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "outputTemplates": [
@@ -2335,6 +4225,214 @@
         "gate_no_hidden_blocker"
       ],
       "workspaceEditable": true
+    },
+    {
+      "id": "output_source_intelligence_brief",
+      "label": "Source Intelligence Brief",
+      "ownerStaff": "AIstaff_SEOSourceAnalyst",
+      "requiredSections": [
+        "Transcript/source summary",
+        "Workflow steps",
+        "Tools mentioned",
+        "Datasets needed",
+        "Staff roles implied",
+        "Approval gates"
+      ],
+      "storage": "Local SEO department workspace until external tools are connected",
+      "qualityGates": [
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "output_keyword_performance_dashboard",
+      "label": "Keyword Performance Dashboard",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "requiredSections": [
+        "Website",
+        "Keyword",
+        "Impressions",
+        "Clicks",
+        "Position",
+        "Page",
+        "Trend",
+        "Evidence source"
+      ],
+      "storage": "Local SEO department workspace until external tools are connected",
+      "qualityGates": [
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "output_ranked_keyword_opportunities",
+      "label": "Ranked Keyword Opportunities",
+      "ownerStaff": "AIstaff_SEOExpert",
+      "requiredSections": [
+        "Keyword",
+        "Website",
+        "Intent",
+        "Opportunity type",
+        "Evidence",
+        "Priority",
+        "Recommended next step"
+      ],
+      "storage": "Local SEO department workspace until external tools are connected",
+      "qualityGates": [
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "output_case_study_match",
+      "label": "Case Study Match",
+      "ownerStaff": "AIstaff_CaseStudyMapper",
+      "requiredSections": [
+        "Keyword",
+        "Case study",
+        "Proof/data",
+        "Angle",
+        "Relevance reason"
+      ],
+      "storage": "Local SEO department workspace until external tools are connected",
+      "qualityGates": [
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "output_seo_content_brief",
+      "label": "SEO Content Brief",
+      "ownerStaff": "AIstaff_SEOContentWriter",
+      "requiredSections": [
+        "Target keyword",
+        "Intent",
+        "Title",
+        "Outline",
+        "Case study evidence",
+        "Internal link targets",
+        "CTA",
+        "Metadata"
+      ],
+      "storage": "Local SEO department workspace until external tools are connected",
+      "qualityGates": [
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "output_seo_article_drafts",
+      "label": "SEO Article Drafts",
+      "ownerStaff": "AIstaff_SEOContentWriter",
+      "requiredSections": [
+        "Article body",
+        "Title",
+        "Slug",
+        "Meta description",
+        "Internal links",
+        "Risk flags"
+      ],
+      "storage": "Local SEO department workspace until external tools are connected",
+      "qualityGates": [
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "output_internal_link_plan",
+      "label": "Internal Link Plan",
+      "ownerStaff": "AIstaff_InternalLinkBuilder",
+      "requiredSections": [
+        "Source page",
+        "Target page",
+        "Anchor text",
+        "Reason",
+        "Missing inventory flag"
+      ],
+      "storage": "Local SEO department workspace until external tools are connected",
+      "qualityGates": [
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "output_wordpress_publish_package",
+      "label": "WordPress Publish Package",
+      "ownerStaff": "AIstaff_WordPressPublisher",
+      "requiredSections": [
+        "SEO title 50-60 characters",
+        "Meta description / excerpt 140-160 characters",
+        "Primary long-tail keyword",
+        "3-8 supporting keywords",
+        "Suggested URL slug",
+        "Clean WordPress HTML content",
+        "Categories array with one category ID",
+        "Tags array",
+        "External references as nofollow links",
+        "Key takeaways section",
+        "Internal checklist",
+        "Approval status"
+      ],
+      "storage": "Local SEO department workspace until external tools are connected",
+      "qualityGates": [
+        "gate_seo_metadata_check",
+        "gate_publish_approval",
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "output_seo_learning_report",
+      "label": "SEO Learning Report",
+      "ownerStaff": "AIstaff_SEOQAAnalyst",
+      "requiredSections": [
+        "Published URL",
+        "Keyword movement",
+        "Clicks/impressions",
+        "What worked",
+        "Next recommendation"
+      ],
+      "storage": "Local SEO department workspace until external tools are connected",
+      "qualityGates": [
+        "gate_event_log_trace"
+      ],
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "kpis": [
@@ -2506,7 +4604,204 @@
         "external communication",
         "credentials or billing change"
       ],
-      "workspaceEditable": true
+      "workspaceEditable": true,
+      "status": "Approved",
+      "version": "1.0.0",
+      "roleType": "Manager",
+      "defaultDepartmentFamilies": [
+        "Operations",
+        "Strategy",
+        "Supplier Development"
+      ],
+      "riskTier": "High",
+      "whenToUse": "Receive human intent, select the right specialist, create or route tasks, and keep the department moving without bypassing safety gates.",
+      "defaultStageResponsibility": "Execute assigned workflow stages under the AI Manager and return structured evidence.",
+      "supportedWorkflowStages": [
+        "Intake",
+        "Analysis",
+        "Draft",
+        "Review",
+        "Follow-up",
+        "Blocker escalation"
+      ],
+      "capabilitiesAllowed": [
+        "decision",
+        "next_owner",
+        "task_or_thread_update",
+        "blocker_if_any"
+      ],
+      "capabilitiesNotAllowed": [
+        "missing human policy",
+        "destructive action",
+        "external communication",
+        "credentials or billing change"
+      ],
+      "supportedTaskTypes": [
+        "decision",
+        "next_owner",
+        "task_or_thread_update",
+        "blocker_if_any"
+      ],
+      "requiredLanesTools": [
+        {
+          "family": "local tasks",
+          "requirement": "required",
+          "status": "active",
+          "fallbackBehavior": "Route to local task/thread lane and ask AI Manager when unavailable.",
+          "providerResolutionRule": "Resolve by active workspace connection; Gmail/Outlook/API provider stays in lane adapter."
+        },
+        {
+          "family": "crm read",
+          "requirement": "required",
+          "status": "inactive until workspace connects provider",
+          "fallbackBehavior": "Route to local task/thread lane and ask AI Manager when unavailable.",
+          "providerResolutionRule": "Resolve by active workspace connection; Gmail/Outlook/API provider stays in lane adapter."
+        },
+        {
+          "family": "reporting",
+          "requirement": "optional",
+          "status": "inactive until workspace connects provider",
+          "fallbackBehavior": "Route to local task/thread lane and ask AI Manager when unavailable.",
+          "providerResolutionRule": "Resolve by active workspace connection; Gmail/Outlook/API provider stays in lane adapter."
+        },
+        {
+          "family": "codex worker queue",
+          "requirement": "optional",
+          "status": "inactive until workspace connects provider",
+          "fallbackBehavior": "Route to local task/thread lane and ask AI Manager when unavailable.",
+          "providerResolutionRule": "Resolve by active workspace connection; Gmail/Outlook/API provider stays in lane adapter."
+        }
+      ],
+      "requiredDatasets": [
+        "CRM Lead or project record",
+        "Company profile"
+      ],
+      "optionalDatasets": [
+        "Workspace preferences",
+        "Approved learned improvements"
+      ],
+      "workspaceProvidedDatasets": [
+        "Active CRM/source databases",
+        "Approved contacts and sender identities"
+      ],
+      "missingDataBehavior": "Ask AI Manager to create a human-facing missing-input thread; do not contact the human directly.",
+      "instructionLayers": [
+        {
+          "layer": "Fixed instructions",
+          "access": "platform_locked",
+          "summary": "Platform safety, manager-facing routing, and protected execution rules."
+        },
+        {
+          "layer": "Department instructions",
+          "access": "department_editable",
+          "summary": "Department vocabulary, approval policy, and output preferences within policy."
+        },
+        {
+          "layer": "Staff instructions",
+          "access": "platform_locked",
+          "summary": "Reusable job-description defaults for this staff template."
+        },
+        {
+          "layer": "Workspace preferences",
+          "access": "workspace_editable",
+          "summary": "Safe tone, sender, identity, dataset, and naming preferences."
+        },
+        {
+          "layer": "Learned improvements",
+          "access": "runtime_context",
+          "summary": "Proposed from closed threads and activated only after approval."
+        }
+      ],
+      "inputContract": {
+        "required": [
+          "task objective",
+          "project or lead context",
+          "success criteria"
+        ],
+        "optional": [
+          "tone preference",
+          "sample output",
+          "deadline"
+        ],
+        "acceptedTypes": [
+          "text",
+          "JSON",
+          "CRM record",
+          "document/file reference"
+        ],
+        "validationRules": [
+          "Required context must be present",
+          "External actions require approval metadata"
+        ],
+        "missingInputAction": "Ask AI Manager to request the missing input."
+      },
+      "outputContractDetail": {
+        "format": "structured text or JSON",
+        "requiredSections": [
+          "decision",
+          "next_owner",
+          "task_or_thread_update",
+          "blocker_if_any"
+        ],
+        "approvalRequirement": "Manager review; human approval for external or irreversible action."
+      },
+      "qaGuardrails": {
+        "requiredChecks": [
+          "policy compliance",
+          "tone check",
+          "missing data check",
+          "evidence or source check"
+        ],
+        "humanApprovalRules": [
+          "external_email",
+          "portal_submission",
+          "deleting_records",
+          "applying_learning",
+          "closing_incomplete_leads"
+        ],
+        "forbiddenBehavior": [
+          "do not expose backend/tool details",
+          "do not bypass AI Manager",
+          "do not execute external sends without approval"
+        ]
+      },
+      "retryPolicy": {
+        "maxRetries": 3,
+        "retryDelay": "exponential backoff",
+        "retryableErrors": [
+          "provider timeout",
+          "temporary local worker failure",
+          "rate limit"
+        ],
+        "nonRetryableErrors": [
+          "missing required input",
+          "human approval missing",
+          "duplicate-send risk",
+          "policy violation"
+        ],
+        "fallbackStaffOrTool": "AIstaff_Manager",
+        "askManagerWhen": "confidence is low, provider unavailable, or task should be rerouted",
+        "askHumanWhen": "required business input or approval is missing",
+        "stopStageWhen": "guardrail fails or non-retryable blocker is detected",
+        "createThreadWhen": "approval, missing input, review, escalation, or real blocker exists",
+        "markWorkflowBlockedWhen": "no safe internal action remains"
+      },
+      "versionLog": [
+        {
+          "version": "1.0.0",
+          "status": "Approved",
+          "changedBy": "Platform Admin",
+          "summary": "Default local alpha staff template."
+        }
+      ],
+      "validationState": {
+        "missingTools": [],
+        "missingDatasets": [],
+        "missingSchemas": [],
+        "missingGuardrails": []
+      },
+      "updatedAt": "2026-06-17T07:40:15Z",
+      "updatedBy": "Platform Admin"
     },
     {
       "id": "archetype_thinking_analyst",
@@ -2694,6 +4989,352 @@
         "mapping cannot be verified"
       ],
       "workspaceEditable": true
+    },
+    {
+      "id": "archetype_seo_analyzer",
+      "label": "SEO Analyzer",
+      "purpose": "Analyze organic search performance, content opportunities, and SEO evidence across Search Console, Analytics, Ahrefs/Semrush-style data, GCP exports, and local transcripts; return a manager-ready recommendation with clear confidence and missing-data limits.",
+      "preferredModel": "balanced SEO reasoning model by default; advanced model for multi-source diagnosis or strategy recommendations",
+      "allowedPluginFamilies": [
+        "search_console_api",
+        "analytics_api",
+        "seo_research",
+        "gcp_read",
+        "spreadsheets",
+        "reporting",
+        "local_tasks",
+        "keyword_planner_api"
+      ],
+      "requiresApprovalFor": [
+        "publishing_recommendation_as_external_report",
+        "changing_tracking_or_site_settings",
+        "running paid third-party exports",
+        "creating public content without manager review"
+      ],
+      "outputContract": [
+        "analysis_summary",
+        "data_sources_used",
+        "missing_sources_and_limits",
+        "opportunity_score",
+        "recommended_next_action",
+        "report_or_brief"
+      ],
+      "stopConditions": [
+        "no site or property context",
+        "no active data source and no uploaded dataset",
+        "conflicting data without explanation",
+        "external publishing approval missing"
+      ],
+      "workspaceEditable": true,
+      "status": "Approved",
+      "version": "1.0.0",
+      "roleType": "Staff",
+      "defaultDepartmentFamilies": [
+        "SEO",
+        "Content Growth",
+        "Demand Engine"
+      ],
+      "riskTier": "Medium",
+      "whenToUse": "Use when a workflow stage needs keyword opportunity analysis, page performance diagnosis, SEO content prioritization, or a manager-ready SEO report.",
+      "defaultStageResponsibility": "Read available SEO data, choose the strongest analysis template, explain which tools were active or missing, and return a structured recommendation.",
+      "supportedWorkflowStages": [
+        "SEO data intake",
+        "Keyword opportunity analysis",
+        "Page performance diagnosis",
+        "Content brief preparation",
+        "SEO reporting"
+      ],
+      "capabilitiesAllowed": [
+        "search_performance_analysis",
+        "keyword_opportunity_prioritization",
+        "content_gap_detection",
+        "seo_report_generation",
+        "missing_data_escalation"
+      ],
+      "capabilitiesNotAllowed": [
+        "change_google_cloud_or_search_console_settings",
+        "buy_third_party_data_without_approval",
+        "publish_content_without_manager_approval",
+        "pretend_missing_tools_are_active"
+      ],
+      "supportedTaskTypes": [
+        "seo_keyword_analysis",
+        "seo_page_diagnosis",
+        "seo_content_recommendation",
+        "seo_monthly_report",
+        "seo_data_gap_report"
+      ],
+      "requiredLanesTools": [
+        {
+          "family": "search console api",
+          "requirement": "required for search-performance analysis",
+          "status": "resolve from active platform connection",
+          "fallbackBehavior": "If missing, use uploaded CSV/text evidence or ask Manager to request Search Console setup.",
+          "providerResolutionRule": "Use the active Google Search Console connection assigned to the department organization account."
+        },
+        {
+          "family": "analytics api",
+          "requirement": "optional but recommended",
+          "status": "resolve from active platform connection",
+          "fallbackBehavior": "If missing, produce search-only recommendations and mark engagement analysis as unavailable.",
+          "providerResolutionRule": "Use active Google Analytics or equivalent analytics connection when assigned."
+        },
+        {
+          "family": "seo research",
+          "requirement": "optional",
+          "status": "resolve from active platform connection",
+          "fallbackBehavior": "If Ahrefs/Semrush-style data is missing, avoid claiming keyword difficulty or backlink evidence.",
+          "providerResolutionRule": "Use active third-party SEO dataset/API when assigned; otherwise use internal/public evidence only."
+        },
+        {
+          "family": "gcp read",
+          "requirement": "optional for enterprise projects",
+          "status": "resolve from active platform connection",
+          "fallbackBehavior": "If GCP is missing, ask Manager for exported tables or continue with available SEO sources.",
+          "providerResolutionRule": "Use active GCP service account/project connection assigned in Settings -> Tools."
+        },
+        {
+          "family": "reporting",
+          "requirement": "required",
+          "status": "local-ready",
+          "fallbackBehavior": "If report rendering is unavailable, return structured markdown/JSON sections.",
+          "providerResolutionRule": "Use local report output unless the department assigns a document/dashboard lane."
+        },
+        {
+          "family": "keyword planner api",
+          "requirement": "optional",
+          "status": "resolve from active platform connection",
+          "fallbackBehavior": "If Keyword Planner is missing, use Search Console query evidence, uploaded exports, and public/internal research; do not claim paid-volume estimates.",
+          "providerResolutionRule": "Use active Google Ads Keyword Planner or equivalent lane when assigned."
+        }
+      ],
+      "requiredDatasets": [
+        "site_url",
+        "analysis_objective",
+        "date_range"
+      ],
+      "optionalDatasets": [
+        "search_console_property",
+        "analytics_property",
+        "gcp_project_id",
+        "service_account_reference",
+        "ahrefs_or_semrush_export",
+        "content_inventory",
+        "target_audience"
+      ],
+      "workspaceProvidedDatasets": [
+        "organization_profile",
+        "active_platform_tools",
+        "approved_brand_tone",
+        "approved_learned_improvements"
+      ],
+      "missingDataBehavior": "Produce a limited analysis only when at least one trusted data source or uploaded dataset is available; otherwise route a missing-input task to the AI Manager.",
+      "modelTiers": [
+        {
+          "id": "cheap",
+          "label": "Cheap",
+          "model": "gpt-5-mini",
+          "reasoningEffort": "low",
+          "useWhen": "Single-source summaries, quick keyword lists, or data availability checks."
+        },
+        {
+          "id": "balanced",
+          "label": "Balanced",
+          "model": "gpt-5-mini or configured SEO model",
+          "reasoningEffort": "medium",
+          "useWhen": "Normal SEO opportunity scoring and report drafting."
+        },
+        {
+          "id": "advanced",
+          "label": "Advanced",
+          "model": "higher reasoning SEO model",
+          "reasoningEffort": "high",
+          "useWhen": "Multi-source diagnosis, strategy, conflicting data, or executive recommendations."
+        }
+      ],
+      "analysisTemplates": [
+        {
+          "id": "gsc_keyword_opportunity",
+          "label": "Search Console Keyword Opportunity",
+          "requiredInputs": [
+            "site_url",
+            "search_console_property",
+            "date_range"
+          ],
+          "outputSections": [
+            "quick_wins",
+            "declining_queries",
+            "content_to_refresh",
+            "new_content_opportunities"
+          ]
+        },
+        {
+          "id": "page_performance_diagnosis",
+          "label": "Page Performance Diagnosis",
+          "requiredInputs": [
+            "site_url",
+            "page_url_or_slug",
+            "date_range"
+          ],
+          "outputSections": [
+            "traffic_pattern",
+            "query_fit",
+            "engagement_limitations",
+            "recommended_fix"
+          ]
+        },
+        {
+          "id": "multi_source_seo_report",
+          "label": "Multi-Source SEO Report",
+          "requiredInputs": [
+            "site_url",
+            "date_range",
+            "active_tool_summary"
+          ],
+          "outputSections": [
+            "executive_summary",
+            "source_coverage",
+            "opportunity_score",
+            "prioritized_actions"
+          ]
+        }
+      ],
+      "toolFallbackMatrix": [
+        {
+          "condition": "Search Console active only",
+          "behavior": "Analyze queries, pages, impressions, clicks, CTR, and position; mark engagement and backlink conclusions as unavailable."
+        },
+        {
+          "condition": "Search Console and Analytics active",
+          "behavior": "Combine search demand with engagement behavior and prioritize content refreshes by both acquisition and on-site signal."
+        },
+        {
+          "condition": "Search Console, Analytics, and Ahrefs/Semrush active",
+          "behavior": "Add competition, keyword difficulty, backlinks, and gap evidence to the prioritization model."
+        },
+        {
+          "condition": "No active SEO data connection",
+          "behavior": "Use only uploaded/exported data if provided; otherwise ask the AI Manager to request connection setup or source files."
+        }
+      ],
+      "instructionLayers": [
+        {
+          "layer": "Fixed instructions",
+          "access": "platform_locked",
+          "summary": "Never pretend unavailable SEO tools are active; state data coverage and limits."
+        },
+        {
+          "layer": "Department instructions",
+          "access": "department_editable",
+          "summary": "Use department tone, target market, site context, and approval policy."
+        },
+        {
+          "layer": "Project analysis type",
+          "access": "runtime_context",
+          "summary": "Select one analysis template and required inputs for the project/task."
+        },
+        {
+          "layer": "Model tier",
+          "access": "department_editable",
+          "summary": "Choose cheap, balanced, or advanced reasoning based on budget and risk."
+        }
+      ],
+      "inputContract": {
+        "required": [
+          "site_url",
+          "analysis_objective",
+          "date_range"
+        ],
+        "optional": [
+          "search_console_property",
+          "analytics_property",
+          "gcp_project_id",
+          "service_account_reference",
+          "uploaded_exports",
+          "analysis_template_id",
+          "model_tier"
+        ],
+        "acceptedTypes": [
+          "text",
+          "JSON",
+          "CSV export",
+          "API result",
+          "Google Cloud project reference"
+        ],
+        "validationRules": [
+          "At least one active connection or uploaded trusted dataset is required",
+          "Service accounts are referenced, not pasted into prompts",
+          "Missing tools must be listed in the output limitations"
+        ],
+        "missingInputAction": "Ask AI Manager to request setup or source files."
+      },
+      "outputContractDetail": {
+        "format": "structured markdown or JSON",
+        "requiredSections": [
+          "analysis_summary",
+          "data_sources_used",
+          "missing_sources_and_limits",
+          "recommendations",
+          "next_action"
+        ],
+        "approvalRequirement": "Manager review before external report sharing or publishing action."
+      },
+      "qaGuardrails": {
+        "requiredChecks": [
+          "data source coverage",
+          "date range present",
+          "keyword/page evidence present",
+          "missing tool limitations stated",
+          "recommendation confidence stated"
+        ],
+        "humanApprovalRules": [
+          "external report publishing",
+          "tracking/account changes",
+          "paid third-party export"
+        ],
+        "forbiddenBehavior": [
+          "do not invent Search Console/Analytics data",
+          "do not expose service account secrets",
+          "do not change GCP/Search Console settings"
+        ]
+      },
+      "retryPolicy": {
+        "maxRetries": 2,
+        "retryDelay": "short backoff",
+        "retryableErrors": [
+          "temporary API timeout",
+          "rate limit",
+          "empty API page with valid property"
+        ],
+        "nonRetryableErrors": [
+          "missing property ID",
+          "missing project/site context",
+          "permission denied",
+          "no data source available"
+        ],
+        "fallbackStaffOrTool": "AIstaff_SEOManager",
+        "askManagerWhen": "tool missing, permissions unclear, or confidence below acceptable threshold",
+        "askHumanWhen": "organization credentials, service account access, or publishing approval is needed",
+        "stopStageWhen": "no trusted source is available",
+        "createThreadWhen": "approval, missing connection, missing dataset, or strategic review is required",
+        "markWorkflowBlockedWhen": "analysis cannot proceed with available data"
+      },
+      "versionLog": [
+        {
+          "version": "1.0.0",
+          "status": "Approved",
+          "changedBy": "Platform Admin",
+          "summary": "Initial reusable SEO Analyzer template with model tiers, analysis templates, and connection fallback matrix."
+        }
+      ],
+      "validationState": {
+        "missingTools": [],
+        "missingDatasets": [],
+        "missingSchemas": [],
+        "missingGuardrails": []
+      },
+      "updatedAt": "2026-06-18T12:55:00Z",
+      "updatedBy": "Platform Admin"
     }
   ],
   "platformSafetySkills": [
@@ -3111,6 +5752,24 @@
       "workspaceEditable": true,
       "createdAt": "2026-06-10T18:39:12Z",
       "createdBy": "Human_Iman"
+    },
+    {
+      "id": "binding_department_seo_demand_engine",
+      "bindingType": "department",
+      "targetId": "department_seo_demand_engine",
+      "skillScope": "departmentSkills",
+      "skillIds": [
+        "dept_skill_gcc_lab_tone_vocabulary",
+        "dept_skill_gcc_lab_approval_policy",
+        "dept_skill_owner_sponsor_visibility"
+      ],
+      "resolutionOrder": 2,
+      "locked": false,
+      "workspaceEditable": true,
+      "createdAt": "2026-06-17T13:46:19Z",
+      "createdBy": "Human_Iman",
+      "updatedAt": "2026-06-17T13:46:19Z",
+      "updatedBy": "Human_Iman"
     }
   ],
   "operatingModel": {
@@ -3381,5 +6040,2109 @@
       "Docs"
     ],
     "workspaceEditable": true
-  }
+  },
+  "compatibilityRules": [
+    {
+      "id": "local_alpha_compatible",
+      "label": "Compatible With Local Alpha Runtime",
+      "summary": "This object can run in the current local Python/React + SQLite alpha without production cloud orchestration.",
+      "status": "Active",
+      "ownerLayer": "platformAdmin",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "compatible_with_local_p4_resolver",
+      "label": "Compatible With Local P4 Composition Resolver",
+      "summary": "This skill pack can be resolved into the effective local P4 runtime context.",
+      "status": "Active",
+      "ownerLayer": "platformAdmin",
+      "locked": false,
+      "workspaceEditable": true
+    }
+  ],
+  "formSchemas": [
+    {
+      "collection": "formSchemas",
+      "label": "Form Schemas",
+      "idPrefix": "schema",
+      "fields": [
+        {
+          "name": "id",
+          "label": "Schema ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "collection",
+          "label": "Target Collection",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "idPrefix",
+          "label": "ID Prefix",
+          "type": "text",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "fields",
+          "label": "Fields",
+          "type": "childTable",
+          "required": false,
+          "section": "Fields",
+          "editable": true,
+          "fields": [
+            {
+              "name": "name",
+              "label": "Field Name",
+              "type": "text",
+              "required": true,
+              "section": "Field",
+              "editable": true
+            },
+            {
+              "name": "label",
+              "label": "Field Label",
+              "type": "text",
+              "required": true,
+              "section": "Field",
+              "editable": true
+            },
+            {
+              "name": "type",
+              "label": "Field Type",
+              "type": "enum",
+              "required": true,
+              "section": "Field",
+              "editable": true,
+              "enumKey": "fieldType",
+              "default": "text"
+            },
+            {
+              "name": "required",
+              "label": "Required",
+              "type": "boolean",
+              "required": false,
+              "section": "Behavior",
+              "editable": true
+            },
+            {
+              "name": "editable",
+              "label": "Editable",
+              "type": "boolean",
+              "required": false,
+              "section": "Behavior",
+              "editable": true,
+              "default": true
+            },
+            {
+              "name": "enumKey",
+              "label": "Enum Set",
+              "type": "reference",
+              "required": false,
+              "section": "Options",
+              "editable": true,
+              "referenceCollection": "enumSets"
+            },
+            {
+              "name": "referenceCollection",
+              "label": "Reference Table",
+              "type": "reference",
+              "required": false,
+              "section": "Options",
+              "editable": true,
+              "referenceCollection": "formSchemas"
+            },
+            {
+              "name": "default",
+              "label": "Default Value",
+              "type": "text",
+              "required": false,
+              "section": "Behavior",
+              "editable": true
+            },
+            {
+              "name": "section",
+              "label": "Section",
+              "type": "enum",
+              "required": false,
+              "section": "Layout",
+              "editable": true,
+              "enumKey": "formSection",
+              "default": "General"
+            },
+            {
+              "name": "helpText",
+              "label": "Help Text",
+              "type": "textarea",
+              "required": false,
+              "section": "Layout",
+              "editable": true
+            },
+            {
+              "name": "fields",
+              "label": "Child Fields",
+              "type": "childTable",
+              "required": false,
+              "section": "Child Table",
+              "editable": true,
+              "fields": [
+                {
+                  "name": "name",
+                  "label": "Field Name",
+                  "type": "text",
+                  "required": true,
+                  "section": "General",
+                  "editable": true
+                },
+                {
+                  "name": "label",
+                  "label": "Field Label",
+                  "type": "text",
+                  "required": true,
+                  "section": "General",
+                  "editable": true
+                },
+                {
+                  "name": "type",
+                  "label": "Field Type",
+                  "type": "enum",
+                  "required": true,
+                  "section": "General",
+                  "editable": true,
+                  "enumKey": "fieldType",
+                  "default": "text"
+                },
+                {
+                  "name": "required",
+                  "label": "Required",
+                  "type": "boolean",
+                  "required": false,
+                  "section": "General",
+                  "editable": true
+                },
+                {
+                  "name": "editable",
+                  "label": "Editable",
+                  "type": "boolean",
+                  "required": false,
+                  "section": "General",
+                  "editable": true,
+                  "default": true
+                },
+                {
+                  "name": "enumKey",
+                  "label": "Enum Set",
+                  "type": "reference",
+                  "required": false,
+                  "section": "General",
+                  "editable": true,
+                  "referenceCollection": "enumSets"
+                },
+                {
+                  "name": "referenceCollection",
+                  "label": "Reference Table",
+                  "type": "reference",
+                  "required": false,
+                  "section": "General",
+                  "editable": true,
+                  "referenceCollection": "formSchemas"
+                },
+                {
+                  "name": "default",
+                  "label": "Default Value",
+                  "type": "text",
+                  "required": false,
+                  "section": "General",
+                  "editable": true
+                },
+                {
+                  "name": "section",
+                  "label": "Section",
+                  "type": "enum",
+                  "required": false,
+                  "section": "General",
+                  "editable": true,
+                  "enumKey": "formSection"
+                },
+                {
+                  "name": "helpText",
+                  "label": "Help Text",
+                  "type": "textarea",
+                  "required": false,
+                  "section": "General",
+                  "editable": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status",
+          "default": "Active"
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "default": true
+        }
+      ],
+      "id": "formSchemas",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "enumSets",
+      "label": "Enum Sets",
+      "idPrefix": "enum",
+      "fields": [
+        {
+          "name": "id",
+          "label": "Enum Key",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "values",
+          "label": "Values",
+          "type": "tags",
+          "required": true,
+          "section": "Values",
+          "editable": true
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status",
+          "default": "Active"
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "default": true
+        }
+      ],
+      "id": "enumSets",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "capabilities",
+      "label": "Capabilities",
+      "idPrefix": "capability",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "summary",
+          "label": "Summary",
+          "type": "textarea",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "lifecycleStatus",
+          "label": "Lifecycle Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "lifecycleStatus",
+          "default": "Draft"
+        },
+        {
+          "name": "ownerStaff",
+          "label": "Owner Staff",
+          "type": "reference",
+          "required": true,
+          "section": "Ownership",
+          "editable": true,
+          "referenceCollection": "staffProfiles"
+        },
+        {
+          "name": "recipes",
+          "label": "Recipes",
+          "type": "multiReference",
+          "required": false,
+          "section": "Execution",
+          "editable": true,
+          "referenceCollection": "recipes"
+        },
+        {
+          "name": "requiredConnections",
+          "label": "Required Connections",
+          "type": "multiReference",
+          "required": false,
+          "section": "Execution",
+          "editable": true,
+          "referenceCollection": "connections"
+        },
+        {
+          "name": "recommendedConnections",
+          "label": "Recommended Connections",
+          "type": "multiReference",
+          "required": false,
+          "section": "Execution",
+          "editable": true,
+          "referenceCollection": "connections"
+        },
+        {
+          "name": "databases",
+          "label": "Databases",
+          "type": "multiReference",
+          "required": false,
+          "section": "Data",
+          "editable": true,
+          "referenceCollection": "databases"
+        },
+        {
+          "name": "aiSupport",
+          "label": "AI Support",
+          "type": "multiReference",
+          "required": false,
+          "section": "Execution",
+          "editable": true,
+          "referenceCollection": "aiSupport"
+        },
+        {
+          "name": "automations",
+          "label": "Automations",
+          "type": "multiReference",
+          "required": false,
+          "section": "Execution",
+          "editable": true,
+          "referenceCollection": "automations"
+        },
+        {
+          "name": "qualityGates",
+          "label": "Quality Gates",
+          "type": "multiReference",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "referenceCollection": "qualityGates"
+        },
+        {
+          "name": "outputs",
+          "label": "Outputs",
+          "type": "tags",
+          "required": false,
+          "section": "Outputs",
+          "editable": true
+        },
+        {
+          "name": "confidence",
+          "label": "Confidence",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "confidence",
+          "default": "Medium"
+        }
+      ],
+      "id": "capabilities",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "recipes",
+      "label": "Recipes",
+      "idPrefix": "recipe",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "capabilityId",
+          "label": "Capability",
+          "type": "reference",
+          "required": true,
+          "section": "Identity",
+          "editable": true,
+          "referenceCollection": "capabilities"
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "summary",
+          "label": "Summary",
+          "type": "textarea",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "ownerStaff",
+          "label": "Owner Staff",
+          "type": "reference",
+          "required": false,
+          "section": "Ownership",
+          "editable": true,
+          "referenceCollection": "staffProfiles"
+        },
+        {
+          "name": "stages",
+          "label": "Stages",
+          "type": "childTable",
+          "required": false,
+          "section": "Stages",
+          "editable": true,
+          "fields": [
+            {
+              "name": "id",
+              "label": "Stage ID",
+              "type": "text",
+              "required": true,
+              "section": "General",
+              "editable": true
+            },
+            {
+              "name": "label",
+              "label": "Stage Label",
+              "type": "text",
+              "required": true,
+              "section": "General",
+              "editable": true
+            },
+            {
+              "name": "lanes",
+              "label": "Lanes",
+              "type": "multiReference",
+              "required": false,
+              "section": "General",
+              "editable": true,
+              "referenceCollection": "lanes"
+            },
+            {
+              "name": "qualityGates",
+              "label": "Quality Gates",
+              "type": "multiReference",
+              "required": false,
+              "section": "General",
+              "editable": true,
+              "referenceCollection": "qualityGates"
+            },
+            {
+              "name": "status",
+              "label": "Status",
+              "type": "enum",
+              "required": false,
+              "section": "General",
+              "editable": true,
+              "enumKey": "status"
+            },
+            {
+              "name": "outputs",
+              "label": "Outputs",
+              "type": "tags",
+              "required": false,
+              "section": "General",
+              "editable": true
+            }
+          ]
+        },
+        {
+          "name": "outputs",
+          "label": "Outputs",
+          "type": "tags",
+          "required": false,
+          "section": "Outputs",
+          "editable": true
+        }
+      ],
+      "id": "recipes",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "lanes",
+      "label": "Lane Adapters",
+      "idPrefix": "lane",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "routeType",
+          "label": "Route Type",
+          "type": "enum",
+          "required": false,
+          "section": "Identity",
+          "editable": true,
+          "enumKey": "routeType"
+        },
+        {
+          "name": "ownerStaff",
+          "label": "Owner Staff",
+          "type": "reference",
+          "required": false,
+          "section": "Ownership",
+          "editable": true,
+          "referenceCollection": "staffProfiles"
+        },
+        {
+          "name": "connections",
+          "label": "Connections",
+          "type": "multiReference",
+          "required": false,
+          "section": "Execution",
+          "editable": true,
+          "referenceCollection": "connections"
+        },
+        {
+          "name": "databases",
+          "label": "Databases",
+          "type": "multiReference",
+          "required": false,
+          "section": "Data",
+          "editable": true,
+          "referenceCollection": "databases"
+        },
+        {
+          "name": "aiSupport",
+          "label": "AI Support",
+          "type": "multiReference",
+          "required": false,
+          "section": "Execution",
+          "editable": true,
+          "referenceCollection": "aiSupport"
+        },
+        {
+          "name": "qualityGates",
+          "label": "Quality Gates",
+          "type": "multiReference",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "referenceCollection": "qualityGates"
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status",
+          "default": "Draft"
+        },
+        {
+          "name": "version",
+          "label": "Version",
+          "type": "text",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "default": "0.1.0"
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        }
+      ],
+      "id": "lanes",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "connections",
+      "label": "Connections",
+      "idPrefix": "connection",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "connectionStatus"
+        },
+        {
+          "name": "type",
+          "label": "Type",
+          "type": "text",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "requiredFor",
+          "label": "Required For",
+          "type": "multiReference",
+          "required": false,
+          "section": "Usage",
+          "editable": true,
+          "referenceCollection": "capabilities"
+        }
+      ],
+      "id": "connections",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "databases",
+      "label": "Databases",
+      "idPrefix": "db",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "databaseStatus"
+        },
+        {
+          "name": "type",
+          "label": "Type",
+          "type": "text",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "key",
+          "label": "Key Field",
+          "type": "text",
+          "required": false,
+          "section": "Data",
+          "editable": true
+        }
+      ],
+      "id": "databases",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "aiSupport",
+      "label": "AI Support",
+      "idPrefix": "ai",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "model",
+          "label": "Model",
+          "type": "text",
+          "required": false,
+          "section": "Execution",
+          "editable": true
+        },
+        {
+          "name": "reasoningEffort",
+          "label": "Reasoning Effort",
+          "type": "enum",
+          "required": false,
+          "section": "Execution",
+          "editable": true,
+          "enumKey": "reasoningEffort"
+        },
+        {
+          "name": "ownerStaff",
+          "label": "Owner Staff",
+          "type": "reference",
+          "required": false,
+          "section": "Ownership",
+          "editable": true,
+          "referenceCollection": "staffProfiles"
+        },
+        {
+          "name": "usage",
+          "label": "Usage",
+          "type": "textarea",
+          "required": false,
+          "section": "Execution",
+          "editable": true
+        }
+      ],
+      "id": "aiSupport",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "qualityGates",
+      "label": "Quality Gates",
+      "idPrefix": "gate",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "textarea",
+          "required": true,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status"
+        }
+      ],
+      "id": "qualityGates",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "automations",
+      "label": "Automations",
+      "idPrefix": "automation",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status"
+        },
+        {
+          "name": "capabilities",
+          "label": "Capabilities",
+          "type": "multiReference",
+          "required": false,
+          "section": "Usage",
+          "editable": true,
+          "referenceCollection": "capabilities"
+        }
+      ],
+      "id": "automations",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "compatibilityRules",
+      "label": "Compatibility Rules",
+      "idPrefix": "compatibility",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "summary",
+          "label": "Summary",
+          "type": "textarea",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status"
+        },
+        {
+          "name": "ownerLayer",
+          "label": "Owner Layer",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "ownerLayer"
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        }
+      ],
+      "id": "compatibilityRules",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "platformSafetySkills",
+      "label": "Platform Safety Skills",
+      "idPrefix": "platform_skill",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "scope",
+          "label": "Scope",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "scope",
+          "default": "platformSafety"
+        },
+        {
+          "name": "summary",
+          "label": "Summary",
+          "type": "textarea",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "rules",
+          "label": "Rules",
+          "type": "tags",
+          "required": false,
+          "section": "Instructions",
+          "editable": true
+        },
+        {
+          "name": "ownerLayer",
+          "label": "Owner Layer",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "ownerLayer",
+          "default": "platformAdmin"
+        },
+        {
+          "name": "compatibilityRules",
+          "label": "Compatibility Rules",
+          "type": "multiReference",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "referenceCollection": "compatibilityRules"
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status",
+          "default": "Draft"
+        },
+        {
+          "name": "version",
+          "label": "Version",
+          "type": "text",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "default": "0.1.0"
+        },
+        {
+          "name": "riskTier",
+          "label": "Risk Tier",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "riskTier",
+          "default": "Medium"
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        }
+      ],
+      "id": "platformSafetySkills",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "departmentSkills",
+      "label": "Department Skills",
+      "idPrefix": "department_skill",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "scope",
+          "label": "Scope",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "scope",
+          "default": "department"
+        },
+        {
+          "name": "summary",
+          "label": "Summary",
+          "type": "textarea",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "rules",
+          "label": "Rules",
+          "type": "tags",
+          "required": false,
+          "section": "Instructions",
+          "editable": true
+        },
+        {
+          "name": "ownerLayer",
+          "label": "Owner Layer",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "ownerLayer",
+          "default": "platformAdmin"
+        },
+        {
+          "name": "compatibilityRules",
+          "label": "Compatibility Rules",
+          "type": "multiReference",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "referenceCollection": "compatibilityRules"
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status",
+          "default": "Draft"
+        },
+        {
+          "name": "version",
+          "label": "Version",
+          "type": "text",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "default": "0.1.0"
+        },
+        {
+          "name": "riskTier",
+          "label": "Risk Tier",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "riskTier",
+          "default": "Medium"
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        }
+      ],
+      "id": "departmentSkills",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "staffTemplateSkills",
+      "label": "Staff Skill Packs",
+      "idPrefix": "staff_skill",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "scope",
+          "label": "Scope",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "scope",
+          "default": "staffTemplate"
+        },
+        {
+          "name": "summary",
+          "label": "Summary",
+          "type": "textarea",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "rules",
+          "label": "Rules",
+          "type": "tags",
+          "required": false,
+          "section": "Instructions",
+          "editable": true
+        },
+        {
+          "name": "ownerLayer",
+          "label": "Owner Layer",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "ownerLayer",
+          "default": "platformAdmin"
+        },
+        {
+          "name": "compatibilityRules",
+          "label": "Compatibility Rules",
+          "type": "multiReference",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "referenceCollection": "compatibilityRules"
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status",
+          "default": "Draft"
+        },
+        {
+          "name": "version",
+          "label": "Version",
+          "type": "text",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "default": "0.1.0"
+        },
+        {
+          "name": "riskTier",
+          "label": "Risk Tier",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "riskTier",
+          "default": "Medium"
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        }
+      ],
+      "id": "staffTemplateSkills",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "laneAdapterSkills",
+      "label": "Lane Adapter Skills",
+      "idPrefix": "lane_skill",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "scope",
+          "label": "Scope",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "scope",
+          "default": "laneAdapter"
+        },
+        {
+          "name": "summary",
+          "label": "Summary",
+          "type": "textarea",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "rules",
+          "label": "Rules",
+          "type": "tags",
+          "required": false,
+          "section": "Instructions",
+          "editable": true
+        },
+        {
+          "name": "ownerLayer",
+          "label": "Owner Layer",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "ownerLayer",
+          "default": "platformAdmin"
+        },
+        {
+          "name": "compatibilityRules",
+          "label": "Compatibility Rules",
+          "type": "multiReference",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "referenceCollection": "compatibilityRules"
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status",
+          "default": "Draft"
+        },
+        {
+          "name": "version",
+          "label": "Version",
+          "type": "text",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "default": "0.1.0"
+        },
+        {
+          "name": "riskTier",
+          "label": "Risk Tier",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "riskTier",
+          "default": "Medium"
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        }
+      ],
+      "id": "laneAdapterSkills",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "departmentTemplates",
+      "label": "Department Packages",
+      "idPrefix": "template",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "purpose",
+          "label": "Purpose",
+          "type": "textarea",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "solutionModuleId",
+          "label": "Solution Module",
+          "type": "text",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "capabilities",
+          "label": "Capabilities",
+          "type": "multiReference",
+          "required": false,
+          "section": "Composition",
+          "editable": true,
+          "referenceCollection": "capabilities"
+        },
+        {
+          "name": "staffProfiles",
+          "label": "Staff Profiles",
+          "type": "multiReference",
+          "required": false,
+          "section": "Composition",
+          "editable": true,
+          "referenceCollection": "staffProfiles"
+        },
+        {
+          "name": "ownershipModes",
+          "label": "Ownership Modes",
+          "type": "multiEnum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "visibilityMode"
+        },
+        {
+          "name": "projectTypes",
+          "label": "Project Types",
+          "type": "tags",
+          "required": false,
+          "section": "Composition",
+          "editable": true
+        },
+        {
+          "name": "communicationModel",
+          "label": "Communication Model",
+          "type": "textarea",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "templateFamilies",
+          "label": "Template Families",
+          "type": "tags",
+          "required": false,
+          "section": "Composition",
+          "editable": true
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status"
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        }
+      ],
+      "id": "departmentTemplates",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "staffArchetypes",
+      "label": "Staff Blueprints",
+      "idPrefix": "archetype",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "purpose",
+          "label": "Purpose",
+          "type": "textarea",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "preferredModel",
+          "label": "Preferred Model",
+          "type": "text",
+          "required": false,
+          "section": "Execution",
+          "editable": true
+        },
+        {
+          "name": "allowedPluginFamilies",
+          "label": "Allowed Plugin Families",
+          "type": "tags",
+          "required": false,
+          "section": "Execution",
+          "editable": true
+        },
+        {
+          "name": "requiresApprovalFor",
+          "label": "Requires Approval For",
+          "type": "tags",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "outputContract",
+          "label": "Output Contract",
+          "type": "tags",
+          "required": false,
+          "section": "Outputs",
+          "editable": true
+        },
+        {
+          "name": "stopConditions",
+          "label": "Stop Conditions",
+          "type": "tags",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "status"
+        },
+        {
+          "name": "version",
+          "label": "Version",
+          "type": "text",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "riskTier",
+          "label": "Risk Tier",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "riskTier"
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        }
+      ],
+      "id": "staffArchetypes",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "collection": "staffProfiles",
+      "label": "Staff Profiles",
+      "idPrefix": "AIstaff",
+      "fields": [
+        {
+          "name": "id",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "label",
+          "label": "Label",
+          "type": "text",
+          "required": true,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "alias",
+          "label": "Alias",
+          "type": "text",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "profileTitle",
+          "label": "Profile Title",
+          "type": "text",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "role",
+          "label": "Role",
+          "type": "textarea",
+          "required": false,
+          "section": "Identity",
+          "editable": true
+        },
+        {
+          "name": "managerId",
+          "label": "Manager",
+          "type": "reference",
+          "required": false,
+          "section": "Ownership",
+          "editable": true,
+          "referenceCollection": "staffProfiles"
+        },
+        {
+          "name": "reportsTo",
+          "label": "Reports To",
+          "type": "reference",
+          "required": false,
+          "section": "Ownership",
+          "editable": true,
+          "referenceCollection": "staffProfiles"
+        },
+        {
+          "name": "archetypeIds",
+          "label": "Archetypes",
+          "type": "multiReference",
+          "required": false,
+          "section": "Composition",
+          "editable": true,
+          "referenceCollection": "staffArchetypes"
+        },
+        {
+          "name": "primaryArchetypeId",
+          "label": "Primary Archetype",
+          "type": "reference",
+          "required": false,
+          "section": "Composition",
+          "editable": true,
+          "referenceCollection": "staffArchetypes"
+        },
+        {
+          "name": "contactPolicy",
+          "label": "Contact Policy",
+          "type": "textarea",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "communicationScope",
+          "label": "Communication Scope",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "communicationScope"
+        },
+        {
+          "name": "visibilityMode",
+          "label": "Visibility Mode",
+          "type": "enum",
+          "required": false,
+          "section": "Governance",
+          "editable": true,
+          "enumKey": "visibilityMode"
+        },
+        {
+          "name": "canContactHuman",
+          "label": "Can Contact Human",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "canCreateHumanFacingThreads",
+          "label": "Can Create Human-Facing Threads",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "workspaceEditable",
+          "label": "Workspace Editable",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        },
+        {
+          "name": "locked",
+          "label": "Locked",
+          "type": "boolean",
+          "required": false,
+          "section": "Governance",
+          "editable": true
+        }
+      ],
+      "id": "staffProfiles",
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    }
+  ],
+  "enumSets": [
+    {
+      "id": "status",
+      "label": "Status",
+      "values": [
+        "Draft",
+        "Review",
+        "Approved",
+        "Active",
+        "Deprecated",
+        "Archived"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true,
+      "updatedAt": "2026-06-17T07:14:56Z",
+      "updatedBy": "Platform Admin"
+    },
+    {
+      "id": "lifecycleStatus",
+      "label": "Lifecycle Status",
+      "values": [
+        "Draft",
+        "Active",
+        "Paused",
+        "Deprecated",
+        "Archived",
+        "Sample"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "riskTier",
+      "label": "Risk Tier",
+      "values": [
+        "Low",
+        "Medium",
+        "High"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "reasoningEffort",
+      "label": "Reasoning Effort",
+      "values": [
+        "minimal",
+        "low",
+        "medium",
+        "high"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "scope",
+      "label": "Scope",
+      "values": [
+        "platformSafety",
+        "department",
+        "staffTemplate",
+        "laneAdapter"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "ownerLayer",
+      "label": "Owner Layer",
+      "values": [
+        "platformAdmin",
+        "workspaceSettings",
+        "departmentExplorer",
+        "runtime"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "communicationScope",
+      "label": "Communication Scope",
+      "values": [
+        "human_to_manager",
+        "manager_human_and_staff",
+        "staff_to_manager_only"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "visibilityMode",
+      "label": "Visibility Mode",
+      "values": [
+        "ownedDepartment",
+        "sponsoredAssignment"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "routeType",
+      "label": "Route Type",
+      "values": [
+        "AI reasoning",
+        "human-supervised AI worker",
+        "external search",
+        "database/writeback",
+        "document storage",
+        "email operation",
+        "automation adapter",
+        "local workflow",
+        "local database",
+        "tool/data contract"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "connectionStatus",
+      "label": "Connection Status",
+      "values": [
+        "Available",
+        "Configured",
+        "Needs Setup",
+        "Test Failed"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true,
+      "updatedAt": "2026-06-17T00:00:00Z",
+      "updatedBy": "Human_Iman"
+    },
+    {
+      "id": "databaseStatus",
+      "label": "Database Status",
+      "values": [
+        "Core",
+        "Supporting",
+        "Post-win",
+        "Local",
+        "Draft"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "confidence",
+      "label": "Confidence",
+      "values": [
+        "Low",
+        "Medium",
+        "High"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "boolean",
+      "label": "Boolean",
+      "values": [
+        true,
+        false
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "fieldType",
+      "label": "Field Type",
+      "values": [
+        "text",
+        "textarea",
+        "boolean",
+        "enum",
+        "multiEnum",
+        "reference",
+        "multiReference",
+        "tags",
+        "childTable",
+        "readonly",
+        "advancedJson"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    },
+    {
+      "id": "formSection",
+      "label": "Form Section",
+      "values": [
+        "Identity",
+        "Ownership",
+        "Composition",
+        "Execution",
+        "Data",
+        "Governance",
+        "Instructions",
+        "Outputs",
+        "Usage",
+        "Stages",
+        "General"
+      ],
+      "status": "Active",
+      "locked": false,
+      "workspaceEditable": true
+    }
+  ]
 }

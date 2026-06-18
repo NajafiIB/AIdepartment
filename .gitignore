@@ -110,5 +110,7 @@ Implementation_Musahama/
 
 # Runtime exclusions inside tracked source folders
 swiss_planner_command_center/swiss_planner_local.db*
+swiss_planner_command_center/swiss_planner_local.*.db
+swiss_planner_command_center/*.log
 swiss_planner_command_center/__pycache__/
 swiss_planner_command_center/**/*.py[cod]

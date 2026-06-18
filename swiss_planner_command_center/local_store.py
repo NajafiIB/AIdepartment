@@ -4,23 +4,34 @@ import json
 import os
 import re
 import shutil
+import ssl
 import sqlite3
 import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import zipfile
 from pathlib import Path
 from typing import Any, Callable
 
+try:
+    from . import langgraph_orchestrator
+except ImportError:  # pragma: no cover - direct script execution path.
+    import langgraph_orchestrator  # type: ignore
+
 
 Dashboard = dict[str, Any]
 BridgeCall = Callable[[str | None, dict | None, str], dict]
 
 
-DB_PATH = Path(__file__).resolve().parent / "swiss_planner_local.db"
+DB_PATH = Path(
+    os.environ.get("AI_DEPARTMENT_DB_PATH", "")
+    or Path(__file__).resolve().parent / "swiss_planner_local.db"
+).expanduser()
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CAPABILITY_FABRIC_PATH = Path(__file__).resolve().parent / "capability_fabric.json"
 TEST_WORKER_SCRIPT_PATH = Path(__file__).resolve().parent / "tools" / "local_test_worker.py"
@@ -72,6 +83,7 @@ DEFAULT_STAFF_ALIASES = {
     "AIstaff_ApplicationPackSender": "Omar",
     "AIstaff_FollowUpController": "Lina",
     "AIstaff_CRMController": "Noah",
+    "AIstaff_SEOExpert": "Nora",
 }
 
 FABRIC_COLLECTION_LABELS = {
@@ -86,6 +98,7 @@ FABRIC_COLLECTION_LABELS = {
     "departmentSkills": "Department Skills",
     "staffTemplateSkills": "Staff Template Skills",
     "laneAdapterSkills": "Lane / Tool Adapter Skills",
+    "compatibilityRules": "Compatibility Rules",
     "skillBindings": "Skill Bindings",
     "capabilities": "Capabilities",
     "recipes": "Playbooks",
@@ -97,6 +110,8 @@ FABRIC_COLLECTION_LABELS = {
     "outputTemplates": "Output Templates",
     "kpis": "KPIs",
     "reportDefinitions": "Report Definitions",
+    "formSchemas": "Platform Admin Form Schemas",
+    "enumSets": "Platform Admin Enum Sets",
 }
 
 EDITABLE_FABRIC_COLLECTIONS = set(FABRIC_COLLECTION_LABELS)
@@ -451,6 +466,79 @@ def init_db() -> None:
               created_at REAL NOT NULL,
               updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS orchestration_runs (
+              run_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL DEFAULT '',
+              organization_account_id TEXT NOT NULL DEFAULT '',
+              goal_id TEXT NOT NULL DEFAULT '',
+              project_step_id TEXT NOT NULL DEFAULT '',
+              thread_id TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'Queued',
+              current_node TEXT NOT NULL DEFAULT 'manager_intake',
+              graph_name TEXT NOT NULL DEFAULT 'ai_department_langgraph_v1',
+              state_json TEXT NOT NULL DEFAULT '{}',
+              last_error TEXT NOT NULL DEFAULT '',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              completed_at REAL,
+              created_by TEXT NOT NULL DEFAULT 'AIstaff_Manager'
+            );
+            CREATE TABLE IF NOT EXISTS orchestration_events (
+              event_id TEXT PRIMARY KEY,
+              run_id TEXT NOT NULL,
+              department_id TEXT NOT NULL DEFAULT '',
+              event_type TEXT NOT NULL,
+              node_name TEXT NOT NULL DEFAULT '',
+              summary TEXT NOT NULL DEFAULT '',
+              payload_json TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              created_by TEXT NOT NULL DEFAULT 'AIstaff_Manager'
+            );
+            CREATE TABLE IF NOT EXISTS activity_bindings (
+              binding_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL DEFAULT '*',
+              activity_name TEXT NOT NULL,
+              label TEXT NOT NULL DEFAULT '',
+              handler_type TEXT NOT NULL DEFAULT 'windmill',
+              windmill_path TEXT NOT NULL DEFAULT '',
+              approval_required INTEGER NOT NULL DEFAULT 1,
+              dry_run_supported INTEGER NOT NULL DEFAULT 1,
+              status TEXT NOT NULL DEFAULT 'Draft',
+              source_payload TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS activity_runs (
+              activity_run_id TEXT PRIMARY KEY,
+              department_id TEXT NOT NULL DEFAULT '',
+              organization_account_id TEXT NOT NULL DEFAULT '',
+              binding_id TEXT NOT NULL DEFAULT '',
+              activity_name TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'Requested',
+              approval_state TEXT NOT NULL DEFAULT 'Not Required',
+              idempotency_key TEXT NOT NULL DEFAULT '',
+              dry_run INTEGER NOT NULL DEFAULT 1,
+              request_payload TEXT NOT NULL DEFAULT '{}',
+              result_payload TEXT NOT NULL DEFAULT '{}',
+              error TEXT NOT NULL DEFAULT '',
+              windmill_job_id TEXT NOT NULL DEFAULT '',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              requested_by TEXT NOT NULL DEFAULT 'AIstaff_Manager'
+            );
+            CREATE TABLE IF NOT EXISTS approval_tickets (
+              approval_id TEXT PRIMARY KEY,
+              activity_run_id TEXT NOT NULL DEFAULT '',
+              department_id TEXT NOT NULL DEFAULT '',
+              approval_type TEXT NOT NULL DEFAULT 'external_activity',
+              status TEXT NOT NULL DEFAULT 'Pending',
+              requested_by TEXT NOT NULL DEFAULT 'AIstaff_Manager',
+              approved_by TEXT NOT NULL DEFAULT '',
+              reason TEXT NOT NULL DEFAULT '',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              resolved_at REAL
+            );
             CREATE INDEX IF NOT EXISTS idx_task_threads_responsible
               ON task_threads (responsible, status, archived, last_message_at);
             CREATE INDEX IF NOT EXISTS idx_task_threads_task
@@ -493,6 +581,18 @@ def init_db() -> None:
               ON p4_provisioning_snapshots (department_id, project_step_id, work_item_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_p4_handlers_status
               ON p4_runtime_handlers (handler_type, status);
+            CREATE INDEX IF NOT EXISTS idx_orchestration_runs_department
+              ON orchestration_runs (department_id, status, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_orchestration_events_run
+              ON orchestration_events (run_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_activity_bindings_department
+              ON activity_bindings (department_id, activity_name, status);
+            CREATE INDEX IF NOT EXISTS idx_activity_runs_department
+              ON activity_runs (department_id, status, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_activity_runs_idempotency
+              ON activity_runs (idempotency_key);
+            CREATE INDEX IF NOT EXISTS idx_approval_tickets_activity
+              ON approval_tickets (activity_run_id, status);
             """
         )
     if not get_meta("autopilot_enabled"):
@@ -504,6 +604,8 @@ def init_db() -> None:
     if not get_meta("local_worker_enabled"):
         set_meta("local_worker_enabled", "TRUE")
     ensure_default_sender_identity()
+    ensure_default_activity_bindings()
+    archive_legacy_activity_bindings()
 
 
 def set_meta(key: str, value: Any) -> None:
@@ -556,10 +658,17 @@ def field_access_for_key(key: str, row: dict[str, Any] | None = None) -> str:
         "vatOrTaxId",
         "commercialRegistrationNumber",
         "registeredAddress",
+        "organizationDisplayName",
+        "legalOrganizationName",
+        "websiteUrl",
+        "primaryDomain",
         "industrySector",
         "defaultLanguage",
         "approvedBrandTone",
         "defaultManagerTitle",
+        "managerDisplayName",
+        "managerTitle",
+        "publicDescription",
         "approvedEmailSignature",
         "approvedSenderIdentities",
         "activeConnections",
@@ -577,12 +686,510 @@ def attach_field_access(row: dict[str, Any], object_type: str = "") -> dict[str,
     decorated = json_clone(row or {})
     decorated["dtoType"] = object_type or decorated.get("dtoType") or "AiCatalogObject"
     decorated["fieldAccess"] = {key: field_access_for_key(key, decorated) for key in decorated.keys() if key != "fieldAccess"}
+    if decorated["dtoType"] == "DepartmentBusinessIdentity":
+        for key in DEPARTMENT_IDENTITY_FIELDS:
+            if key in decorated["fieldAccess"]:
+                decorated["fieldAccess"][key] = "department_editable"
+        for key in {"updatedAt", "createdAt"}:
+            if key in decorated["fieldAccess"]:
+                decorated["fieldAccess"][key] = "runtime_context"
     decorated["accessSummary"] = (
         "platform_locked" if decorated.get("locked") or decorated.get("workspaceEditable") is False
+        else "department_editable" if decorated["dtoType"] == "DepartmentBusinessIdentity"
         else "workspace_editable" if decorated.get("workspaceEditable") is True
         else "department_editable"
     )
     return decorated
+
+
+PLATFORM_ADMIN_ENUM_OPTIONS = {
+    "status": ["Draft", "Review", "Approved", "Active", "Deprecated", "Archived"],
+    "lifecycleStatus": ["Draft", "Active", "Paused", "Deprecated", "Archived", "Sample"],
+    "riskTier": ["Low", "Medium", "High"],
+    "reasoningEffort": ["minimal", "low", "medium", "high"],
+    "scope": ["platformSafety", "department", "staffTemplate", "laneAdapter"],
+    "ownerLayer": ["platformAdmin", "workspaceSettings", "departmentExplorer", "runtime"],
+    "communicationScope": ["human_to_manager", "manager_human_and_staff", "staff_to_manager_only"],
+    "visibilityMode": ["ownedDepartment", "sponsoredAssignment"],
+    "routeType": ["AI reasoning", "human-supervised AI worker", "external search", "database/writeback", "document storage", "email operation", "automation adapter", "local workflow", "local database", "tool/data contract"],
+    "connectionStatus": ["Active", "Available", "Configured", "Needs Setup", "Test Failed", "Local", "Disabled", "Planned", "Draft"],
+    "databaseStatus": ["Core", "Supporting", "Post-win", "Local", "Draft"],
+    "confidence": ["Low", "Medium", "High"],
+    "boolean": [True, False],
+    "fieldType": ["text", "textarea", "boolean", "enum", "multiEnum", "reference", "multiReference", "tags", "childTable", "readonly", "advancedJson"],
+    "formSection": ["Identity", "Ownership", "Composition", "Execution", "Data", "Governance", "Instructions", "Outputs", "Usage", "Stages", "General"],
+}
+
+
+def form_field(
+    name: str,
+    label: str,
+    field_type: str = "text",
+    *,
+    required: bool = False,
+    enum_key: str = "",
+    reference_collection: str = "",
+    default: Any = None,
+    section: str = "General",
+    help_text: str = "",
+    editable: bool = True,
+    fields: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    field = {
+        "name": name,
+        "label": label,
+        "type": field_type,
+        "required": required,
+        "section": section,
+        "editable": editable,
+    }
+    if enum_key:
+        field["enumKey"] = enum_key
+    if reference_collection:
+        field["referenceCollection"] = reference_collection
+    if default is not None:
+        field["default"] = default
+    if help_text:
+        field["helpText"] = help_text
+    if fields is not None:
+        field["fields"] = fields
+    return field
+
+
+def friendly_label(value: str) -> str:
+    text = re.sub(r"[_\-]+", " ", str(value or "")).strip()
+    text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", text)
+    return text[:1].upper() + text[1:] if text else ""
+
+
+def default_platform_admin_form_schemas() -> dict[str, Any]:
+    scoped_skill_fields = [
+        form_field("id", "ID", "text", required=True, section="Identity"),
+        form_field("label", "Label", "text", required=True, section="Identity"),
+        form_field("scope", "Scope", "enum", enum_key="scope", default="staffTemplate", section="Governance"),
+        form_field("summary", "Summary", "textarea", required=True, section="Identity"),
+        form_field("rules", "Rules", "tags", section="Instructions"),
+        form_field("ownerLayer", "Owner Layer", "enum", enum_key="ownerLayer", default="platformAdmin", section="Governance"),
+        form_field("compatibilityRules", "Compatibility Rules", "multiReference", reference_collection="compatibilityRules", section="Governance"),
+        form_field("status", "Status", "enum", enum_key="status", default="Draft", section="Governance"),
+        form_field("version", "Version", "text", default="0.1.0", section="Governance"),
+        form_field("riskTier", "Risk Tier", "enum", enum_key="riskTier", default="Medium", section="Governance"),
+        form_field("locked", "Locked", "boolean", section="Governance"),
+        form_field("workspaceEditable", "Workspace Editable", "boolean", section="Governance"),
+    ]
+    schema_field_rows = [
+        form_field("name", "Field Name", "text", required=True, section="Field"),
+        form_field("label", "Field Label", "text", required=True, section="Field"),
+        form_field("type", "Field Type", "enum", enum_key="fieldType", required=True, default="text", section="Field"),
+        form_field("required", "Required", "boolean", section="Behavior"),
+        form_field("editable", "Editable", "boolean", default=True, section="Behavior"),
+        form_field("enumKey", "Enum Set", "reference", reference_collection="enumSets", section="Options"),
+        form_field("referenceCollection", "Reference Table", "reference", reference_collection="formSchemas", section="Options"),
+        form_field("default", "Default Value", "text", section="Behavior"),
+        form_field("section", "Section", "enum", enum_key="formSection", default="General", section="Layout"),
+        form_field("helpText", "Help Text", "textarea", section="Layout"),
+        form_field("fields", "Child Fields", "childTable", section="Child Table", fields=[
+            form_field("name", "Field Name", "text", required=True),
+            form_field("label", "Field Label", "text", required=True),
+            form_field("type", "Field Type", "enum", enum_key="fieldType", required=True, default="text"),
+            form_field("required", "Required", "boolean"),
+            form_field("editable", "Editable", "boolean", default=True),
+            form_field("enumKey", "Enum Set", "reference", reference_collection="enumSets"),
+            form_field("referenceCollection", "Reference Table", "reference", reference_collection="formSchemas"),
+            form_field("default", "Default Value", "text"),
+            form_field("section", "Section", "enum", enum_key="formSection"),
+            form_field("helpText", "Help Text", "textarea"),
+        ]),
+    ]
+    schemas = {
+        "formSchemas": {
+            "collection": "formSchemas",
+            "label": "Form Schemas",
+            "idPrefix": "schema",
+            "fields": [
+                form_field("id", "Schema ID", "text", required=True, section="Identity"),
+                form_field("collection", "Target Collection", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("idPrefix", "ID Prefix", "text", section="Identity"),
+                form_field("fields", "Fields", "childTable", section="Fields", fields=schema_field_rows),
+                form_field("status", "Status", "enum", enum_key="status", default="Active", section="Governance"),
+                form_field("locked", "Locked", "boolean", section="Governance"),
+                form_field("workspaceEditable", "Workspace Editable", "boolean", default=True, section="Governance"),
+            ],
+        },
+        "enumSets": {
+            "collection": "enumSets",
+            "label": "Enum Sets",
+            "idPrefix": "enum",
+            "fields": [
+                form_field("id", "Enum Key", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("values", "Values", "tags", required=True, section="Values"),
+                form_field("status", "Status", "enum", enum_key="status", default="Active", section="Governance"),
+                form_field("locked", "Locked", "boolean", section="Governance"),
+                form_field("workspaceEditable", "Workspace Editable", "boolean", default=True, section="Governance"),
+            ],
+        },
+        "capabilities": {
+            "collection": "capabilities",
+            "label": "Capabilities",
+            "idPrefix": "capability",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("summary", "Summary", "textarea", section="Identity"),
+                form_field("lifecycleStatus", "Lifecycle Status", "enum", enum_key="lifecycleStatus", default="Draft", section="Governance"),
+                form_field("ownerStaff", "Owner Staff", "reference", reference_collection="staffProfiles", required=True, section="Ownership"),
+                form_field("recipes", "Recipes", "multiReference", reference_collection="recipes", section="Execution"),
+                form_field("requiredConnections", "Required Connections", "multiReference", reference_collection="connections", section="Execution"),
+                form_field("recommendedConnections", "Recommended Connections", "multiReference", reference_collection="connections", section="Execution"),
+                form_field("databases", "Databases", "multiReference", reference_collection="databases", section="Data"),
+                form_field("aiSupport", "AI Support", "multiReference", reference_collection="aiSupport", section="Execution"),
+                form_field("automations", "Automations", "multiReference", reference_collection="automations", section="Execution"),
+                form_field("qualityGates", "Quality Gates", "multiReference", reference_collection="qualityGates", section="Governance"),
+                form_field("outputs", "Outputs", "tags", section="Outputs"),
+                form_field("confidence", "Confidence", "enum", enum_key="confidence", default="Medium", section="Governance"),
+            ],
+        },
+        "recipes": {
+            "collection": "recipes",
+            "label": "Recipes",
+            "idPrefix": "recipe",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("capabilityId", "Capability", "reference", reference_collection="capabilities", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("summary", "Summary", "textarea", section="Identity"),
+                form_field("ownerStaff", "Owner Staff", "reference", reference_collection="staffProfiles", section="Ownership"),
+                form_field("stages", "Stages", "childTable", section="Stages", fields=[
+                    form_field("id", "Stage ID", "text", required=True),
+                    form_field("label", "Stage Label", "text", required=True),
+                    form_field("lanes", "Lanes", "multiReference", reference_collection="lanes"),
+                    form_field("qualityGates", "Quality Gates", "multiReference", reference_collection="qualityGates"),
+                    form_field("status", "Status", "enum", enum_key="status"),
+                    form_field("outputs", "Outputs", "tags"),
+                ]),
+                form_field("outputs", "Outputs", "tags", section="Outputs"),
+            ],
+        },
+        "lanes": {
+            "collection": "lanes",
+            "label": "Lane Adapters",
+            "idPrefix": "lane",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("routeType", "Route Type", "enum", enum_key="routeType", section="Identity"),
+                form_field("ownerStaff", "Owner Staff", "reference", reference_collection="staffProfiles", section="Ownership"),
+                form_field("connections", "Connections", "multiReference", reference_collection="connections", section="Execution"),
+                form_field("databases", "Databases", "multiReference", reference_collection="databases", section="Data"),
+                form_field("aiSupport", "AI Support", "multiReference", reference_collection="aiSupport", section="Execution"),
+                form_field("qualityGates", "Quality Gates", "multiReference", reference_collection="qualityGates", section="Governance"),
+                form_field("status", "Status", "enum", enum_key="status", default="Draft", section="Governance"),
+                form_field("version", "Version", "text", default="0.1.0", section="Governance"),
+                form_field("locked", "Locked", "boolean", section="Governance"),
+                form_field("workspaceEditable", "Workspace Editable", "boolean", section="Governance"),
+            ],
+        },
+        "connections": {
+            "collection": "connections",
+            "label": "Connections",
+            "idPrefix": "connection",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("status", "Status", "enum", enum_key="connectionStatus", section="Governance"),
+                form_field("type", "Type", "text", section="Identity"),
+                form_field("requiredFor", "Required For", "multiReference", reference_collection="capabilities", section="Usage"),
+                form_field("setupFields", "Setup Fields Needed", "tags", section="Configuration"),
+                form_field("accountLabel", "Account / Workspace Label", "text", section="Configuration"),
+                form_field("propertyId", "Property / Project ID", "text", section="Configuration"),
+                form_field("siteUrl", "Site URL", "text", section="Configuration"),
+                form_field("webhookUrl", "Webhook / Endpoint URL", "text", section="Configuration"),
+                form_field("configurationNotes", "Configuration Notes", "textarea", section="Configuration"),
+                form_field("lastTestStatus", "Last Test Status", "readonly", section="Test"),
+                form_field("lastTestAt", "Last Tested At", "readonly", section="Test"),
+                form_field("lastTestMessage", "Last Test Message", "readonly", section="Test"),
+            ],
+        },
+        "databases": {
+            "collection": "databases",
+            "label": "Databases",
+            "idPrefix": "db",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("status", "Status", "enum", enum_key="databaseStatus", section="Governance"),
+                form_field("type", "Type", "text", section="Identity"),
+                form_field("key", "Key Field", "text", section="Data"),
+            ],
+        },
+        "aiSupport": {
+            "collection": "aiSupport",
+            "label": "AI Support",
+            "idPrefix": "ai",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("model", "Model", "text", section="Execution"),
+                form_field("reasoningEffort", "Reasoning Effort", "enum", enum_key="reasoningEffort", section="Execution"),
+                form_field("ownerStaff", "Owner Staff", "reference", reference_collection="staffProfiles", section="Ownership"),
+                form_field("usage", "Usage", "textarea", section="Execution"),
+            ],
+        },
+        "qualityGates": {
+            "collection": "qualityGates",
+            "label": "Quality Gates",
+            "idPrefix": "gate",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("rule", "Rule", "textarea", required=True, section="Governance"),
+                form_field("status", "Status", "enum", enum_key="status", section="Governance"),
+            ],
+        },
+        "automations": {
+            "collection": "automations",
+            "label": "Automations",
+            "idPrefix": "automation",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("status", "Status", "enum", enum_key="status", section="Governance"),
+                form_field("capabilities", "Capabilities", "multiReference", reference_collection="capabilities", section="Usage"),
+            ],
+        },
+        "compatibilityRules": {
+            "collection": "compatibilityRules",
+            "label": "Compatibility Rules",
+            "idPrefix": "compatibility",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("summary", "Summary", "textarea", required=True, section="Identity"),
+                form_field("status", "Status", "enum", enum_key="status", section="Governance"),
+                form_field("ownerLayer", "Owner Layer", "enum", enum_key="ownerLayer", section="Governance"),
+                form_field("locked", "Locked", "boolean", section="Governance"),
+                form_field("workspaceEditable", "Workspace Editable", "boolean", section="Governance"),
+            ],
+        },
+        "platformSafetySkills": {
+            "collection": "platformSafetySkills",
+            "label": "Platform Safety Skills",
+            "idPrefix": "platform_skill",
+            "fields": [
+                {**field, "default": "platformSafety"} if field["name"] == "scope" else field
+                for field in scoped_skill_fields
+            ],
+        },
+        "departmentSkills": {
+            "collection": "departmentSkills",
+            "label": "Department Skills",
+            "idPrefix": "department_skill",
+            "fields": [
+                {**field, "default": "department"} if field["name"] == "scope" else field
+                for field in scoped_skill_fields
+            ],
+        },
+        "staffTemplateSkills": {
+            "collection": "staffTemplateSkills",
+            "label": "Staff Skill Packs",
+            "idPrefix": "staff_skill",
+            "fields": scoped_skill_fields,
+        },
+        "laneAdapterSkills": {
+            "collection": "laneAdapterSkills",
+            "label": "Lane Adapter Skills",
+            "idPrefix": "lane_skill",
+            "fields": [
+                {**field, "default": "laneAdapter"} if field["name"] == "scope" else field
+                for field in scoped_skill_fields
+            ],
+        },
+        "departmentTemplates": {
+            "collection": "departmentTemplates",
+            "label": "Department Packages",
+            "idPrefix": "template",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("purpose", "Purpose", "textarea", required=True, section="Identity"),
+                form_field("solutionModuleId", "Solution Module", "text", section="Identity"),
+                form_field("capabilities", "Capabilities", "multiReference", reference_collection="capabilities", section="Composition"),
+                form_field("staffProfiles", "Staff Profiles", "multiReference", reference_collection="staffProfiles", section="Composition"),
+                form_field("ownershipModes", "Ownership Modes", "multiEnum", enum_key="visibilityMode", section="Governance"),
+                form_field("projectTypes", "Project Types", "tags", section="Composition"),
+                form_field("communicationModel", "Communication Model", "textarea", section="Governance"),
+                form_field("templateFamilies", "Template Families", "tags", section="Composition"),
+                form_field("status", "Status", "enum", enum_key="status", section="Governance"),
+                form_field("locked", "Locked", "boolean", section="Governance"),
+                form_field("workspaceEditable", "Workspace Editable", "boolean", section="Governance"),
+            ],
+        },
+        "staffArchetypes": {
+            "collection": "staffArchetypes",
+            "label": "Staff Blueprints",
+            "idPrefix": "archetype",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("purpose", "Purpose", "textarea", section="Identity"),
+                form_field("preferredModel", "Preferred Model", "text", section="Execution"),
+                form_field("allowedPluginFamilies", "Allowed Plugin Families", "tags", section="Execution"),
+                form_field("requiresApprovalFor", "Requires Approval For", "tags", section="Governance"),
+                form_field("outputContract", "Output Contract", "tags", section="Outputs"),
+                form_field("stopConditions", "Stop Conditions", "tags", section="Governance"),
+                form_field("status", "Status", "enum", enum_key="status", section="Governance"),
+                form_field("version", "Version", "text", section="Governance"),
+                form_field("riskTier", "Risk Tier", "enum", enum_key="riskTier", section="Governance"),
+                form_field("workspaceEditable", "Workspace Editable", "boolean", section="Governance"),
+            ],
+        },
+        "staffProfiles": {
+            "collection": "staffProfiles",
+            "label": "Staff Profiles",
+            "idPrefix": "AIstaff",
+            "fields": [
+                form_field("id", "ID", "text", required=True, section="Identity"),
+                form_field("label", "Label", "text", required=True, section="Identity"),
+                form_field("alias", "Alias", "text", section="Identity"),
+                form_field("profileTitle", "Profile Title", "text", section="Identity"),
+                form_field("role", "Role", "textarea", section="Identity"),
+                form_field("managerId", "Manager", "reference", reference_collection="staffProfiles", section="Ownership"),
+                form_field("reportsTo", "Reports To", "reference", reference_collection="staffProfiles", section="Ownership"),
+                form_field("archetypeIds", "Archetypes", "multiReference", reference_collection="staffArchetypes", section="Composition"),
+                form_field("primaryArchetypeId", "Primary Archetype", "reference", reference_collection="staffArchetypes", section="Composition"),
+                form_field("contactPolicy", "Contact Policy", "textarea", section="Governance"),
+                form_field("communicationScope", "Communication Scope", "enum", enum_key="communicationScope", section="Governance"),
+                form_field("visibilityMode", "Visibility Mode", "enum", enum_key="visibilityMode", section="Governance"),
+                form_field("canContactHuman", "Can Contact Human", "boolean", section="Governance"),
+                form_field("canCreateHumanFacingThreads", "Can Create Human-Facing Threads", "boolean", section="Governance"),
+                form_field("workspaceEditable", "Workspace Editable", "boolean", section="Governance"),
+                form_field("locked", "Locked", "boolean", section="Governance"),
+            ],
+        },
+    }
+    return schemas
+
+
+def default_platform_admin_form_schema_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for collection, schema in default_platform_admin_form_schemas().items():
+        row = json_clone(schema)
+        row["id"] = collection
+        row["collection"] = collection
+        row.setdefault("label", FABRIC_COLLECTION_LABELS.get(collection, collection))
+        row.setdefault("status", "Active")
+        row.setdefault("locked", False)
+        row.setdefault("workspaceEditable", True)
+        rows.append(row)
+    return rows
+
+
+def default_platform_admin_enum_sets() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": key,
+            "label": friendly_label(key),
+            "values": json_clone(values),
+            "status": "Active",
+            "locked": False,
+            "workspaceEditable": True,
+        }
+        for key, values in PLATFORM_ADMIN_ENUM_OPTIONS.items()
+    ]
+
+
+def platform_admin_enum_options(fabric: dict[str, Any] | None = None) -> dict[str, list[Any]]:
+    fabric = fabric or load_capability_fabric()
+    rows = fabric.get("enumSets") or []
+    if not isinstance(rows, list) or not rows:
+        return json_clone(PLATFORM_ADMIN_ENUM_OPTIONS)
+    options: dict[str, list[Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        values = row.get("values", [])
+        if isinstance(values, str):
+            values = [item.strip() for item in re.split(r"[\n,;]+", values) if item.strip()]
+        if not isinstance(values, list):
+            values = []
+        options[str(row.get("id"))] = values
+    for key, values in PLATFORM_ADMIN_ENUM_OPTIONS.items():
+        options.setdefault(key, json_clone(values))
+    return options
+
+
+def platform_admin_form_schemas(fabric: dict[str, Any] | None = None) -> dict[str, Any]:
+    fabric = fabric or load_capability_fabric()
+    rows = fabric.get("formSchemas") or []
+    if not isinstance(rows, list) or not rows:
+        return default_platform_admin_form_schemas()
+    schemas: dict[str, Any] = {}
+    defaults = default_platform_admin_form_schemas()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        collection = str(row.get("collection") or row.get("id") or "").strip()
+        if not collection:
+            continue
+        schema = json_clone(row)
+        schema["collection"] = collection
+        schema.setdefault("label", FABRIC_COLLECTION_LABELS.get(collection, collection))
+        schema.setdefault("idPrefix", defaults.get(collection, {}).get("idPrefix") or collection)
+        schema["fields"] = schema.get("fields") if isinstance(schema.get("fields"), list) else defaults.get(collection, {}).get("fields", [])
+        schemas[collection] = schema
+    for collection, schema in defaults.items():
+        schemas.setdefault(collection, json_clone(schema))
+    return schemas
+
+
+def platform_admin_reference_indexes(fabric: dict[str, Any] | None = None) -> dict[str, list[dict[str, Any]]]:
+    fabric = fabric or load_capability_fabric()
+    collections = [
+        "capabilities",
+        "recipes",
+        "lanes",
+        "connections",
+        "databases",
+        "aiSupport",
+        "qualityGates",
+        "automations",
+        "compatibilityRules",
+        "platformSafetySkills",
+        "departmentSkills",
+        "staffTemplateSkills",
+        "laneAdapterSkills",
+        "formSchemas",
+        "enumSets",
+        "departmentTemplates",
+        "staffArchetypes",
+        "staffProfiles",
+    ]
+    indexes: dict[str, list[dict[str, Any]]] = {}
+    for collection in collections:
+        indexes[collection] = [
+            {
+                "id": row.get("id"),
+                "label": row.get("label") or row.get("name") or row.get("id"),
+                "summary": row.get("summary") or row.get("purpose") or row.get("rule") or row.get("usage") or "",
+                "status": row.get("status") or row.get("lifecycleStatus") or "",
+            }
+            for row in (fabric.get(collection, []) or [])
+            if isinstance(row, dict) and row.get("id")
+        ]
+    return indexes
+
+
+def platform_admin_form_payload() -> dict[str, Any]:
+    fabric = load_capability_fabric()
+    return {
+        "ok": True,
+        "formSchemas": platform_admin_form_schemas(fabric),
+        "enumOptions": platform_admin_enum_options(fabric),
+        "referenceIndexes": platform_admin_reference_indexes(fabric),
+        "editableCollections": sorted(EDITABLE_FABRIC_COLLECTIONS),
+    }
 
 
 def workspace_profile() -> dict[str, Any]:
@@ -591,6 +1198,84 @@ def workspace_profile() -> dict[str, Any]:
     if isinstance(saved, dict):
         profile.update({key: value for key, value in saved.items() if key in profile or key in {"updatedAt", "updatedBy"}})
     return attach_field_access(profile, "WorkspaceBusinessProfile")
+
+
+def split_list_value(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [item.strip() for item in re.split(r"[\n,;]+", value) if item.strip()]
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+DEPARTMENT_IDENTITY_FIELDS = {
+    "organizationDisplayName",
+    "legalOrganizationName",
+    "websiteUrl",
+    "primaryDomain",
+    "vatOrTaxId",
+    "commercialRegistrationNumber",
+    "registeredAddress",
+    "industrySector",
+    "defaultLanguage",
+    "approvedBrandTone",
+    "managerDisplayName",
+    "managerTitle",
+    "approvedEmailSignature",
+    "publicDescription",
+    "activeConnections",
+    "approvedDatabases",
+    "connectionConfigs",
+}
+
+
+def department_identity_from_row(department: dict[str, Any], workspace_defaults: dict[str, Any] | None = None) -> dict[str, Any]:
+    workspace_defaults = workspace_defaults or workspace_profile()
+    override = department.get("businessIdentity") if isinstance(department.get("businessIdentity"), dict) else {}
+    label = str(department.get("label") or "").strip()
+    fallback_org = workspace_defaults.get("companyDisplayName") or label or "Department organization"
+    identity = {
+        "id": f"identity_{department.get('id') or fabric_slug(label or 'department')}",
+        "departmentId": department.get("id") or "",
+        "organizationDisplayName": fallback_org,
+        "legalOrganizationName": workspace_defaults.get("legalCompanyName") or "",
+        "websiteUrl": workspace_defaults.get("websiteUrl") or "",
+        "primaryDomain": workspace_defaults.get("primaryDomain") or "",
+        "vatOrTaxId": workspace_defaults.get("vatOrTaxId") or "",
+        "commercialRegistrationNumber": workspace_defaults.get("commercialRegistrationNumber") or "",
+        "registeredAddress": workspace_defaults.get("registeredAddress") or "",
+        "industrySector": department.get("industrySector") or workspace_defaults.get("industrySector") or "",
+        "defaultLanguage": department.get("defaultLanguage") or workspace_defaults.get("defaultLanguage") or "English",
+        "approvedBrandTone": workspace_defaults.get("approvedBrandTone") or "",
+        "managerDisplayName": department.get("humanManager") or workspace_defaults.get("defaultManagerTitle") or "Human Manager",
+        "managerTitle": workspace_defaults.get("defaultManagerTitle") or "Human Manager",
+        "approvedEmailSignature": workspace_defaults.get("approvedEmailSignature") or "",
+        "publicDescription": department.get("purpose") or "",
+        "activeConnections": split_list_value(department.get("activeConnections") or workspace_defaults.get("activeConnections") or []),
+        "approvedDatabases": split_list_value(department.get("approvedDatasets") or workspace_defaults.get("approvedDatabases") or []),
+        "connectionConfigs": {},
+        "workspaceDefaultsId": workspace_defaults.get("id") or "workspace_business_profile",
+        "source": "workspace defaults + department overrides",
+        "workspaceEditable": True,
+    }
+    for key, value in override.items():
+        if key in DEPARTMENT_IDENTITY_FIELDS or key in {"id", "departmentId", "updatedAt", "updatedBy", "createdAt", "createdBy"}:
+            identity[key] = value
+    identity["departmentId"] = department.get("id") or identity.get("departmentId") or ""
+    identity["id"] = identity.get("id") or f"identity_{identity['departmentId']}"
+    for key in {"activeConnections", "approvedDatabases"}:
+        identity[key] = split_list_value(identity.get(key)) if not isinstance(identity.get(key), list) else split_list_value(identity.get(key))
+    if not isinstance(identity.get("connectionConfigs"), dict):
+        identity["connectionConfigs"] = {}
+    return attach_field_access(identity, "DepartmentBusinessIdentity")
+
+
+def attach_department_identities(fabric: dict[str, Any]) -> dict[str, Any]:
+    workspace_defaults = fabric.get("workspaceBusinessProfile") if isinstance(fabric.get("workspaceBusinessProfile"), dict) else default_workspace_business_profile()
+    for department in fabric.get("departments", []) or []:
+        if isinstance(department, dict):
+            department["effectiveBusinessIdentity"] = department_identity_from_row(department, workspace_defaults)
+    return fabric
 
 
 WORKSPACE_PROFILE_EDITABLE_FIELDS = {
@@ -636,6 +1321,206 @@ def update_workspace_profile(payload: dict[str, Any]) -> dict[str, Any]:
         reason=str(payload.get("reason") or "Workspace defaults updated."),
     )
     return {"ok": True, "workspaceProfile": workspace_profile()}
+
+
+def department_business_identity(department_id: str) -> dict[str, Any]:
+    fabric = load_capability_fabric()
+    departments = [row for row in fabric.get("departments", []) or [] if isinstance(row, dict)]
+    department = next((row for row in departments if str(row.get("id")) == str(department_id)), None)
+    if not department:
+        return {"ok": False, "error": f"Department not found: {department_id}"}
+    return {
+        "ok": True,
+        "department": attach_field_access(department, "AiDepartmentInstance"),
+        "businessIdentity": department_identity_from_row(department, fabric.get("workspaceBusinessProfile") or workspace_profile()),
+    }
+
+
+def normalized_department_goal(goal: dict[str, Any], department_id: str = "") -> dict[str, Any]:
+    goal = json_clone(goal or {})
+    label = str(goal.get("label") or "Department goal").strip()
+    goal_id = str(goal.get("id") or f"goal_{fabric_slug(department_id or 'department')}_{fabric_slug(label)}").strip()
+    try:
+        target_count = max(0, int(float(goal.get("targetCount") or 0)))
+    except Exception:
+        target_count = 0
+    try:
+        current_count = max(0, int(float(goal.get("currentCount") or 0)))
+    except Exception:
+        current_count = 0
+    progress_percent = round((current_count / target_count) * 100) if target_count else 0
+    return {
+        "id": goal_id,
+        "label": label,
+        "description": str(goal.get("description") or "").strip(),
+        "metricType": str(goal.get("metricType") or "published_content_count").strip(),
+        "targetCount": target_count,
+        "currentCount": current_count,
+        "targetUnit": str(goal.get("targetUnit") or "Content pieces").strip(),
+        "periodType": str(goal.get("periodType") or "Monthly").strip(),
+        "periodStart": str(goal.get("periodStart") or "").strip(),
+        "periodEnd": str(goal.get("periodEnd") or "").strip(),
+        "status": str(goal.get("status") or ("Completed" if target_count and current_count >= target_count else "Active")).strip(),
+        "ownerStaff": str(goal.get("ownerStaff") or "AIstaff_Manager").strip(),
+        "progressSource": str(goal.get("progressSource") or "Manual/local alpha until WordPress publish log is connected").strip(),
+        "nextAction": str(goal.get("nextAction") or "").strip(),
+        "requiresApprovalForTargetChange": bool(goal.get("requiresApprovalForTargetChange", True)),
+        "workspaceEditable": bool(goal.get("workspaceEditable", True)),
+        "progressPercent": min(100, progress_percent),
+        "remainingCount": max(0, target_count - current_count),
+        "updatedAt": goal.get("updatedAt") or "",
+        "updatedBy": goal.get("updatedBy") or "",
+        "createdAt": goal.get("createdAt") or "",
+        "createdBy": goal.get("createdBy") or "",
+    }
+
+
+def department_goals(department_id: str) -> dict[str, Any]:
+    fabric = load_capability_fabric()
+    departments = [row for row in fabric.get("departments", []) or [] if isinstance(row, dict)]
+    department = next((row for row in departments if str(row.get("id")) == str(department_id)), None)
+    if not department:
+        return {"ok": False, "error": f"Department not found: {department_id}"}
+    goals = [normalized_department_goal(row, str(department.get("id") or "")) for row in (department.get("goals") or []) if isinstance(row, dict)]
+    total_target = sum(int(goal.get("targetCount") or 0) for goal in goals)
+    total_current = sum(int(goal.get("currentCount") or 0) for goal in goals)
+    return {
+        "ok": True,
+        "departmentId": department_id,
+        "department": attach_field_access(department, "AiDepartmentInstance"),
+        "goals": [attach_field_access(goal, "DepartmentGoal") for goal in goals],
+        "summary": {
+            "goalCount": len(goals),
+            "activeCount": len([goal for goal in goals if normalize_text(goal.get("status")) == "active"]),
+            "completedCount": len([goal for goal in goals if normalize_text(goal.get("status")) == "completed"]),
+            "targetCount": total_target,
+            "currentCount": total_current,
+            "progressPercent": round((total_current / total_target) * 100) if total_target else 0,
+        },
+    }
+
+
+def upsert_department_goal(payload: dict[str, Any]) -> dict[str, Any]:
+    department_id = str(payload.get("departmentId") or payload.get("id") or "").strip()
+    if not department_id:
+        return {"ok": False, "error": "Missing departmentId."}
+    goal_payload = payload.get("goal") if isinstance(payload.get("goal"), dict) else payload
+    try:
+        fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+    rows = collection_rows(fabric, "departments")
+    target = next((row for row in rows if isinstance(row, dict) and str(row.get("id")) == department_id), None)
+    if not target:
+        return {"ok": False, "error": f"Department not found: {department_id}"}
+    goals = [row for row in (target.get("goals") or []) if isinstance(row, dict)]
+    updated = normalized_department_goal(goal_payload, department_id)
+    now = iso_like()
+    updated["updatedAt"] = now
+    updated["updatedBy"] = str(payload.get("updatedBy") or "Human_Iman")
+    existing_index = next((index for index, row in enumerate(goals) if str(row.get("id")) == str(updated.get("id"))), -1)
+    before_payload = json_clone(target)
+    if existing_index >= 0:
+        created_at = goals[existing_index].get("createdAt")
+        created_by = goals[existing_index].get("createdBy")
+        updated["createdAt"] = created_at or now
+        updated["createdBy"] = created_by or updated["updatedBy"]
+        goals[existing_index] = updated
+    else:
+        updated["createdAt"] = now
+        updated["createdBy"] = updated["updatedBy"]
+        goals.append(updated)
+    target["goals"] = goals
+    target["updatedAt"] = now
+    target["updatedBy"] = updated["updatedBy"]
+    backup = create_config_backup({"reason": f"Before department goal update: {department_id}", "notes": "Automatic pre-goal-update backup."})
+    result = write_capability_fabric(fabric)
+    if not result.get("ok"):
+        return result
+    result.pop("capabilityFabric", None)
+    version = record_department_version(
+        object_type="departmentGoals",
+        object_id=f"{department_id}:{updated.get('id')}",
+        action="Update department goal",
+        before_payload=before_payload,
+        after_payload=json_clone(target),
+        created_by=updated["updatedBy"],
+        reason=str(payload.get("reason") or "Department goal updated."),
+    )
+    refreshed = load_capability_fabric()
+    refreshed_department = next((row for row in refreshed.get("departments", []) or [] if isinstance(row, dict) and str(row.get("id")) == department_id), target)
+    result["department"] = attach_field_access(refreshed_department, "AiDepartmentInstance")
+    result["goal"] = attach_field_access(updated, "DepartmentGoal")
+    result["goals"] = department_goals(department_id).get("goals") or []
+    result["version"] = version
+    result["backup"] = backup
+    return result
+
+
+def update_department_business_identity(payload: dict[str, Any]) -> dict[str, Any]:
+    department_id = str(payload.get("departmentId") or payload.get("id") or "").strip()
+    if not department_id:
+        return {"ok": False, "error": "Missing departmentId."}
+    try:
+        fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+    rows = collection_rows(fabric, "departments")
+    target = next((row for row in rows if isinstance(row, dict) and str(row.get("id")) == department_id), None)
+    if not target:
+        return {"ok": False, "error": f"Department not found: {department_id}"}
+
+    current_identity = department_identity_from_row(target, workspace_profile())
+    profile_payload = payload.get("businessIdentity") if isinstance(payload.get("businessIdentity"), dict) else payload
+    updated_identity = {key: current_identity.get(key) for key in DEPARTMENT_IDENTITY_FIELDS if key in current_identity}
+    for key in DEPARTMENT_IDENTITY_FIELDS:
+        if key not in profile_payload:
+            continue
+        value = profile_payload.get(key)
+        if key in {"activeConnections", "approvedDatabases"}:
+            value = split_list_value(value)
+        updated_identity[key] = value
+    updated_identity["id"] = current_identity.get("id") or f"identity_{department_id}"
+    updated_identity["departmentId"] = department_id
+    updated_identity["updatedAt"] = iso_like()
+    updated_identity["updatedBy"] = str(payload.get("updatedBy") or "Human_Iman")
+    if not target.get("businessIdentity"):
+        updated_identity["createdAt"] = updated_identity["updatedAt"]
+        updated_identity["createdBy"] = updated_identity["updatedBy"]
+
+    before_payload = json_clone(target)
+    target["businessIdentity"] = updated_identity
+    if "defaultLanguage" in updated_identity:
+        target["defaultLanguage"] = updated_identity.get("defaultLanguage") or target.get("defaultLanguage")
+    if "activeConnections" in updated_identity:
+        target["activeConnections"] = updated_identity.get("activeConnections") or []
+    if "approvedDatabases" in updated_identity:
+        target["approvedDatasets"] = updated_identity.get("approvedDatabases") or []
+    target["updatedAt"] = updated_identity["updatedAt"]
+    target["updatedBy"] = updated_identity["updatedBy"]
+
+    backup = create_config_backup({"reason": f"Before department identity update: {department_id}", "notes": "Automatic pre-identity-update backup."})
+    result = write_capability_fabric(fabric)
+    if not result.get("ok"):
+        return result
+    result.pop("capabilityFabric", None)
+    version = record_department_version(
+        object_type="departments",
+        object_id=department_id,
+        action="Update department business identity",
+        before_payload=before_payload,
+        after_payload=json_clone(target),
+        created_by=updated_identity["updatedBy"],
+        reason=str(payload.get("reason") or "Department organization identity updated."),
+    )
+    refreshed = load_capability_fabric()
+    refreshed_department = next((row for row in refreshed.get("departments", []) or [] if isinstance(row, dict) and str(row.get("id")) == department_id), target)
+    result["department"] = attach_field_access(refreshed_department, "AiDepartmentInstance")
+    result["businessIdentity"] = department_identity_from_row(refreshed_department, refreshed.get("workspaceBusinessProfile") or workspace_profile())
+    result["version"] = version
+    result["backup"] = backup
+    result["catalogs"] = platform_admin_catalogs()
+    return result
 
 
 def ensure_default_sender_identity() -> None:
@@ -938,19 +1823,18 @@ def apply_task_status_overrides(payload: Dashboard) -> Dashboard:
     return normalized
 
 
-def local_status() -> dict[str, Any]:
+def local_status(*, fast: bool = False, snapshot_payload: Dashboard | None = None) -> dict[str, Any]:
     with connect() as conn:
         pending = conn.execute("SELECT COUNT(*) AS c FROM pending_actions WHERE status = 'Queued'").fetchone()["c"]
         failed = conn.execute("SELECT COUNT(*) AS c FROM pending_actions WHERE status = 'Error'").fetchone()["c"]
         snapshot = conn.execute("SELECT payload, updated_at, source, error FROM dashboard_snapshot WHERE id = 1").fetchone()
-    snapshot_payload: Dashboard | None = None
-    if snapshot:
+    if snapshot_payload is None and snapshot:
         try:
             snapshot_payload = json.loads(snapshot["payload"] or "{}")
         except Exception:
             snapshot_payload = None
     crm_sync_enabled = normalize_text(get_meta("crm_sync_enabled", "false")) == "true"
-    return {
+    base = {
         "mode": "local-first" if crm_sync_enabled else "local-runtime",
         "crmSyncEnabled": crm_sync_enabled,
         "crmSyncStatus": get_meta("crm_sync_status", "legacy-apps-script" if crm_sync_enabled else "local-runtime"),
@@ -962,13 +1846,2533 @@ def local_status() -> dict[str, Any]:
         "snapshotUpdatedAt": iso_like(snapshot["updated_at"]) if snapshot else "",
         "snapshotSource": snapshot["source"] if snapshot else "",
         "snapshotError": snapshot["error"] if snapshot else "",
+    }
+    if fast:
+        windmill = windmill_config()
+        return {
+            **base,
+            "fastMode": True,
+            "staffWakeups": {},
+            "autopilot": {
+                "enabled": get_meta("autopilot_enabled", "TRUE").upper() != "FALSE",
+                "statusReason": "Fast dashboard mode; open Automation for full runtime status.",
+            },
+            "localWorker": {
+                "enabled": get_meta("local_worker_enabled", "TRUE").upper() != "FALSE",
+                "commandConfigured": bool(get_meta("local_worker_command", "")),
+            },
+            "windmill": {
+                "configured": windmill.get("configured"),
+                "mockMode": windmill.get("mockMode"),
+                "baseUrl": windmill.get("baseUrl"),
+                "workspace": windmill.get("workspace"),
+            },
+            "orchestration": {"fastMode": True, "runs": [], "counts": {}},
+            "p4Readiness": {"fastMode": True, "items": [], "summary": {}},
+            "automationBlockers": {"fastMode": True, "counts": {}, "groups": []},
+            "documentQuality": {"fastMode": True},
+        }
+    return {
+        **base,
         "staffWakeups": staff_wakeup_summary(),
         "autopilot": autopilot_status(),
         "localWorker": local_worker_status(),
+        "windmill": windmill_status(),
+        "orchestration": orchestration_status(),
         "p4Readiness": p4_readiness(),
         "automationBlockers": automation_blockers(snapshot_payload),
         "documentQuality": document_quality_status(),
     }
+
+
+SEO_DEMAND_ENGINE_DEPARTMENT_ID = "department_seo_demand_engine"
+SEO_DEMAND_ENGINE_WINDMILL_PREFIX = "u/admin/seo_demand_engine_worldbc"
+
+
+DEFAULT_ACTIVITY_BINDINGS = [
+    {
+        "bindingId": "binding_department_seo_demand_engine_workflow",
+        "departmentId": SEO_DEMAND_ENGINE_DEPARTMENT_ID,
+        "activityName": "worldbc.seo.run_workflow",
+        "label": "WorldBC SEO Workflow",
+        "windmillPath": f"/p/{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_staff_flow",
+        "approvalRequired": False,
+        "dryRunSupported": True,
+        "status": "Active",
+        "runnableKind": "flow",
+        "summary": "Run the supervised SEO demand-engine workflow in Windmill: source intake, keyword brief, draft package, QA, and approval-ready WordPress payload.",
+    },
+    {
+        "bindingId": "binding_department_seo_demand_engine_wordpress_draft",
+        "departmentId": SEO_DEMAND_ENGINE_DEPARTMENT_ID,
+        "activityName": "worldbc.wordpress.create_draft",
+        "label": "WorldBC SEO WordPress Draft",
+        "windmillPath": f"/p/{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_wordpress_draft",
+        "approvalRequired": True,
+        "dryRunSupported": True,
+        "status": "Active",
+        "summary": "Create a supervised WorldBC WordPress draft through Windmill. Publishing/draft creation still requires explicit approval.",
+    },
+    {
+        "bindingId": "binding_department_seo_demand_engine_search_console",
+        "departmentId": SEO_DEMAND_ENGINE_DEPARTMENT_ID,
+        "activityName": "worldbc.search_console.query",
+        "label": "WorldBC SEO Search Console Query",
+        "windmillPath": f"/p/{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_search_console_query",
+        "approvalRequired": False,
+        "dryRunSupported": True,
+        "status": "Active",
+        "summary": "Read WorldBC SEO query/page performance through the department Search Console connection.",
+    },
+    {
+        "bindingId": "binding_department_seo_demand_engine_webhook",
+        "departmentId": SEO_DEMAND_ENGINE_DEPARTMENT_ID,
+        "activityName": "worldbc.make.webhook_call",
+        "label": "WorldBC SEO Make.com Webhook",
+        "windmillPath": f"/p/{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_generic_webhook",
+        "approvalRequired": True,
+        "dryRunSupported": True,
+        "status": "Active",
+        "summary": "Call approved WorldBC SEO Make.com scenarios from Windmill after human approval.",
+    },
+    {
+        "bindingId": "binding_department_seo_demand_engine_text_extract",
+        "departmentId": SEO_DEMAND_ENGINE_DEPARTMENT_ID,
+        "activityName": "worldbc.file.text_extract",
+        "label": "WorldBC SEO Text Reader",
+        "windmillPath": f"/p/{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_text_extract",
+        "approvalRequired": False,
+        "dryRunSupported": True,
+        "status": "Active",
+        "summary": "Safe internal extraction for WorldBC pasted transcripts, notes, and source text.",
+    },
+]
+
+
+LEGACY_ACTIVITY_BINDING_IDS = {
+    "binding_worldbc_wordpress_draft",
+    "binding_worldbc_search_console_query",
+    "binding_generic_webhook_call",
+    "binding_local_text_extract",
+}
+
+
+LEGACY_WINDMILL_SCRIPT_PATHS = [
+    "f/shared/generic_webhook_call",
+    "f/shared/local_text_extract",
+    "f/worldbc/search_console_query",
+    "f/worldbc/wordpress_create_draft",
+    "u/admin/generic_webhook_call",
+    "u/admin/local_text_extract",
+    "u/admin/shared/generic_webhook_call",
+    "u/admin/shared/local_text_extract",
+    "u/admin/worldbc_search_console_query",
+    "u/admin/worldbc_wordpress_create_draft",
+    "u/admin/worldbc/search_console_query",
+    "u/admin/worldbc/wordpress_create_draft",
+]
+
+
+def archive_legacy_activity_bindings() -> None:
+    now = utc_ts()
+    with connect() as conn:
+        conn.executemany(
+            "UPDATE activity_bindings SET status = 'Archived', updated_at = ? WHERE binding_id = ?",
+            [(now, binding_id) for binding_id in LEGACY_ACTIVITY_BINDING_IDS],
+        )
+
+
+def ensure_default_activity_bindings() -> None:
+    now = utc_ts()
+    with connect() as conn:
+        for row in DEFAULT_ACTIVITY_BINDINGS:
+            payload = {
+                "summary": row.get("summary", ""),
+                "handler": "windmill",
+                "batch": "langgraph_windmill_foundation",
+                "runnableKind": row.get("runnableKind", "script"),
+            }
+            conn.execute(
+                """
+                INSERT INTO activity_bindings (
+                  binding_id, department_id, activity_name, label, handler_type,
+                  windmill_path, approval_required, dry_run_supported, status,
+                  source_payload, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, 'windmill', ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(binding_id) DO UPDATE SET
+                  department_id=excluded.department_id,
+                  activity_name=excluded.activity_name,
+                  label=excluded.label,
+                  handler_type=excluded.handler_type,
+                  windmill_path=excluded.windmill_path,
+                  approval_required=excluded.approval_required,
+                  dry_run_supported=excluded.dry_run_supported,
+                  status=excluded.status,
+                  source_payload=excluded.source_payload,
+                  updated_at=excluded.updated_at
+                """,
+                (
+                    row["bindingId"],
+                    row.get("departmentId", "*"),
+                    row["activityName"],
+                    row["label"],
+                    row.get("windmillPath", ""),
+                    1 if row.get("approvalRequired", True) else 0,
+                    1 if row.get("dryRunSupported", True) else 0,
+                    row.get("status", "Active"),
+                    json.dumps(payload, default=str),
+                    now,
+                    now,
+                ),
+            )
+
+
+def windmill_config() -> dict[str, Any]:
+    base_url = local_env_value("WINDMILL_BASE_URL", "").rstrip("/")
+    workspace = local_env_value("WINDMILL_WORKSPACE", "")
+    token = local_env_value("WINDMILL_TOKEN", "")
+    mcp_url = local_env_value("WINDMILL_MCP_URL", "")
+    make_webhook_url = local_env_value("WORLDBC_WORDPRESS_MAKE_WEBHOOK_URL", "") or local_env_value("WORLDBC_MAKE_WEBHOOK_URL", "")
+    return {
+        "baseUrl": base_url,
+        "workspace": workspace,
+        "tokenConfigured": bool(token),
+        "tokenPreview": "",
+        "mcpConfigured": bool(mcp_url),
+        "mcpUrlPreview": redact_url_secret(mcp_url),
+        "wordpressWebhookConfigured": bool(make_webhook_url),
+        "configured": bool(base_url and workspace and token),
+        "mockMode": not bool(base_url and workspace and token),
+    }
+
+
+def redact_url_secret(url: str) -> str:
+    if not url:
+        return ""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        redacted = []
+        for key, value in query:
+            if normalize_text(key) in {"token", "key", "secret", "password"} and value:
+                redacted.append((key, "***"))
+            else:
+                redacted.append((key, value))
+        return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(redacted), parsed.fragment))
+    except Exception:
+        return url[:28] + "..." if len(url) > 32 else "***"
+
+
+SENSITIVE_ACTIVITY_KEYS = {
+    "makewebhookurl",
+    "webhookurl",
+    "webhook_url",
+    "token",
+    "secret",
+    "password",
+    "apikey",
+    "api_key",
+    "authorization",
+}
+
+
+def redact_sensitive_activity_payload(value: Any, parent_key: str = "") -> Any:
+    normalized_key = normalize_text(parent_key).replace(" ", "").replace("-", "").replace("_", "")
+    if normalized_key in {key.replace("_", "") for key in SENSITIVE_ACTIVITY_KEYS}:
+        return "***"
+    if isinstance(value, dict):
+        return {str(key): redact_sensitive_activity_payload(item, str(key)) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_sensitive_activity_payload(item, parent_key) for item in value]
+    if isinstance(value, str) and ("hook.eu" in value or "make.com" in value or "token=" in value.lower()):
+        return "***"
+    return value
+
+
+def windmill_status() -> dict[str, Any]:
+    ensure_default_activity_bindings()
+    config = windmill_config()
+    with connect() as conn:
+        bindings = conn.execute("SELECT COUNT(*) AS c FROM activity_bindings WHERE status != 'Archived'").fetchone()["c"]
+        runs = conn.execute(
+            """
+            SELECT status, COUNT(*) AS c
+            FROM activity_runs
+            GROUP BY status
+            """
+        ).fetchall()
+    counts = {str(row["status"] or "Unknown"): int(row["c"] or 0) for row in runs}
+    return {
+        "configured": config["configured"],
+        "mockMode": config["mockMode"],
+        "baseUrl": config["baseUrl"],
+        "workspace": config["workspace"],
+        "tokenConfigured": config["tokenConfigured"],
+        "tokenPreview": config["tokenPreview"],
+        "mcpConfigured": config["mcpConfigured"],
+        "mcpUrlPreview": config["mcpUrlPreview"],
+        "wordpressWebhookConfigured": config["wordpressWebhookConfigured"],
+        "setupGuidance": "Set WINDMILL_BASE_URL, WINDMILL_WORKSPACE, WINDMILL_TOKEN, and optionally WINDMILL_MCP_URL in the environment or .env.local. Do not save secrets in capability_fabric.json.",
+        "activityBindings": int(bindings or 0),
+        "activityRunCounts": counts,
+        "lastTest": parse_json_meta("windmill_last_test", {}),
+        "lastProvision": parse_json_meta("windmill_last_provision", {}),
+        "lastCleanup": parse_json_meta("windmill_last_cleanup", {}),
+    }
+
+
+def windmill_ssl_context() -> ssl.SSLContext | None:
+    try:
+        import certifi  # type: ignore
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return None
+
+
+def test_windmill_connection(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    config = windmill_config()
+    now = utc_ts()
+    if not config["configured"]:
+        result = {
+            "ok": True,
+            "configured": False,
+            "mockMode": True,
+            "message": "Windmill is not configured. Local mock mode is available for approved dry-run activities.",
+            "testedAt": iso_like(now),
+        }
+        set_meta("windmill_last_test", result)
+        return {"ok": True, "windmill": windmill_status(), "test": result}
+    url = f"{config['baseUrl']}/api/version"
+    request = urllib.request.Request(url, method="GET", headers={"Authorization": f"Bearer {local_env_value('WINDMILL_TOKEN', '')}"})
+    try:
+        with urllib.request.urlopen(request, timeout=15, context=windmill_ssl_context()) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        result = {
+            "ok": True,
+            "configured": True,
+            "mockMode": False,
+            "message": "Windmill responded to the version check.",
+            "statusCode": 200,
+            "details": body[:500],
+            "testedAt": iso_like(now),
+        }
+    except Exception as exc:
+        result = {
+            "ok": False,
+            "configured": True,
+            "mockMode": False,
+            "message": f"Windmill connection test failed: {exc}",
+            "testedAt": iso_like(now),
+        }
+    set_meta("windmill_last_test", result)
+    return {"ok": bool(result.get("ok")), "windmill": windmill_status(), "test": result}
+
+
+def windmill_api_json(method: str, path: str, body: dict[str, Any] | None = None, timeout: int = 30) -> dict[str, Any]:
+    config = windmill_config()
+    if not config["configured"]:
+        return {"ok": False, "error": "Windmill is not configured."}
+    token = local_env_value("WINDMILL_TOKEN", "")
+    url = f"{config['baseUrl']}{path}"
+    data = json.dumps(body or {}, ensure_ascii=False, default=str).encode("utf-8") if body is not None else None
+    request = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=windmill_ssl_context()) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(raw) if raw.strip() else {}
+        except Exception:
+            parsed = {"raw": raw[:2000]}
+        return {"ok": True, "statusCode": 200, "body": parsed}
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")[:2000]
+        try:
+            parsed = json.loads(raw) if raw else {}
+        except Exception:
+            parsed = {"raw": raw}
+        return {"ok": False, "statusCode": exc.code, "error": raw or str(exc), "body": parsed}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def windmill_workspace_path() -> str:
+    workspace = urllib.parse.quote(windmill_config()["workspace"], safe="")
+    return f"/api/w/{workspace}"
+
+
+def windmill_archive_script(path: str) -> dict[str, Any]:
+    clean_path = str(path or "").strip().strip("/")
+    if not clean_path:
+        return {"ok": False, "path": path, "error": "Missing Windmill script path."}
+    result = windmill_api_json(
+        "POST",
+        f"{windmill_workspace_path()}/scripts/archive/p/{urllib.parse.quote(clean_path, safe='/')}",
+        {},
+        timeout=30,
+    )
+    status_code = int(result.get("statusCode") or 0)
+    ok = bool(result.get("ok")) or status_code in {200, 204, 404}
+    return {
+        "ok": ok,
+        "path": clean_path,
+        "statusCode": status_code or None,
+        "error": "" if ok else str(result.get("error") or ""),
+    }
+
+
+def windmill_script_by_path(path: str) -> dict[str, Any]:
+    clean_path = urllib.parse.quote(path.strip().lstrip("/"), safe="/")
+    return windmill_api_json("GET", f"{windmill_workspace_path()}/scripts/get/p/{clean_path}", timeout=20)
+
+
+def windmill_flow_by_path(path: str) -> dict[str, Any]:
+    clean_path = urllib.parse.quote(path.strip().lstrip("/"), safe="/")
+    return windmill_api_json("GET", f"{windmill_workspace_path()}/flows/get/{clean_path}", timeout=20)
+
+
+def windmill_create_or_update_script(script: dict[str, Any]) -> dict[str, Any]:
+    path = str(script.get("path") or "").strip().lstrip("/")
+    if not path:
+        return {"ok": False, "error": "Missing Windmill script path."}
+    existing = windmill_script_by_path(path)
+    parent_hash = ""
+    if existing.get("ok") and isinstance(existing.get("body"), dict):
+        parent_hash = str((existing.get("body") or {}).get("hash") or "")
+    elif existing.get("statusCode") not in {404, 400}:
+        return {"ok": False, "path": path, "error": existing.get("error") or "Could not inspect existing Windmill script."}
+    payload = {
+        "path": path,
+        "summary": script.get("summary") or "",
+        "description": script.get("description") or "",
+        "content": script.get("content") or "",
+        "schema": script.get("schema") or {},
+        "language": script.get("language") or "python3",
+        "kind": "script",
+        "deployment_message": script.get("deploymentMessage") or "Provisioned from AI Department local control plane.",
+    }
+    if script.get("tag"):
+        payload["tag"] = script.get("tag")
+    if parent_hash:
+        payload["parent_hash"] = parent_hash
+    created = windmill_api_json("POST", f"{windmill_workspace_path()}/scripts/create", payload, timeout=45)
+    return {
+        "ok": bool(created.get("ok")),
+        "path": path,
+        "updated": bool(parent_hash),
+        "statusCode": created.get("statusCode"),
+        "error": created.get("error", ""),
+        "result": created.get("body"),
+    }
+
+
+def windmill_create_or_update_flow(flow: dict[str, Any]) -> dict[str, Any]:
+    path = str(flow.get("path") or "").strip().lstrip("/")
+    if not path:
+        return {"ok": False, "error": "Missing Windmill flow path."}
+    existing = windmill_flow_by_path(path)
+    is_update = existing.get("ok") and isinstance(existing.get("body"), dict)
+    if not is_update and existing.get("statusCode") not in {404, 400}:
+        return {"ok": False, "path": path, "error": existing.get("error") or "Could not inspect existing Windmill flow."}
+    payload = {
+        "path": path,
+        "summary": flow.get("summary") or "",
+        "description": flow.get("description") or "",
+        "value": flow.get("value") or {"modules": []},
+        "schema": flow.get("schema") or {},
+        "tag": flow.get("tag") or "",
+        "deployment_message": flow.get("deploymentMessage") or "Provisioned from AI Department local control plane.",
+    }
+    endpoint = f"{windmill_workspace_path()}/flows/update/{urllib.parse.quote(path, safe='')}" if is_update else f"{windmill_workspace_path()}/flows/create"
+    created = windmill_api_json("POST", endpoint, payload, timeout=45)
+    return {
+        "ok": bool(created.get("ok")),
+        "path": path,
+        "updated": bool(is_update),
+        "statusCode": created.get("statusCode"),
+        "error": created.get("error", ""),
+        "result": created.get("body"),
+    }
+
+
+def windmill_static(value: Any) -> dict[str, Any]:
+    return {"type": "static", "value": value}
+
+
+def windmill_expr(expr: str) -> dict[str, Any]:
+    return {"type": "javascript", "expr": expr}
+
+
+def seo_flow_stage_module(stage_id: str, label: str, staff_id: str, staff_alias: str, mode: str, summary: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    transforms = {
+        "stageId": windmill_static(stage_id),
+        "stageLabel": windmill_static(label),
+        "staffId": windmill_static(staff_id),
+        "staffAlias": windmill_static(staff_alias),
+        "mode": windmill_static(mode),
+        "summary": windmill_static(summary),
+        "activityRun": windmill_expr("flow_input.activityRun"),
+        "input": windmill_expr("flow_input.input"),
+        "staffContext": windmill_expr("flow_input.staffContext || {}"),
+        "previous": windmill_expr("results || {}"),
+        "extra": windmill_static(extra or {}),
+    }
+    return {
+        "id": stage_id,
+        "summary": f"{staff_alias} - {label}",
+        "value": {
+            "type": "script",
+            "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_staff_stage",
+            "input_transforms": transforms,
+        },
+    }
+
+
+def windmill_seo_staff_flow() -> dict[str, Any]:
+    modules = [
+        seo_flow_stage_module("sofia_manager_intake", "Manager Intake", "AIstaff_SEOManager", "Sofia", "manager_intake", "Clarify objective, safety gates, and routing."),
+        seo_flow_stage_module("tess_source_review", "Source Text Review", "AIstaff_SEOSourceAnalyst", "Tess", "source_review", "Read transcript/source material and extract reusable points."),
+        seo_flow_stage_module("nora_seo_expert_analysis", "SEO Expert Analysis", "AIstaff_SEOExpert", "Nora", "seo_expert_analysis", "Use active SEO lanes such as Search Console, Analytics, Keyword Planner, GCP, local exports, and SEO research tools; report missing lanes and choose the right analysis template."),
+        seo_flow_stage_module("cora_evidence_map", "Case Study And Evidence Map", "AIstaff_CaseStudyMapper", "Cora", "evidence_map", "Map proof, examples, references, and claims that need support."),
+        seo_flow_stage_module("iris_seo_qa", "Internal Links And SEO QA", "AIstaff_InternalLinkBuilder", "Iris", "seo_qa", "Check links, metadata, duplicate risk, and quality gates."),
+        {
+            "id": "sofia_approval_package",
+            "summary": "Sofia - Approval-Ready WordPress Package",
+            "value": {
+                "type": "script",
+                "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_workflow",
+                "input_transforms": {
+                    "activityRun": windmill_expr("flow_input.activityRun"),
+                    "input": windmill_expr("{...(flow_input.input || {}), staffContext: flow_input.staffContext || {}, staffStageResults: results || {}}"),
+                    "mode": windmill_static("approval_package"),
+                    "dry_run": windmill_expr("(flow_input.activityRun || {}).dryRun !== false"),
+                },
+            },
+        },
+    ]
+    return {
+        "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_staff_flow",
+        "summary": "WorldBC SEO Demand Engine staff flow",
+        "description": "Visual Windmill flow for the WorldBC SEO department. Each module is labeled by AI staff role; publishing remains approval-gated in the AI Department app.",
+        "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "activityRun": {"type": "object"},
+                "input": {"type": "object"},
+                "staffContext": {"type": "object"},
+            },
+        },
+        "value": {
+            "modules": modules,
+            "same_worker": False,
+            "concurrent_limit": 3,
+        },
+        "tag": "",
+    }
+
+
+def windmill_starter_scripts() -> list[dict[str, Any]]:
+    activity_schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "activityRun": {"type": "object", "description": "AI Department activity run metadata."},
+            "input": {"type": "object", "description": "Activity input payload."},
+        },
+        "required": [],
+    }
+    wordpress_script = r'''
+import json
+import os
+import re
+import urllib.request
+import urllib.error
+
+
+def _as_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return [value]
+
+
+def _as_int_category_list(value):
+    rows = _as_list(value)
+    out = []
+    for item in rows:
+        try:
+            out.append(int(item))
+        except Exception:
+            continue
+    return out[:1]
+
+
+def _word_count(html):
+    text = re.sub(r"<[^>]+>", " ", html or "")
+    return len(re.findall(r"\b[\w'-]+\b", text))
+
+
+def _has_clean_html(html):
+    text = html or ""
+    return all(token in text for token in ["<h2", "<p"]) and "style=" not in text.lower()
+
+
+def _post_json(url, payload):
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=45) as res:
+        raw = res.read().decode("utf-8", errors="replace")
+    try:
+        return json.loads(raw) if raw.strip() else {"status": "empty_response"}
+    except Exception:
+        return {"raw": raw[:1000]}
+
+
+def _walk_dicts(value):
+    if isinstance(value, dict):
+        yield value
+        for item in value.values():
+            yield from _walk_dicts(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_dicts(item)
+
+
+def _first_value(result, keys):
+    key_set = {key.lower() for key in keys}
+    for row in _walk_dicts(result):
+        for key, value in row.items():
+            if str(key).lower() in key_set and value not in (None, ""):
+                if isinstance(value, dict) and "rendered" in value:
+                    return value.get("rendered")
+                return value
+    return ""
+
+
+def _normalize_wordpress_draft(result, payload):
+    draft_id = _first_value(result, ["id", "ID", "postId", "post_id", "draftId", "draft_id"])
+    draft_url = _first_value(result, ["link", "url", "permalink", "postUrl", "post_url", "draftUrl", "draft_url", "guid"])
+    status = _first_value(result, ["status", "postStatus", "post_status"]) or payload.get("status") or "draft"
+    created_at = _first_value(result, ["date", "date_gmt", "createdAt", "created_at", "createdDate", "created_date", "modified", "modified_gmt"])
+    return {
+        "id": str(draft_id or ""),
+        "url": str(draft_url or ""),
+        "status": str(status or "draft"),
+        "createdAt": str(created_at or ""),
+        "rawReturned": bool(result),
+    }
+
+
+def main(activityRun=None, input=None):
+    activityRun = activityRun or {}
+    data = input or {}
+    dry_run = bool(data.get("dryRun") or activityRun.get("dryRun"))
+    approved = activityRun.get("approvalState") == "Approved"
+    title = data.get("title") or data.get("seoTitle") or data.get("draftTitle") or ""
+    content = data.get("content") or data.get("html") or data.get("articleHtml") or data.get("draftContent") or ""
+    excerpt = data.get("excerpt") or data.get("metaDescription") or ""
+    categories = _as_int_category_list(data.get("categories"))
+    tags = _as_list(data.get("tags"))
+    status = data.get("status") or "draft"
+    payload = {
+        "title": title,
+        "content": content,
+        "excerpt": excerpt,
+        "categories": categories,
+        "tags": tags,
+        "status": status,
+    }
+    checklist = {
+        "hasTitle": bool(title),
+        "titleLengthTarget": 50 <= len(title) <= 60,
+        "hasHtmlContent": _has_clean_html(content),
+        "wordCountTarget": 900 <= _word_count(content) <= 1600,
+        "hasExcerpt": bool(excerpt),
+        "excerptLengthTarget": 140 <= len(excerpt) <= 160 and '"' not in excerpt,
+        "hasH2H3Headings": "<h2" in content and "<h3" in content,
+        "hasKeyTakeaways": "key takeaways" in content.lower(),
+        "hasReferences": "references" in content.lower() and "rel=\"nofollow\"" in content.lower(),
+        "hasOneCategoryId": len(categories) == 1 and isinstance(categories[0], int),
+        "hasTags": 3 <= len(tags) <= 8,
+        "defaultDraftStatus": status == "draft" or bool(data.get("explicitPublishApproval")),
+        "approvalState": activityRun.get("approvalState", ""),
+        "dryRun": dry_run,
+    }
+    missing = [key for key, ok in checklist.items() if key not in {"approvalState", "dryRun"} and not ok]
+    if missing:
+        return {"ok": False, "status": "blocked", "summary": "WordPress draft blocked by missing fields.", "missing": missing, "checklist": checklist}
+    if not approved:
+        return {"ok": False, "status": "approval_required", "summary": "External WordPress draft creation requires AI Department approval.", "checklist": checklist}
+    webhook_url = data.get("makeWebhookUrl") or os.environ.get("WORLDBC_WORDPRESS_MAKE_WEBHOOK_URL") or os.environ.get("MAKE_WORDPRESS_WEBHOOK_URL")
+    if dry_run:
+        return {"ok": True, "status": "dry_run_done", "summary": "WordPress draft payload validated. No external webhook was called.", "payloadPreview": {k: payload[k] for k in ["title", "excerpt", "categories", "tags"]}, "checklist": checklist}
+    if not webhook_url:
+        return {"ok": False, "status": "needs_configuration", "summary": "Make/WordPress webhook URL is not configured in Windmill or activity input.", "checklist": checklist}
+    result = _post_json(webhook_url, payload)
+    wordpress_draft = _normalize_wordpress_draft(result, payload)
+    return {
+        "ok": True,
+        "status": "draft_requested",
+        "summary": "WordPress draft request sent through Make/Windmill.",
+        "wordpressDraft": wordpress_draft,
+        "wordpressDraftId": wordpress_draft.get("id"),
+        "wordpressDraftUrl": wordpress_draft.get("url"),
+        "wordpressDraftStatus": wordpress_draft.get("status"),
+        "wordpressDraftCreatedAt": wordpress_draft.get("createdAt"),
+        "result": result,
+        "checklist": checklist,
+    }
+'''.strip()
+    search_console_script = r'''
+# /// script
+# dependencies = [
+#   "google-auth",
+#   "requests",
+#   "wmill",
+# ]
+# ///
+import datetime
+import json
+import urllib.parse
+import urllib.request
+import urllib.error
+
+import wmill
+from google.auth.transport.requests import Request
+from google.oauth2 import service_account
+
+
+PROPERTY_VAR = "u/admin/worldbc_search_console_property"
+SITE_URL_VAR = "u/admin/worldbc_search_console_site_url"
+SERVICE_ACCOUNT_RESOURCE = "u/admin/worldbc_google_search_console_service_account"
+
+
+def _date_range(data):
+    today = datetime.date.today()
+    end_date = data.get("endDate") or data.get("end_date") or (today - datetime.timedelta(days=2)).isoformat()
+    start_date = data.get("startDate") or data.get("start_date") or (today - datetime.timedelta(days=30)).isoformat()
+    return start_date, end_date
+
+
+def _as_list(value, default):
+    if value is None:
+        return default
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return default
+
+
+def _credentials():
+    info = wmill.get_resource(SERVICE_ACCOUNT_RESOURCE)
+    if not isinstance(info, dict) or not info.get("client_email") or not info.get("private_key"):
+        return None, "Service account resource is missing client_email/private_key."
+    scopes = ["https://www.googleapis.com/auth/webmasters.readonly"]
+    creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+    creds.refresh(Request())
+    return creds, ""
+
+
+def _query_search_console(site_url, token, body):
+    encoded = urllib.parse.quote(site_url, safe="")
+    url = f"https://searchconsole.googleapis.com/webmasters/v3/sites/{encoded}/searchAnalytics/query"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=45) as res:
+        raw = res.read().decode("utf-8", errors="replace")
+    return json.loads(raw) if raw.strip() else {}
+
+
+def _row_to_dict(row, dimensions):
+    keys = row.get("keys") or []
+    item = {dimensions[index]: keys[index] if index < len(keys) else "" for index in range(len(dimensions))}
+    item.update({
+        "clicks": row.get("clicks", 0),
+        "impressions": row.get("impressions", 0),
+        "ctr": row.get("ctr", 0),
+        "position": row.get("position", 0),
+    })
+    return item
+
+
+def main(activityRun=None, input=None):
+    data = input or {}
+    site_url = data.get("siteUrl") or data.get("site_url") or data.get("propertyId") or wmill.get_variable(PROPERTY_VAR) or wmill.get_variable(SITE_URL_VAR)
+    display_site_url = data.get("displaySiteUrl") or data.get("websiteUrl") or wmill.get_variable(SITE_URL_VAR)
+    if not site_url:
+        return {"ok": False, "status": "needs_configuration", "summary": "Search Console property is missing.", "missing": ["worldbc_search_console_property"]}
+    start_date, end_date = _date_range(data)
+    dimensions = _as_list(data.get("dimensions"), ["query", "page"])
+    row_limit = max(1, min(int(data.get("rowLimit") or data.get("row_limit") or 25), 250))
+    body = {
+        "startDate": start_date,
+        "endDate": end_date,
+        "dimensions": dimensions,
+        "rowLimit": row_limit,
+        "startRow": int(data.get("startRow") or 0),
+        "searchType": data.get("searchType") or "web",
+    }
+    if data.get("dimensionFilterGroups"):
+        body["dimensionFilterGroups"] = data.get("dimensionFilterGroups")
+    creds, credential_error = _credentials()
+    if credential_error:
+        return {"ok": False, "status": "needs_credentials", "summary": credential_error, "siteUrl": site_url}
+    try:
+        response = _query_search_console(site_url, creds.token, body)
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")[:1200]
+        status = "permission_denied" if exc.code in {401, 403} else "failed"
+        return {"ok": False, "status": status, "summary": f"Search Console query failed with HTTP {exc.code}.", "siteUrl": site_url, "details": raw}
+    except Exception as exc:
+        return {"ok": False, "status": "failed", "summary": "Search Console query failed.", "siteUrl": site_url, "details": str(exc)}
+    rows = [_row_to_dict(row, dimensions) for row in response.get("rows") or []]
+    totals = {
+        "clicks": sum(float(row.get("clicks") or 0) for row in rows),
+        "impressions": sum(float(row.get("impressions") or 0) for row in rows),
+    }
+    totals["averageCtr"] = (totals["clicks"] / totals["impressions"]) if totals["impressions"] else 0
+    return {
+        "ok": True,
+        "status": "done",
+        "summary": f"Search Console returned {len(rows)} row(s) for {site_url}.",
+        "siteUrl": site_url,
+        "displaySiteUrl": display_site_url,
+        "dateRange": {"startDate": start_date, "endDate": end_date},
+        "dimensions": dimensions,
+        "rowCount": len(rows),
+        "totals": totals,
+        "rows": rows,
+    }
+'''.strip()
+    webhook_script = r'''
+import json
+import urllib.request
+
+
+def main(activityRun=None, input=None):
+    activityRun = activityRun or {}
+    data = input or {}
+    dry_run = bool(data.get("dryRun") or activityRun.get("dryRun"))
+    approved = activityRun.get("approvalState") == "Approved"
+    url = data.get("url") or data.get("webhookUrl") or ""
+    payload = data.get("payload") or {}
+    if not url:
+        return {"ok": False, "status": "blocked", "summary": "Webhook URL is missing.", "missing": ["url"]}
+    if not approved:
+        return {"ok": False, "status": "approval_required", "summary": "External webhook call requires AI Department approval."}
+    if dry_run:
+        return {"ok": True, "status": "dry_run_done", "summary": "Webhook payload validated. No external request was sent.", "payloadKeys": sorted(payload.keys())}
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), method="POST", headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=45) as res:
+        raw = res.read().decode("utf-8", errors="replace")
+    return {"ok": True, "status": "sent", "summary": "Webhook request sent.", "response": raw[:1000]}
+'''.strip()
+    text_extract_script = r'''
+import re
+
+
+def main(activityRun=None, input=None):
+    data = input or {}
+    text = data.get("text") or data.get("content") or data.get("draftContent") or data.get("sourceText") or ""
+    words = re.findall(r"\b[\w'-]+\b", text)
+    headings = re.findall(r"(?im)^#{1,3}\s+(.+)$|<h[23][^>]*>(.*?)</h[23]>", text)
+    flat_headings = [a or b for a, b in headings if a or b]
+    return {
+        "ok": True,
+        "status": "done",
+        "summary": f"Extracted {len(words)} words and {len(flat_headings)} headings.",
+        "wordCount": len(words),
+        "headings": flat_headings[:20],
+        "preview": text[:500],
+    }
+'''.strip()
+    seo_staff_stage_script = r'''
+import re
+
+
+def _words(text):
+    return re.findall(r"\b[\w'-]+\b", text or "")
+
+
+def _staff_rules(staff_context, staff_id):
+    staff = ((staff_context or {}).get("staff") or {}).get(staff_id) or {}
+    rules = []
+    for skill in staff.get("skills") or []:
+        rules.extend(skill.get("rules") or [])
+    return rules[:12]
+
+
+def main(stageId="", stageLabel="", staffId="", staffAlias="", mode="", summary="", activityRun=None, input=None, staffContext=None, previous=None, extra=None):
+    data = input or {}
+    staff_context = staffContext or {}
+    source_text = data.get("sourceText") or data.get("text") or data.get("transcript") or data.get("articleText") or ""
+    previous = previous or {}
+    department_rules = []
+    for skill in staff_context.get("departmentSkills") or []:
+        department_rules.extend(skill.get("rules") or [])
+    output = {
+        "stageId": stageId,
+        "stageLabel": stageLabel,
+        "staffId": staffId,
+        "staffAlias": staffAlias,
+        "mode": mode,
+        "summary": summary,
+        "status": "done",
+        "received": {
+            "sourceWordCount": len(_words(source_text)),
+            "hasStaffContext": bool(staff_context),
+            "previousStepCount": len(previous.keys()) if isinstance(previous, dict) else 0,
+        },
+        "rulesApplied": {
+            "departmentRules": department_rules[:8],
+            "staffRules": _staff_rules(staff_context, staffId),
+        },
+        "nextAction": "Continue to the next staff stage.",
+    }
+    if mode == "search_console":
+        output["status"] = "ready_with_placeholder"
+        output["nextAction"] = "Use Google Search Console rows when the Windmill Google credential/resource is connected."
+    if mode == "seo_qa":
+        output["nextAction"] = "Return QA findings to Sofia before WordPress/Make approval."
+    return output
+'''.strip()
+    seo_workflow_script = r'''
+import datetime
+import re
+
+
+WORLDBC_CATEGORIES = {
+    1: "Uncategorized",
+    19: "Trade, Working-Capital & Treasury",
+    27: "Corporate & Capital Markets",
+    28: "Treasury, Cash & Liquidity",
+    123: "Debt-Capital Markets (DCM)",
+    126: "Real-Estate Corporate Finance",
+    149: "Corporate guides",
+    150: "Company News",
+    270: "Mergers & Acquisitions (M&A)",
+    274: "M&A & Strategic Transactions",
+    348: "Growth & Venture Finance",
+    349: "Structured & Asset-Backed Solutions",
+    406: "Project & Infrastructure Finance",
+    441: "Equity Capital & Private Placements",
+    442: "Investor Relations & Corporate Governance",
+    443: "Structured Finance & Securitisation",
+    444: "Public Equity-Capital Markets (ECM)",
+    445: "Startup Fundraising",
+    446: "Venture Capital & Startup Funding",
+    447: "Leveraged & Acquisition Finance",
+    448: "Risk, Tax & Incentives",
+    449: "ESG & Impact Finance",
+    450: "FinTech & TreasuryTech",
+    451: "Blockchain, Tokenisation & Digital Assets",
+    452: "Investor Services",
+    453: "Job Opportunities",
+    454: "Fund raising",
+    455: "Marketing Division",
+    456: "Startup Investor Outreach",
+    457: "Trade & Commodity Finance",
+    458: "Receivables & Invoice Finance",
+    459: "Supply-Chain & Payables Finance",
+    460: "Tax, Legal & Compliance",
+    461: "Risk Management & Hedging",
+    462: "Government Grants & Incentives",
+    463: "Success Stories",
+    464: "Sample Reports",
+    465: "Project Finance",
+    466: "Strategic Alliances & Joint Ventures",
+    467: "Private Equity & MBOs",
+    468: "Restructuring & Turnaround",
+    469: "Merger and Acquisition",
+}
+
+
+def _words(text):
+    return re.findall(r"\b[\w'-]+\b", text or "")
+
+
+def _first_sentence(text):
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    return parts[0][:180] if parts and parts[0] else ""
+
+
+def _slug(value):
+    clean = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
+    return clean[:72] or "worldbc-seo-draft"
+
+
+def _one_category(value):
+    if value is None:
+        return []
+    raw = value if isinstance(value, list) else [value]
+    out = []
+    for item in raw:
+        try:
+            category_id = int(item)
+        except Exception:
+            continue
+        if category_id in WORLDBC_CATEGORIES:
+            out.append(category_id)
+    return out[:1]
+
+
+def _select_category_id(blob):
+    text = (blob or "").lower()
+    rules = [
+        (270, ["m&a", "merger", "acquisition", "deal", "transaction"]),
+        (274, ["strategic transaction", "joint venture", "alliance"]),
+        (454, ["fundraising", "fund raising", "raise capital", "capital raise"]),
+        (456, ["investor outreach", "investor readiness", "pitch", "investor pipeline"]),
+        (445, ["startup fundraising", "seed", "series a", "startup"]),
+        (446, ["venture capital", "vc", "angel investor"]),
+        (441, ["private placement", "equity capital", "share issue"]),
+        (442, ["investor relations", "governance", "board", "shareholder"]),
+        (123, ["bond", "debt capital", "dcm", "note issuance"]),
+        (447, ["leveraged", "acquisition finance", "buyout"]),
+        (406, ["infrastructure", "project finance", "ppp"]),
+        (457, ["trade finance", "commodity"]),
+        (458, ["receivables", "invoice finance", "factoring"]),
+        (459, ["supply chain", "payables"]),
+        (28, ["treasury", "cash", "liquidity"]),
+        (448, ["tax", "incentive"]),
+        (460, ["legal", "compliance", "regulation"]),
+        (461, ["risk management", "hedging"]),
+        (449, ["esg", "impact", "sustainability"]),
+        (450, ["fintech", "treasurytech"]),
+        (451, ["blockchain", "tokenisation", "tokenization", "digital asset"]),
+        (463, ["case study", "success story"]),
+    ]
+    for category_id, tokens in rules:
+        if any(token in text for token in tokens):
+            return category_id
+    return 149
+
+
+def _fit_title(primary_keyword, topic):
+    supplied = (topic or primary_keyword or "").strip()
+    if 50 <= len(supplied) <= 60:
+        return supplied
+    candidates = [
+        f"{primary_keyword.title()}: Practical Guide",
+        f"{primary_keyword.title()} For Business Leaders",
+        f"{primary_keyword.title()} For Growth Companies",
+        f"{primary_keyword.title()} Explained For Decision Makers",
+    ]
+    for candidate in candidates:
+        if 50 <= len(candidate) <= 60:
+            return candidate
+    candidate = candidates[0]
+    if len(candidate) > 60:
+        return candidate[:57].rstrip(" :-") + "..."
+    return (candidate + " For Companies")[:60]
+
+
+def _fit_excerpt(primary_keyword):
+    base = f"Learn {primary_keyword} with practical business context, clear decision criteria, common risks, and next steps for companies preparing for growth."
+    if len(base) < 140:
+        base += " Use this guide before planning outreach or publishing."
+    return base[:160].rstrip(" ,.;")
+
+
+def _keyword_from_input(data, source_text):
+    supplied = data.get("primaryKeyword") or data.get("keyword") or ""
+    if supplied:
+        return supplied
+    title = data.get("title") or data.get("topic") or _first_sentence(source_text)
+    focus = " ".join(_words(title)[:8]).strip().lower()
+    return focus or "business growth strategy for investors"
+
+
+def _html_article(title, primary_keyword, source_text):
+    intro = _first_sentence(source_text) or "Business readers need practical context, clear definitions, and evidence before making decisions."
+    return "\n".join([
+        f"<p>{primary_keyword} is easiest to understand when it is connected to a real business decision. {intro} This guide explains the topic in a professional, Investopedia-style tone: clear enough for non-specialist readers, but structured enough for executives, founders, investors, and advisors who need to act on the information.</p>",
+        "<p>For WorldBusiness Council readers, the practical question is not only what the concept means. The more important question is how a company can use the idea to improve preparation, reduce uncertainty, and communicate with investors or business partners in a more credible way.</p>",
+        f"<h2>{primary_keyword.title()}: What It Means</h2>",
+        f"<p>{primary_keyword} describes the process of turning a broad commercial objective into a more complete and decision-ready plan. In practice, that means clarifying the business goal, collecting the right evidence, explaining the opportunity in simple language, and preparing the documents or next steps that a reviewer would expect to see.</p>",
+        "<p>A strong business article should not make the reader feel that the topic is mysterious. It should define the concept, show why it matters, and explain where the risks sit. That is why this draft avoids promotional language and focuses on practical interpretation.</p>",
+        "<h2>Why This Matters For Companies</h2>",
+        "<p>Companies often lose time because they begin outreach, fundraising, partnership discussions, or market expansion before their story is ready. The result can be weak follow-up, unclear positioning, missing evidence, or avoidable questions from investors and partners.</p>",
+        "<p>Good preparation improves the quality of the conversation. It helps management explain what the company does, why now is the right time, what evidence supports the opportunity, and what decision the reader is being asked to consider. It also helps the company avoid overclaiming. Credible communication is usually more persuasive than aggressive selling.</p>",
+        "<h3>What Readers Should Look For</h3>",
+        "<ul><li>A clear explanation of the commercial objective.</li><li>Evidence that supports the opportunity or risk.</li><li>Simple definitions for technical or finance terms.</li><li>A practical next step the reader can take.</li><li>Balanced discussion of limitations and assumptions.</li></ul>",
+        "<h2>How To Evaluate The Opportunity</h2>",
+        "<p>A useful evaluation starts with the reader's intent. Some readers want a basic explanation. Others want a checklist they can apply to their own company. Investors may look for proof points, while operators may look for process and execution risk. The article should serve these needs without becoming too technical.</p>",
+        "<p>One helpful approach is to separate the analysis into three layers. First, define the business situation. Second, identify the evidence that matters. Third, explain what action follows from the evidence. This structure keeps the article easy to scan and also helps search engines understand the topic.</p>",
+        "<h3>Evidence To Collect</h3>",
+        "<ul><li>Company background, stage, market, and business model.</li><li>Relevant metrics, milestones, customer traction, or financial signals.</li><li>External market context from reputable sources.</li><li>Risks, dependencies, and assumptions that may affect the decision.</li><li>Internal links or related WorldBusiness Council resources where available.</li></ul>",
+        "<h2>Common Mistakes To Avoid</h2>",
+        "<p>The most common mistake is writing content that sounds polished but does not help the reader make a decision. Generic claims such as market leader, innovative solution, or strong growth potential are not enough. Readers need context, examples, and a logical path from problem to recommendation.</p>",
+        "<p>Another mistake is keyword stuffing. SEO works best when the primary keyword appears naturally in the title, opening, one heading, and conclusion. Repeating the same phrase too often can make the article less useful and less trustworthy.</p>",
+        "<p>A third mistake is treating publishing as the final step. For a business blog, the article should also support follow-up. It can become a reference for investor outreach, partnership discussions, internal education, or a broader content campaign.</p>",
+        "<h2>How This Supports Better Decision-Making</h2>",
+        "<p>Decision makers usually need more than a definition. They need to understand whether the topic affects timing, cost, risk, credibility, or access to capital. A well-prepared article can help them compare options without feeling pushed toward one answer too quickly.</p>",
+        "<p>This is especially important for growth companies. A founder may read the article to understand what should be prepared before investor contact. A corporate manager may use it to explain a financing or partnership question internally. An advisor may use it as a checklist for improving the quality of a client discussion.</p>",
+        "<p>The best result is a draft that is useful on its own and also supports the next commercial action. That action might be preparing an investor deck, reviewing a financing structure, improving governance materials, or deciding whether the company is ready for outreach.</p>",
+        "<h2>Practical Next Steps</h2>",
+        "<p>Before publishing, the company should confirm that the article answers the reader's likely question, uses one primary category, includes relevant tags, and provides references for claims that need outside support. The final version should be saved as a WordPress draft unless a human manager explicitly approves publishing.</p>",
+        "<p>For teams using automation, the safest operating model is supervised execution. The AI system can prepare the article, check the SEO structure, select the category, and create the WordPress payload. The human manager should approve the final handoff before any webhook or publishing action is triggered.</p>",
+        f"<h2>Conclusion: Using {primary_keyword} Effectively</h2>",
+        f"<p>{primary_keyword} is valuable when it helps a company explain its position with clarity, evidence, and practical next steps. The best articles do more than define a term. They help the reader understand what to check, what to avoid, and how to move from information to action.</p>",
+        "<h2>Key Takeaways</h2>",
+        "<ul><li>Use a professional but easy-to-understand tone.</li><li>Keep the article structured with H2/H3 headings and short paragraphs.</li><li>Use one specific long-tail keyword naturally, without stuffing.</li><li>Choose one WordPress category ID and 3-8 tags.</li><li>Send the post as a draft unless publishing is explicitly approved.</li></ul>",
+        "<h2>References</h2>",
+        '<p>[1] <a href="https://www.investopedia.com/" rel="nofollow">Investopedia</a></p>',
+        '<p>[2] <a href="https://www.worldbank.org/" rel="nofollow">World Bank</a></p>',
+        '<p>[3] <a href="https://www.oecd.org/" rel="nofollow">OECD</a></p>',
+    ])
+
+
+def _stage(stage_id, label, status, summary, output=None, missing=None):
+    return {
+        "id": stage_id,
+        "label": label,
+        "status": status,
+        "summary": summary,
+        "output": output or {},
+        "missing": missing or [],
+    }
+
+
+def main(activityRun=None, input=None, mode="run_project", dry_run=True):
+    activityRun = activityRun or {}
+    data = input or {}
+    requested_dry_run = bool(data.get("dryRun", dry_run) or activityRun.get("dryRun"))
+    source_text = data.get("sourceText") or data.get("text") or data.get("transcript") or data.get("articleText") or ""
+    topic = data.get("topic") or data.get("title") or _first_sentence(source_text) or "WorldBC business article"
+    primary_keyword = _keyword_from_input(data, source_text)
+    title = data.get("seoTitle") or _fit_title(primary_keyword, data.get("title") or topic)
+    excerpt = data.get("excerpt") or _fit_excerpt(primary_keyword)
+    content_html = data.get("content") or data.get("html") or _html_article(title, primary_keyword, source_text)
+    if len(_words(re.sub(r"<[^>]+>", " ", content_html))) < 900:
+        content_html = _html_article(title, primary_keyword, source_text)
+    provided_categories = _one_category(data.get("categories")) or _one_category(data.get("categoryId"))
+    category_id = provided_categories[0] if provided_categories else _select_category_id(" ".join([topic, primary_keyword, source_text]))
+    categories = [category_id]
+    supporting_keywords = data.get("supportingKeywords") or data.get("keywords") or [
+        primary_keyword,
+        "business strategy",
+        "capital readiness",
+        "investor communication",
+        "WorldBusiness Council",
+    ]
+    tags = data.get("tags") or supporting_keywords[:5]
+    tags = [str(item).strip() for item in tags if str(item).strip()][:8]
+    if len(tags) < 3:
+        tags.extend(["WorldBusiness Council", "business finance", "growth strategy"][: 3 - len(tags)])
+    word_count = len(_words(re.sub(r"<[^>]+>", " ", content_html)))
+    checklist = {
+        "seoTitleLength": len(title),
+        "seoTitleInTarget": 50 <= len(title) <= 60,
+        "excerptLength": len(excerpt),
+        "excerptInTarget": 140 <= len(excerpt) <= 160 and '"' not in excerpt,
+        "wordCount": word_count,
+        "wordCountInTarget": 900 <= word_count <= 1600,
+        "hasH2": "<h2" in content_html,
+        "hasH3": "<h3" in content_html,
+        "hasKeyTakeaways": "key takeaways" in content_html.lower(),
+        "hasNofollowReferences": "rel=\"nofollow\"" in content_html.lower(),
+        "categoryCount": len(categories),
+        "categoryId": category_id,
+        "categoryName": WORLDBC_CATEGORIES.get(category_id, ""),
+        "tagCount": len(tags),
+        "status": "draft",
+        "requiresConfirmationBeforeWebhook": True,
+    }
+    steps = [
+        _stage("source_intake", "Source intake", "done" if source_text else "needs_input", "Read pasted transcript/source text and normalize the request.", {"wordCount": len(_words(source_text))}, [] if source_text else ["sourceText"]),
+        _stage("keyword_evidence", "Keyword evidence", "done", "Select a specific long-tail keyword. Search Console can enrich this when connected.", {"primaryKeyword": primary_keyword}),
+        _stage("content_brief", "SEO brief", "done", "Prepare title, excerpt, slug, one category ID, and tags.", {"title": title, "excerpt": excerpt, "slug": _slug(title), "categoryId": category_id, "categoryName": WORLDBC_CATEGORIES.get(category_id, ""), "tags": tags}),
+        _stage("draft_package", "Article package", "done", "Prepare clean WordPress HTML in the required structure.", {"wordCount": word_count}),
+        _stage("qa_review", "Internal QA", "ready" if all([checklist["seoTitleInTarget"], checklist["excerptInTarget"], checklist["wordCountInTarget"], checklist["hasH2"], checklist["hasH3"], checklist["hasKeyTakeaways"], checklist["hasNofollowReferences"], checklist["categoryCount"] == 1, 3 <= checklist["tagCount"] <= 8]) else "needs_review", "Check title length, excerpt length, HTML structure, references, category, tags, and key takeaways.", checklist),
+        _stage("approval_gate", "Approval gate", "approval_required", "Ask Iman before sending the WordPress/Make.com draft action.", {"dryRun": requested_dry_run}),
+    ]
+    missing = []
+    if not source_text:
+        missing.append("sourceText")
+    if not primary_keyword:
+        missing.append("primaryKeyword")
+    status = "blocked" if missing else ("ready_for_approval" if requested_dry_run else "approval_required")
+    wordpress_payload = {
+        "title": title,
+        "content": content_html,
+        "excerpt": excerpt,
+        "categories": categories,
+        "tags": tags,
+        "slug": _slug(title),
+        "primaryKeyword": primary_keyword,
+        "supportingKeywords": supporting_keywords[:8],
+        "status": "draft",
+    }
+    return {
+        "ok": not missing,
+        "mode": mode,
+        "status": status,
+        "department": "WorldBC SEO Demand Engine",
+        "summary": "SEO workflow prepared an approval-ready WordPress draft package." if not missing else "SEO workflow needs source text before it can continue.",
+        "generatedAt": datetime.datetime.utcnow().isoformat() + "Z",
+        "steps": steps,
+        "missing": missing,
+        "outputs": {
+            "primaryKeyword": primary_keyword,
+            "seoTitle": title,
+            "excerpt": excerpt,
+            "slug": _slug(title),
+            "category": {"id": category_id, "name": WORLDBC_CATEGORIES.get(category_id, "")},
+            "supportingKeywords": supporting_keywords[:8],
+            "finalChecklist": checklist,
+            "wordpressPayload": wordpress_payload,
+        },
+        "nextAction": "Review the draft package, then approve the WordPress/Make.com activity from the AI Department UI." if not missing else "Paste or upload source text for the SEO article.",
+    }
+'''.strip()
+    return [
+        {
+            "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_staff_stage",
+            "summary": "WorldBC SEO staff-labeled flow stage",
+            "description": "Reusable staff-stage script used by the visual Windmill SEO flow. Receives resolved staff, skills, and department rules from the AI Department app.",
+            "content": seo_staff_stage_script,
+            "schema": activity_schema,
+            "tag": "",
+        },
+        {
+            "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_workflow",
+            "summary": "WorldBC SEO Demand Engine workflow",
+            "description": "Runs the supervised WorldBC SEO content workflow: source intake, keyword evidence, brief, draft package, QA, and approval-ready WordPress payload.",
+            "content": seo_workflow_script,
+            "schema": activity_schema,
+            "tag": "",
+        },
+        {
+            "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_wordpress_draft",
+            "summary": "WorldBC SEO WordPress draft handoff",
+            "description": "Department-scoped WordPress/Make draft creator for the WorldBC SEO Demand Engine.",
+            "content": wordpress_script,
+            "schema": activity_schema,
+            "tag": "",
+        },
+        {
+            "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_search_console_query",
+            "summary": "WorldBC SEO Search Console query placeholder",
+            "description": "Department-scoped Search Console query shell for WorldBC SEO. Configure Google credentials/resources in Windmill for live queries.",
+            "content": search_console_script,
+            "schema": activity_schema,
+            "tag": "",
+        },
+        {
+            "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_generic_webhook",
+            "summary": "WorldBC SEO approved webhook caller",
+            "description": "Department-scoped approved webhook caller for WorldBC SEO Make.com activities.",
+            "content": webhook_script,
+            "schema": activity_schema,
+            "tag": "",
+        },
+        {
+            "path": f"{SEO_DEMAND_ENGINE_WINDMILL_PREFIX}_text_extract",
+            "summary": "WorldBC SEO text extraction",
+            "description": "Department-scoped safe text extraction utility for WorldBC transcripts and article sources.",
+            "content": text_extract_script,
+            "schema": activity_schema,
+            "tag": "",
+        },
+    ]
+
+
+def windmill_starter_flows() -> list[dict[str, Any]]:
+    return [windmill_seo_staff_flow()]
+
+
+def provision_windmill_starter_activities(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    config = windmill_config()
+    now = utc_ts()
+    if not config["configured"]:
+        result = {"ok": False, "message": "Windmill is not configured.", "testedAt": iso_like(now)}
+        set_meta("windmill_last_provision", result)
+        return {"ok": False, "windmill": windmill_status(), "provision": result}
+    script_results = [windmill_create_or_update_script(script) for script in windmill_starter_scripts()]
+    flow_results = [windmill_create_or_update_flow(flow) for flow in windmill_starter_flows()]
+    results = [*script_results, *flow_results]
+    ok = all(row.get("ok") for row in results)
+    result = {
+        "ok": ok,
+        "message": "Starter Windmill activity scripts and flows provisioned." if ok else "One or more starter scripts/flows could not be provisioned.",
+        "scripts": script_results,
+        "flows": flow_results,
+        "testedAt": iso_like(now),
+    }
+    set_meta("windmill_last_provision", result)
+    return {"ok": ok, "windmill": windmill_status(), "provision": result}
+
+
+def cleanup_old_windmill_and_activity_runs(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = payload or {}
+    archive_legacy_activity_bindings()
+    script_results: list[dict[str, Any]] = []
+    if windmill_config()["configured"]:
+        requested_paths = payload.get("scriptPaths")
+        paths = requested_paths if isinstance(requested_paths, list) and requested_paths else LEGACY_WINDMILL_SCRIPT_PATHS
+        script_results = [windmill_archive_script(str(path)) for path in paths]
+    with connect() as conn:
+        old_runs = conn.execute(
+            """
+            SELECT activity_run_id
+            FROM activity_runs
+            WHERE department_id = ?
+              AND (
+                dry_run = 1
+                OR lower(idempotency_key) LIKE '%test%'
+                OR lower(idempotency_key) LIKE '%validation%'
+                OR lower(idempotency_key) LIKE '%sample%'
+                OR lower(idempotency_key) LIKE '%smoke%'
+              )
+            """,
+            (SEO_DEMAND_ENGINE_DEPARTMENT_ID,),
+        ).fetchall()
+        run_ids = [row["activity_run_id"] for row in old_runs]
+        if run_ids:
+            placeholders = ",".join("?" for _ in run_ids)
+            conn.execute(f"DELETE FROM approval_tickets WHERE activity_run_id IN ({placeholders})", run_ids)
+            conn.execute(f"DELETE FROM activity_runs WHERE activity_run_id IN ({placeholders})", run_ids)
+        archived_bindings = conn.execute(
+            "SELECT COUNT(*) AS c FROM activity_bindings WHERE binding_id IN ({}) AND status = 'Archived'".format(
+                ",".join("?" for _ in LEGACY_ACTIVITY_BINDING_IDS)
+            ),
+            list(LEGACY_ACTIVITY_BINDING_IDS),
+        ).fetchone()["c"]
+    result = {
+        "ok": all(row.get("ok") for row in script_results) if script_results else True,
+        "message": "Old duplicate/test Windmill scripts and local activity runs cleaned.",
+        "archivedScriptCount": len([row for row in script_results if row.get("ok")]),
+        "removedActivityRunCount": len(run_ids),
+        "archivedLegacyBindingCount": archived_bindings,
+        "scripts": script_results,
+        "cleanedAt": iso_like(utc_ts()),
+    }
+    set_meta("windmill_last_cleanup", result)
+    return {"ok": result["ok"], "cleanup": result, "windmill": windmill_status()}
+
+
+def row_to_activity_binding(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    source = parse_json_text(row["source_payload"], {}) if row else {}
+    return {
+        "bindingId": row["binding_id"],
+        "departmentId": row["department_id"],
+        "activityName": row["activity_name"],
+        "label": row["label"],
+        "handlerType": row["handler_type"],
+        "windmillPath": row["windmill_path"],
+        "approvalRequired": bool(row["approval_required"]),
+        "dryRunSupported": bool(row["dry_run_supported"]),
+        "status": row["status"],
+        "summary": source.get("summary", ""),
+        "metadata": source,
+        "updatedAt": iso_like(row["updated_at"]),
+    }
+
+
+def activity_bindings_for_department(department_id: str = "") -> list[dict[str, Any]]:
+    ensure_default_activity_bindings()
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM activity_bindings
+            WHERE status != 'Archived' AND (department_id = '*' OR department_id = ?)
+            ORDER BY activity_name, department_id DESC
+            """,
+            (department_id or "",),
+        ).fetchall()
+    if department_id:
+        exact_names = {str(row["activity_name"] or "") for row in rows if str(row["department_id"] or "") == department_id}
+        rows = [row for row in rows if str(row["department_id"] or "") == department_id or str(row["activity_name"] or "") not in exact_names]
+    return [row_to_activity_binding(row) for row in rows]
+
+
+def find_activity_binding(activity_name: str, department_id: str = "") -> dict[str, Any] | None:
+    bindings = activity_bindings_for_department(department_id)
+    exact = [row for row in bindings if row["activityName"] == activity_name and row["departmentId"] == department_id]
+    if exact:
+        return exact[0]
+    return next((row for row in bindings if row["activityName"] == activity_name), None)
+
+
+def row_to_activity_run(row: sqlite3.Row | dict[str, Any], approvals: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    approvals = approvals or {}
+    run_id = row["activity_run_id"]
+    return {
+        "activityRunId": run_id,
+        "departmentId": row["department_id"],
+        "organizationAccountId": row["organization_account_id"],
+        "bindingId": row["binding_id"],
+        "activityName": row["activity_name"],
+        "status": row["status"],
+        "approvalState": row["approval_state"],
+        "idempotencyKey": row["idempotency_key"],
+        "dryRun": bool(row["dry_run"]),
+        "requestPayload": parse_json_text(row["request_payload"], {}),
+        "resultPayload": parse_json_text(row["result_payload"], {}),
+        "error": row["error"],
+        "windmillJobId": row["windmill_job_id"],
+        "createdAt": iso_like(row["created_at"]),
+        "updatedAt": iso_like(row["updated_at"]),
+        "requestedBy": row["requested_by"],
+        "approval": approvals.get(run_id),
+    }
+
+
+def list_activity_runs(department_id: str = "", limit: int = 50) -> dict[str, Any]:
+    ensure_default_activity_bindings()
+    params: list[Any] = []
+    where = ""
+    if department_id:
+        where = "WHERE department_id = ?"
+        params.append(department_id)
+    params.append(max(1, min(int(limit or 50), 200)))
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM activity_runs {where} ORDER BY updated_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+        approval_rows = conn.execute(
+            """
+            SELECT *
+            FROM approval_tickets
+            WHERE activity_run_id IN (%s)
+            """ % ",".join("?" for _ in rows),
+            [row["activity_run_id"] for row in rows],
+        ).fetchall() if rows else []
+    approvals = {
+        row["activity_run_id"]: {
+            "approvalId": row["approval_id"],
+            "status": row["status"],
+            "approvalType": row["approval_type"],
+            "requestedBy": row["requested_by"],
+            "approvedBy": row["approved_by"],
+            "reason": row["reason"],
+            "createdAt": iso_like(row["created_at"]),
+            "updatedAt": iso_like(row["updated_at"]),
+        }
+        for row in approval_rows
+    }
+    runs = [row_to_activity_run(row, approvals) for row in rows]
+    return {
+        "ok": True,
+        "departmentId": department_id,
+        "activityRuns": runs,
+        "bindings": activity_bindings_for_department(department_id),
+        "windmill": windmill_status(),
+    }
+
+
+def department_row_by_id(department_id: str) -> dict[str, Any]:
+    if not department_id:
+        return {}
+    fabric = load_capability_fabric()
+    return next((row for row in collection_rows(fabric, "departments") if str(row.get("id") or "") == department_id), {})
+
+
+def department_staff_ids_from_fabric(fabric: dict[str, Any], department: dict[str, Any]) -> list[str]:
+    template = next(
+        (
+            row
+            for row in collection_rows(fabric, "departmentTemplates")
+            if str(row.get("id") or "") == str(department.get("templateId") or "")
+        ),
+        {},
+    )
+    staff_ids: list[str] = []
+    for value in [
+        department.get("humanManager"),
+        department.get("aiManager"),
+        *(department.get("staffProfiles") or []),
+        *(template.get("staffProfiles") or []),
+    ]:
+        text = str(value or "").strip()
+        if text and text not in staff_ids:
+            staff_ids.append(text)
+    if str(department.get("id") or "") == SEO_DEMAND_ENGINE_DEPARTMENT_ID:
+        for value in [
+            "AIstaff_SEOManager",
+            "AIstaff_SEOSourceAnalyst",
+            "AIstaff_SEOExpert",
+            "AIstaff_CaseStudyMapper",
+            "AIstaff_InternalLinkBuilder",
+            "AIstaff_SEOQAAnalyst",
+            "AIstaff_WordPressPublisher",
+        ]:
+            if value not in staff_ids:
+                staff_ids.append(value)
+    return staff_ids
+
+
+def staff_blueprint_id_for_profile(profile: dict[str, Any]) -> str:
+    primary = str(profile.get("primaryArchetypeId") or "").strip()
+    if primary:
+        return primary
+    archetypes = profile.get("archetypeIds") if isinstance(profile.get("archetypeIds"), list) else []
+    return str(archetypes[0] if archetypes else "").strip()
+
+
+def department_staff_assignment_id(department_id: str, staff_profile_id: str) -> str:
+    raw = f"assign_{department_id}_{staff_profile_id}"
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", raw).strip("_")
+
+
+def ensure_department_staff_assignments(fabric: dict[str, Any], department: dict[str, Any]) -> None:
+    department_id = str(department.get("id") or "").strip()
+    if not department_id:
+        return
+    profiles = {str(row.get("id") or ""): row for row in collection_rows(fabric, "staffProfiles") if isinstance(row, dict)}
+    now = utc_ts()
+    with connect() as conn:
+        for staff_id in department_staff_ids_from_fabric(fabric, department):
+            if not staff_id or staff_id == "Human_Iman":
+                continue
+            profile = profiles.get(staff_id) or {"id": staff_id, "label": staff_label(staff_id)}
+            blueprint_id = staff_blueprint_id_for_profile(profile)
+            assignment_id = department_staff_assignment_id(department_id, staff_id)
+            payload = {
+                "alias": profile.get("alias") or DEFAULT_STAFF_ALIASES.get(staff_id) or "",
+                "displayName": profile.get("label") or staff_label(staff_id),
+                "roleOverride": "",
+                "toolOperatingModeOverride": "",
+                "contactPolicyOverride": "",
+                "editableSkillRules": [],
+                "modelTier": "",
+                "analysisTemplateId": "",
+                "source": "seeded_from_reusable_staff_profile",
+                "fieldAccess": "department_editable",
+            }
+            conn.execute(
+                """
+                INSERT INTO p4_staff_assignments (
+                  assignment_id, department_id, staff_profile_id, staff_blueprint_id,
+                  status, source_payload, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, 'Active', ?, ?, ?)
+                ON CONFLICT(assignment_id) DO NOTHING
+                """,
+                (
+                    assignment_id,
+                    department_id,
+                    staff_id,
+                    blueprint_id,
+                    json.dumps(payload, ensure_ascii=False, default=str),
+                    now,
+                    now,
+                ),
+            )
+
+
+def staff_assignment_dto(row: sqlite3.Row, fabric: dict[str, Any]) -> dict[str, Any]:
+    source = parse_json_text(row["source_payload"], {})
+    profiles = {str(item.get("id") or ""): item for item in collection_rows(fabric, "staffProfiles") if isinstance(item, dict)}
+    archetypes = {str(item.get("id") or ""): item for item in collection_rows(fabric, "staffArchetypes") if isinstance(item, dict)}
+    staff_id = str(row["staff_profile_id"] or "")
+    profile = profiles.get(staff_id) or {"id": staff_id, "label": staff_label(staff_id)}
+    stored_blueprint_id = str(row["staff_blueprint_id"] or "").strip()
+    profile_blueprint_id = staff_blueprint_id_for_profile(profile)
+    blueprint_id = stored_blueprint_id or profile_blueprint_id
+    if str(source.get("source") or "") == "seeded_from_reusable_staff_profile" and profile_blueprint_id:
+        blueprint_id = profile_blueprint_id
+    blueprint = archetypes.get(blueprint_id) or {"id": blueprint_id, "label": blueprint_id}
+    editable_rules = source.get("editableSkillRules")
+    if editable_rules in (None, [], ""):
+        editable_rules = profile.get("editableSkillRules") or profile.get("skillRules") or []
+    effective = {
+        "id": staff_id,
+        "label": source.get("displayName") or profile.get("label") or staff_label(staff_id),
+        "alias": source.get("alias") or profile.get("alias") or DEFAULT_STAFF_ALIASES.get(staff_id) or "",
+        "role": source.get("roleOverride") or profile.get("role") or profile.get("profileTitle") or "",
+        "profileTitle": profile.get("profileTitle") or profile.get("label") or "",
+        "communicationScope": profile.get("communicationScope") or "",
+        "canContactHuman": bool(profile.get("canContactHuman")),
+        "reportsTo": profile.get("reportsTo") or profile.get("managerId") or "",
+        "toolOperatingMode": source.get("toolOperatingModeOverride") or profile.get("toolOperatingMode") or "",
+        "contactPolicy": source.get("contactPolicyOverride") or profile.get("contactPolicy") or "",
+        "editableSkillRules": split_list_value(editable_rules),
+        "modelTier": source.get("modelTier") or profile.get("modelTier") or "",
+        "analysisTemplateId": source.get("analysisTemplateId") or profile.get("analysisTemplateId") or "",
+        "archetypeIds": profile.get("archetypeIds") or [],
+        "primaryArchetypeId": profile.get("primaryArchetypeId") or blueprint_id,
+    }
+    return {
+        "assignmentId": row["assignment_id"],
+        "departmentId": row["department_id"],
+        "staffProfileId": staff_id,
+        "staffBlueprintId": blueprint_id,
+        "status": row["status"] or "Active",
+        "fieldAccess": "department_editable",
+        "updatedAt": iso_like(row["updated_at"]),
+        "profile": attach_field_access(profile, "AiStaffProfile"),
+        "blueprint": attach_field_access(blueprint, "AiStaffBlueprint"),
+        "assignment": {
+            **source,
+            "assignmentId": row["assignment_id"],
+            "status": row["status"] or "Active",
+            "source": source.get("source") or "department assignment override",
+        },
+        "effective": attach_field_access(effective, "DepartmentStaffAssignment"),
+    }
+
+
+def list_department_staff_assignments(department_id: str) -> dict[str, Any]:
+    init_db()
+    fabric = load_capability_fabric()
+    department = next(
+        (row for row in collection_rows(fabric, "departments") if str(row.get("id") or "") == str(department_id)),
+        {},
+    )
+    if not department:
+        return {"ok": False, "error": f"Department not found: {department_id}", "assignments": []}
+    ensure_department_staff_assignments(fabric, department)
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM p4_staff_assignments
+            WHERE department_id = ? AND status != 'Archived'
+            ORDER BY created_at ASC, staff_profile_id ASC
+            """,
+            (department_id,),
+        ).fetchall()
+    desired_order = {
+        staff_id: index
+        for index, staff_id in enumerate(department_staff_ids_from_fabric(fabric, department))
+        if staff_id != "Human_Iman"
+    }
+    assignments = [
+        staff_assignment_dto(row, fabric)
+        for row in rows
+        if str(row["staff_profile_id"] or "") in desired_order
+    ]
+    assignments.sort(key=lambda item: (desired_order.get(str(item.get("staffProfileId") or ""), 999), str(item.get("staffProfileId") or "")))
+    return {
+        "ok": True,
+        "departmentId": department_id,
+        "department": attach_field_access(department, "AiDepartmentInstance"),
+        "assignments": assignments,
+        "summary": {
+            "assignmentCount": len(assignments),
+            "blueprintCount": len({row.get("staffBlueprintId") for row in assignments if row.get("staffBlueprintId")}),
+        },
+        "reuseModel": {
+            "blueprintLayer": "Reusable staff type and protected defaults.",
+            "assignmentLayer": "Department-specific alias, responsibility, tool behavior, escalation notes, and extra skill rules.",
+            "runtimeLayer": "Resolved department rules, workspace/organization identity, tools, data, and task context sent to Windmill.",
+        },
+    }
+
+
+def upsert_department_staff_assignment(payload: dict[str, Any]) -> dict[str, Any]:
+    init_db()
+    department_id = str(payload.get("departmentId") or "").strip()
+    staff_id = str(payload.get("staffProfileId") or payload.get("staffId") or "").strip()
+    if not department_id:
+        return {"ok": False, "error": "Missing departmentId."}
+    if not staff_id:
+        return {"ok": False, "error": "Missing staffProfileId."}
+    fabric = load_capability_fabric()
+    department = next((row for row in collection_rows(fabric, "departments") if str(row.get("id") or "") == department_id), {})
+    if not department:
+        return {"ok": False, "error": f"Department not found: {department_id}"}
+    ensure_department_staff_assignments(fabric, department)
+    profiles = {str(row.get("id") or ""): row for row in collection_rows(fabric, "staffProfiles") if isinstance(row, dict)}
+    profile = profiles.get(staff_id) or {"id": staff_id, "label": staff_label(staff_id)}
+    blueprint_id = str(payload.get("staffBlueprintId") or staff_blueprint_id_for_profile(profile) or "").strip()
+    assignment_id = str(payload.get("assignmentId") or department_staff_assignment_id(department_id, staff_id)).strip()
+    now = utc_ts()
+    with connect() as conn:
+        existing = conn.execute("SELECT * FROM p4_staff_assignments WHERE assignment_id = ?", (assignment_id,)).fetchone()
+    before_payload = staff_assignment_dto(existing, fabric) if existing else {}
+    source_payload = payload.get("assignment") if isinstance(payload.get("assignment"), dict) else payload
+    updated_source = {
+        "alias": str(source_payload.get("alias") or profile.get("alias") or DEFAULT_STAFF_ALIASES.get(staff_id) or "").strip(),
+        "displayName": str(source_payload.get("displayName") or profile.get("label") or staff_label(staff_id)).strip(),
+        "roleOverride": str(source_payload.get("roleOverride") or "").strip(),
+        "toolOperatingModeOverride": str(source_payload.get("toolOperatingModeOverride") or "").strip(),
+        "contactPolicyOverride": str(source_payload.get("contactPolicyOverride") or "").strip(),
+        "editableSkillRules": split_list_value(source_payload.get("editableSkillRules")),
+        "modelTier": str(source_payload.get("modelTier") or "").strip(),
+        "analysisTemplateId": str(source_payload.get("analysisTemplateId") or "").strip(),
+        "source": "department_staff_assignment_override",
+        "fieldAccess": "department_editable",
+        "updatedAt": iso_like(now),
+        "updatedBy": str(payload.get("updatedBy") or source_payload.get("updatedBy") or "Human_Iman"),
+    }
+    status = str(payload.get("status") or source_payload.get("status") or "Active").strip() or "Active"
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO p4_staff_assignments (
+              assignment_id, department_id, staff_profile_id, staff_blueprint_id,
+              status, source_payload, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(assignment_id) DO UPDATE SET
+              staff_blueprint_id=excluded.staff_blueprint_id,
+              status=excluded.status,
+              source_payload=excluded.source_payload,
+              updated_at=excluded.updated_at
+            """,
+            (
+                assignment_id,
+                department_id,
+                staff_id,
+                blueprint_id,
+                status,
+                json.dumps(updated_source, ensure_ascii=False, default=str),
+                now,
+                now,
+            ),
+        )
+        row = conn.execute("SELECT * FROM p4_staff_assignments WHERE assignment_id = ?", (assignment_id,)).fetchone()
+    after_payload = staff_assignment_dto(row, fabric) if row else {}
+    record_department_version(
+        object_type="departmentStaffAssignment",
+        object_id=assignment_id,
+        action="Update department staff assignment",
+        before_payload=before_payload,
+        after_payload=after_payload,
+        created_by=updated_source["updatedBy"],
+        reason=str(payload.get("reason") or "Department-specific staff reuse settings updated."),
+    )
+    return {
+        "ok": True,
+        "assignment": after_payload,
+        "assignments": list_department_staff_assignments(department_id).get("assignments") or [],
+    }
+
+
+def resolved_department_staff_context(department_id: str) -> dict[str, Any]:
+    fabric = load_capability_fabric()
+    department = next((row for row in collection_rows(fabric, "departments") if str(row.get("id") or "") == department_id), {})
+    assignment_payload = list_department_staff_assignments(department_id) if department else {"assignments": []}
+    assignment_rows = assignment_payload.get("assignments") or []
+    skill_bindings = [row for row in collection_rows(fabric, "skillBindings") if isinstance(row, dict)]
+    department_skill_ids: list[str] = []
+    for binding in skill_bindings:
+        if str(binding.get("targetId") or "") == department_id and str(binding.get("skillScope") or "") == "departmentSkills":
+            department_skill_ids.extend(binding.get("skillIds") or [])
+    department_skills = [row for row in collection_rows(fabric, "departmentSkills") if row.get("id") in department_skill_ids]
+    if not department_skills:
+        department_skills = [row for row in collection_rows(fabric, "departmentSkills") if row.get("id")]
+    staff_template_skills = collection_rows(fabric, "staffTemplateSkills")
+    staff_context: dict[str, Any] = {}
+    for assignment in assignment_rows:
+        effective = assignment.get("effective") or {}
+        profile = assignment.get("profile") or {}
+        blueprint = assignment.get("blueprint") or {}
+        staff_id = str(effective.get("id") or assignment.get("staffProfileId") or "")
+        archetype_ids = set(effective.get("archetypeIds") or profile.get("archetypeIds") or [])
+        primary = effective.get("primaryArchetypeId") or profile.get("primaryArchetypeId") or assignment.get("staffBlueprintId")
+        if primary:
+            archetype_ids.add(primary)
+        skills = [
+            skill for skill in staff_template_skills
+            if not skill.get("archetypeId") or skill.get("archetypeId") in archetype_ids
+        ]
+        staff_context[str(staff_id)] = {
+            "id": staff_id,
+            "label": effective.get("label") or profile.get("label") or staff_label(str(staff_id)),
+            "alias": effective.get("alias") or "",
+            "role": effective.get("role") or profile.get("profileTitle") or "",
+            "communicationScope": effective.get("communicationScope") or "",
+            "canContactHuman": bool(effective.get("canContactHuman")),
+            "reportsTo": effective.get("reportsTo") or "",
+            "skills": skills[:12],
+            "editableSkillRules": effective.get("editableSkillRules") or [],
+            "toolOperatingMode": effective.get("toolOperatingMode") or "",
+            "contactPolicy": effective.get("contactPolicy") or "",
+            "blueprint": {
+                "id": assignment.get("staffBlueprintId") or blueprint.get("id") or "",
+                "label": blueprint.get("label") or blueprint.get("name") or "",
+                "summary": blueprint.get("summary") or blueprint.get("description") or "",
+                "modelTiers": blueprint.get("modelTiers") or [],
+                "analysisTemplates": blueprint.get("analysisTemplates") or [],
+                "toolFallbackMatrix": blueprint.get("toolFallbackMatrix") or [],
+            },
+            "assignment": {
+                "id": assignment.get("assignmentId"),
+                "source": "department assignment override",
+                "fieldAccess": "department_editable",
+                "modelTier": effective.get("modelTier") or "",
+                "analysisTemplateId": effective.get("analysisTemplateId") or "",
+            },
+        }
+    identity = department.get("businessIdentity") or department.get("effectiveBusinessIdentity") or {}
+    return {
+        "departmentId": department_id,
+        "department": {
+            "id": department.get("id") or department_id,
+            "label": department.get("label") or "",
+            "purpose": department.get("purpose") or "",
+            "approvalPolicy": department.get("approvalPolicy") or "",
+            "aiManager": department.get("aiManager") or "AIstaff_Manager",
+            "aiManagerAlias": department.get("aiManagerAlias") or "",
+            "activeConnections": department.get("activeConnections") or [],
+            "approvedDatasets": department.get("approvedDatasets") or [],
+        },
+        "organization": {
+            "displayName": identity.get("organizationDisplayName") or "",
+            "websiteUrl": identity.get("websiteUrl") or "",
+            "primaryDomain": identity.get("primaryDomain") or "",
+            "brandTone": identity.get("approvedBrandTone") or "",
+        },
+        "skillResolutionOrder": [
+            "platform safety",
+            "department skills",
+            "staff template skills",
+            "lane/tool skills",
+            "project context",
+            "workspace preferences",
+            "approved learned updates",
+        ],
+        "platformSafetySkills": collection_rows(fabric, "platformSafetySkills"),
+        "departmentSkills": department_skills,
+        "staff": staff_context,
+    }
+
+
+def request_activity(payload: dict[str, Any]) -> dict[str, Any]:
+    department_id = str(payload.get("departmentId") or "").strip()
+    activity_name = str(payload.get("activityName") or "").strip()
+    if not department_id:
+        return {"ok": False, "error": "Missing departmentId."}
+    if not activity_name:
+        return {"ok": False, "error": "Missing activityName."}
+    binding = find_activity_binding(activity_name, department_id)
+    if not binding:
+        return {"ok": False, "error": f"No activity binding found for {activity_name}."}
+    input_payload = payload.get("input") if isinstance(payload.get("input"), dict) else {}
+    input_payload = redact_sensitive_activity_payload(input_payload)
+    staff_context = payload.get("staffContext") if isinstance(payload.get("staffContext"), dict) else resolved_department_staff_context(department_id)
+    dry_run = bool(payload.get("dryRun", True))
+    idempotency_key = str(payload.get("idempotencyKey") or f"{department_id}:{activity_name}:{uuid.uuid4().hex[:12]}").strip()
+    with connect() as conn:
+        duplicate = conn.execute(
+            "SELECT * FROM activity_runs WHERE idempotency_key = ? ORDER BY created_at DESC LIMIT 1",
+            (idempotency_key,),
+        ).fetchone()
+        if duplicate:
+            return {
+                "ok": True,
+                "duplicate": True,
+                "message": "An activity run already exists for this idempotency key.",
+                "activityRun": row_to_activity_run(duplicate),
+            }
+    now = utc_ts()
+    run_id = f"act_{uuid.uuid4().hex[:12]}"
+    approval_required = bool(binding.get("approvalRequired"))
+    approval_state = "Pending" if approval_required else "Not Required"
+    status = "Pending Approval" if approval_required else "Ready"
+    request_payload = {
+        "departmentId": department_id,
+        "organizationAccountId": payload.get("organizationAccountId") or "",
+        "activityName": activity_name,
+        "input": input_payload,
+        "staffContext": staff_context,
+        "sourceThreadId": payload.get("sourceThreadId") or payload.get("threadId") or "",
+        "projectStepId": payload.get("projectStepId") or "",
+        "goalId": payload.get("goalId") or "",
+        "dryRun": dry_run,
+        "binding": binding,
+    }
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO activity_runs (
+              activity_run_id, department_id, organization_account_id, binding_id,
+              activity_name, status, approval_state, idempotency_key, dry_run,
+              request_payload, result_payload, error, windmill_job_id, created_at,
+              updated_at, requested_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', '', '', ?, ?, ?)
+            """,
+            (
+                run_id,
+                department_id,
+                str(payload.get("organizationAccountId") or ""),
+                binding["bindingId"],
+                activity_name,
+                status,
+                approval_state,
+                idempotency_key,
+                1 if dry_run else 0,
+                json.dumps(request_payload, ensure_ascii=False, default=str),
+                now,
+                now,
+                str(payload.get("requestedBy") or "AIstaff_Manager"),
+            ),
+        )
+        if approval_required:
+            approval_id = f"appr_{uuid.uuid4().hex[:12]}"
+            conn.execute(
+                """
+                INSERT INTO approval_tickets (
+                  approval_id, activity_run_id, department_id, approval_type, status,
+                  requested_by, approved_by, reason, created_at, updated_at, resolved_at
+                )
+                VALUES (?, ?, ?, 'external_activity', 'Pending', ?, '', ?, ?, ?, NULL)
+                """,
+                (
+                    approval_id,
+                    run_id,
+                    department_id,
+                    str(payload.get("requestedBy") or "AIstaff_Manager"),
+                    str(payload.get("approvalReason") or "External/irreversible activity requires approval."),
+                    now,
+                    now,
+                ),
+            )
+    row = get_activity_run_row(run_id)
+    return {"ok": True, "activityRun": row_to_activity_run(row) if row else None, "binding": binding}
+
+
+def get_activity_run_row(activity_run_id: str) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute("SELECT * FROM activity_runs WHERE activity_run_id = ?", (activity_run_id,)).fetchone()
+
+
+def approve_activity(payload: dict[str, Any]) -> dict[str, Any]:
+    activity_run_id = str(payload.get("activityRunId") or payload.get("runId") or "").strip()
+    approved = bool(payload.get("approved", True))
+    if not activity_run_id:
+        return {"ok": False, "error": "Missing activityRunId."}
+    row = get_activity_run_row(activity_run_id)
+    if not row:
+        return {"ok": False, "error": f"Activity run not found: {activity_run_id}"}
+    now = utc_ts()
+    approval_state = "Approved" if approved else "Rejected"
+    status = "Ready" if approved else "Blocked"
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE activity_runs
+            SET approval_state = ?, status = ?, updated_at = ?, error = ?
+            WHERE activity_run_id = ?
+            """,
+            (approval_state, status, now, "" if approved else "Approval was rejected.", activity_run_id),
+        )
+        conn.execute(
+            """
+            UPDATE approval_tickets
+            SET status = ?, approved_by = ?, reason = COALESCE(NULLIF(?, ''), reason),
+                updated_at = ?, resolved_at = ?
+            WHERE activity_run_id = ?
+            """,
+            (
+                approval_state,
+                str(payload.get("approvedBy") or "Human_Iman"),
+                str(payload.get("reason") or ""),
+                now,
+                now,
+                activity_run_id,
+            ),
+        )
+    updated = get_activity_run_row(activity_run_id)
+    return {"ok": True, "activityRun": row_to_activity_run(updated) if updated else None}
+
+
+def activity_external_action_requires_approval(activity_name: str, binding: dict[str, Any]) -> bool:
+    if binding.get("approvalRequired"):
+        return True
+    text = normalize_text(activity_name)
+    return any(token in text for token in ["wordpress", "webhook", "email", "publish", "crm write", "send"])
+
+
+def iter_dict_values(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for item in value.values():
+            yield from iter_dict_values(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from iter_dict_values(item)
+
+
+def first_nested_value(value: Any, keys: set[str]) -> Any:
+    normalized_keys = {key.lower() for key in keys}
+    for row in iter_dict_values(value):
+        for key, item in row.items():
+            if str(key).lower() in normalized_keys and item not in (None, ""):
+                if isinstance(item, dict) and item.get("rendered"):
+                    return item.get("rendered")
+                return item
+    return ""
+
+
+def normalize_wordpress_draft_return(parsed: Any, request_input: dict[str, Any] | None = None) -> dict[str, Any]:
+    request_input = request_input or {}
+    if isinstance(parsed, dict) and isinstance(parsed.get("wordpressDraft"), dict):
+        existing = parsed.get("wordpressDraft") or {}
+    else:
+        existing = {}
+    draft_id = existing.get("id") or first_nested_value(parsed, {"id", "ID", "postId", "post_id", "draftId", "draft_id"})
+    draft_url = existing.get("url") or first_nested_value(parsed, {"link", "url", "permalink", "postUrl", "post_url", "draftUrl", "draft_url", "guid"})
+    status = existing.get("status") or first_nested_value(parsed, {"status", "postStatus", "post_status"}) or request_input.get("status") or "draft"
+    created_at = existing.get("createdAt") or first_nested_value(parsed, {"date", "date_gmt", "createdAt", "created_at", "createdDate", "created_date", "modified", "modified_gmt"})
+    return {
+        "id": str(draft_id or ""),
+        "url": str(draft_url or ""),
+        "status": str(status or "draft"),
+        "createdAt": str(created_at or ""),
+        "rawReturned": bool(parsed),
+    }
+
+
+def normalize_activity_result(activity_name: str, parsed: Any, request_input: dict[str, Any] | None = None) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    if activity_name == "worldbc.wordpress.create_draft":
+        wordpress_draft = normalize_wordpress_draft_return(parsed, request_input)
+        normalized.update(
+            {
+                "wordpressDraft": wordpress_draft,
+                "wordpressDraftId": wordpress_draft.get("id", ""),
+                "wordpressDraftUrl": wordpress_draft.get("url", ""),
+                "wordpressDraftStatus": wordpress_draft.get("status", ""),
+                "wordpressDraftCreatedAt": wordpress_draft.get("createdAt", ""),
+            }
+        )
+    return normalized
+
+
+def secure_activity_runtime_input(activity_name: str, department_id: str = "") -> dict[str, Any]:
+    if activity_name == "worldbc.wordpress.create_draft":
+        webhook_url = (
+            local_env_value("WORLDBC_WORDPRESS_MAKE_WEBHOOK_URL", "")
+            or local_env_value("WORLDBC_MAKE_WEBHOOK_URL", "")
+            or local_env_value("MAKE_WORDPRESS_WEBHOOK_URL", "")
+        )
+        if webhook_url:
+            return {"makeWebhookUrl": webhook_url}
+    if activity_name == "worldbc.make.webhook_call":
+        webhook_url = local_env_value("WORLDBC_MAKE_WEBHOOK_URL", "")
+        if webhook_url:
+            return {"webhookUrl": webhook_url}
+    return {}
+
+
+def run_windmill_activity(activity_run: dict[str, Any], binding: dict[str, Any]) -> dict[str, Any]:
+    config = windmill_config()
+    request_payload = activity_run.get("requestPayload") or {}
+    metadata = binding.get("metadata") or {}
+    if (activity_run.get("dryRun") and str(metadata.get("runnableKind") or "script").lower() != "flow") or not config["configured"]:
+        return {
+            "ok": True,
+            "mock": True,
+            "status": "Done",
+            "summary": f"Mock activity completed for {activity_run.get('activityName')}.",
+            "evidence": "local-mock://windmill/activity",
+            "result": {
+                "receivedInputKeys": sorted((request_payload.get("input") or {}).keys()),
+                "windmillConfigured": config["configured"],
+                "dryRun": bool(activity_run.get("dryRun")),
+            },
+        }
+    token = local_env_value("WINDMILL_TOKEN", "")
+    path = str(binding.get("windmillPath") or "").strip()
+    if not path:
+        return {"ok": False, "error": "Activity binding does not define a Windmill path.", "retryable": False}
+    if path.startswith("http://") or path.startswith("https://"):
+        url = path
+    else:
+        normalized_path = path if path.startswith("/") else f"/{path}"
+        runnable_kind = str(metadata.get("runnableKind") or "script").lower()
+        if runnable_kind == "flow":
+            flow_path = normalized_path
+            if flow_path.startswith("/p/"):
+                flow_path = flow_path[len("/p/") :]
+            flow_path = flow_path.strip("/")
+            url = f"{config['baseUrl']}/api/w/{urllib.parse.quote(config['workspace'], safe='')}/jobs/run_wait_result/f/{urllib.parse.quote(flow_path, safe='/')}"
+        elif normalized_path.startswith("/h/"):
+            run_suffix = normalized_path
+            url = f"{config['baseUrl']}/api/w/{urllib.parse.quote(config['workspace'], safe='')}/jobs/run_wait_result{run_suffix}"
+        else:
+            script_path = normalized_path
+            if script_path.startswith("/p/"):
+                script_path = script_path[len("/p/") :]
+            script_path = script_path.strip("/")
+            script = windmill_script_by_path(script_path)
+            if not script.get("ok"):
+                return {
+                    "ok": False,
+                    "status": "Failed",
+                    "error": script.get("error") or f"Could not resolve Windmill script path: {script_path}",
+                    "retryable": True,
+                }
+            script_hash = str(((script.get("body") or {}) if isinstance(script.get("body"), dict) else {}).get("hash") or "")
+            if not script_hash:
+                return {"ok": False, "status": "Failed", "error": f"Windmill script has no runnable hash: {script_path}", "retryable": True}
+            run_suffix = f"/h/{urllib.parse.quote(script_hash, safe='')}"
+            url = f"{config['baseUrl']}/api/w/{urllib.parse.quote(config['workspace'], safe='')}/jobs/run_wait_result{run_suffix}"
+    runtime_input = {
+        **(request_payload.get("input") or {}),
+        **secure_activity_runtime_input(activity_run.get("activityName") or "", activity_run.get("departmentId") or ""),
+    }
+    body = json.dumps(
+        {
+            "activityRun": activity_run,
+            "input": runtime_input,
+            "staffContext": request_payload.get("staffContext") or resolved_department_staff_context(activity_run.get("departmentId") or ""),
+        },
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60, context=windmill_ssl_context()) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            parsed = {"raw": raw[:1000]}
+        script_ok = parsed.get("ok", True) is not False if isinstance(parsed, dict) else True
+        normalized = normalize_activity_result(activity_run.get("activityName") or "", parsed, request_payload.get("input") or {})
+        return {
+            "ok": script_ok,
+            "status": "Done" if script_ok else "Failed",
+            "summary": (parsed.get("summary") if isinstance(parsed, dict) else "") or f"Windmill activity {activity_run.get('activityName')} returned successfully.",
+            "windmillJobId": str((parsed.get("uuid") or parsed.get("jobId") or parsed.get("id") or "") if isinstance(parsed, dict) else ""),
+            "result": parsed,
+            **normalized,
+        }
+    except Exception as exc:
+        return {"ok": False, "status": "Failed", "error": str(exc), "retryable": True}
+
+
+def run_activity(payload: dict[str, Any]) -> dict[str, Any]:
+    activity_run_id = str(payload.get("activityRunId") or payload.get("runId") or "").strip()
+    if not activity_run_id:
+        return {"ok": False, "error": "Missing activityRunId."}
+    row = get_activity_run_row(activity_run_id)
+    if not row:
+        return {"ok": False, "error": f"Activity run not found: {activity_run_id}"}
+    activity = row_to_activity_run(row)
+    binding = find_activity_binding(activity["activityName"], activity["departmentId"]) or {}
+    if activity_external_action_requires_approval(activity["activityName"], binding) and activity.get("approvalState") != "Approved":
+        return {"ok": False, "activityRun": activity, "error": "This external activity requires approval before execution."}
+    config = windmill_config()
+    if not config["configured"] and not activity.get("dryRun"):
+        now = utc_ts()
+        with connect() as conn:
+            conn.execute(
+                "UPDATE activity_runs SET status = 'Needs Configuration', error = ?, updated_at = ? WHERE activity_run_id = ?",
+                ("Windmill is not configured. Set WINDMILL_BASE_URL, WINDMILL_WORKSPACE, and WINDMILL_TOKEN or run as dry run.", now, activity_run_id),
+            )
+        updated = row_to_activity_run(get_activity_run_row(activity_run_id))
+        return {"ok": False, "activityRun": updated, "windmill": windmill_status(), "error": updated.get("error")}
+    now = utc_ts()
+    with connect() as conn:
+        conn.execute("UPDATE activity_runs SET status = 'Running', error = '', updated_at = ? WHERE activity_run_id = ?", (now, activity_run_id))
+    latest = row_to_activity_run(get_activity_run_row(activity_run_id))
+    result = run_windmill_activity(latest, binding)
+    status = "Done" if result.get("ok") else "Failed"
+    now = utc_ts()
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE activity_runs
+            SET status = ?, result_payload = ?, error = ?, windmill_job_id = ?, updated_at = ?
+            WHERE activity_run_id = ?
+            """,
+            (
+                status,
+                json.dumps(result, ensure_ascii=False, default=str),
+                "" if result.get("ok") else str(result.get("error") or "Activity failed."),
+                str(result.get("windmillJobId") or ""),
+                now,
+                activity_run_id,
+            ),
+        )
+    return {"ok": bool(result.get("ok")), "activityRun": row_to_activity_run(get_activity_run_row(activity_run_id)), "result": result, "windmill": windmill_status()}
+
+
+def row_to_orchestration_run(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    return {
+        "runId": row["run_id"],
+        "departmentId": row["department_id"],
+        "organizationAccountId": row["organization_account_id"],
+        "goalId": row["goal_id"],
+        "projectStepId": row["project_step_id"],
+        "threadId": row["thread_id"],
+        "status": row["status"],
+        "currentNode": row["current_node"],
+        "graphName": row["graph_name"],
+        "state": parse_json_text(row["state_json"], {}),
+        "lastError": row["last_error"],
+        "createdAt": iso_like(row["created_at"]),
+        "updatedAt": iso_like(row["updated_at"]),
+        "completedAt": iso_like(row["completed_at"]) if row["completed_at"] else "",
+        "createdBy": row["created_by"],
+    }
+
+
+def record_orchestration_event(run_id: str, department_id: str, event_type: str, node_name: str, summary: str, payload: dict[str, Any] | None = None, created_by: str = "AIstaff_Manager") -> None:
+    now = utc_ts()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO orchestration_events (
+              event_id, run_id, department_id, event_type, node_name, summary,
+              payload_json, created_at, created_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"evt_{uuid.uuid4().hex[:12]}",
+                run_id,
+                department_id,
+                event_type,
+                node_name,
+                summary,
+                json.dumps(payload or {}, ensure_ascii=False, default=str),
+                now,
+                created_by,
+            ),
+        )
+
+
+def orchestration_engine_status() -> dict[str, Any]:
+    package = langgraph_orchestrator.langgraph_package_status()
+    return {
+        "configured": True,
+        "engine": "LangGraph" if package.get("installed") else "Local LangGraph-compatible graph",
+        "graphName": langgraph_orchestrator.GRAPH_NAME,
+        "nodes": langgraph_orchestrator.GRAPH_NODES,
+        "package": package,
+        "batch": "Batch 2 graph runtime",
+        "setupGuidance": (
+            "Install langgraph to use the official package runtime. The local fallback preserves the same persisted "
+            "manager/staff graph state, approval gates, and Windmill activity handoff."
+        ),
+    }
+
+
+def orchestration_activity_name_for_department(department: dict[str, Any], state: dict[str, Any]) -> str:
+    text = normalize_text(" ".join([
+        str(department.get("label") or ""),
+        str(department.get("purpose") or ""),
+        " ".join(str(item) for item in (department.get("projectTypes") or [])),
+        str(state.get("intent") or ""),
+    ]))
+    if "seo" in text or "wordpress" in text or "content" in text:
+        return "worldbc.wordpress.create_draft"
+    if "search console" in text:
+        return "worldbc.search_console.query"
+    return "worldbc.file.text_extract"
+
+
+def orchestration_activity_input(department: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    draft = state.get("draftOutput") if isinstance(state.get("draftOutput"), dict) else {}
+    return {
+        "departmentLabel": department.get("label") or state.get("departmentId") or "",
+        "intent": state.get("intent") or "",
+        "manager": state.get("manager") or "AIstaff_Manager",
+        "assignedStaff": state.get("assignedStaff") or "",
+        "draftTitle": draft.get("title") or "",
+        "draftSummary": draft.get("summary") or "",
+        "draftContent": draft.get("content") or "",
+        "qualityChecks": (state.get("qa") or {}).get("checks") or [],
+    }
+
+
+def orchestration_existing_activity(activity_run_id: str) -> dict[str, Any] | None:
+    if not activity_run_id:
+        return None
+    row = get_activity_run_row(activity_run_id)
+    return row_to_activity_run(row) if row else None
+
+
+def execute_orchestration_node(run: dict[str, Any]) -> tuple[str, str, dict[str, Any], str, str]:
+    """Execute one supervised graph node and return next_node, status, state, event_type, summary."""
+    current_node = str(run.get("currentNode") or "manager_intake")
+    state = json_clone(run.get("state") or {})
+    department_id = str(run.get("departmentId") or state.get("departmentId") or "")
+    department = department_row_by_id(department_id)
+    state["departmentId"] = department_id
+    state["graphMode"] = orchestration_engine_status()["engine"]
+    state.setdefault("events", [])
+
+    if current_node == "manager_intake":
+        state["managerDecision"] = {
+            "summary": "AI Manager accepted the work and will route it to staff without bypassing approval gates.",
+            "humanFacingOwner": state.get("manager") or (department or {}).get("aiManager") or "AIstaff_Manager",
+        }
+        next_node = "resolve_context"
+        summary = "AI Manager intake completed."
+    elif current_node == "resolve_context":
+        resolved = p4_resolve_context({"departmentId": department_id})
+        readiness = p4_readiness(department_id)
+        state["resolvedContext"] = resolved
+        state["readiness"] = readiness
+        state["missingRequirements"] = resolved.get("missingRequirements") or []
+        state["blocked"] = bool(state["missingRequirements"] and resolved.get("readinessState") not in {"ready", "approval_required"})
+        next_node = "staff_router"
+        summary = "Department package, stage, staff, skill packs, tools, and data context resolved."
+    elif current_node == "staff_router":
+        resolved = state.get("resolvedContext") if isinstance(state.get("resolvedContext"), dict) else {}
+        staff = (resolved.get("staffProfile") or {}).get("id") or (resolved.get("assignedStaff") or {}).get("id") or (department or {}).get("aiManager") or "AIstaff_Manager"
+        state["assignedStaff"] = staff
+        state["staffRouting"] = {
+            "assignedStaff": staff,
+            "managerVisible": True,
+            "specialistHumanFacing": False,
+            "rule": "Specialist staff work under AI Manager; only manager-facing outputs reach the human.",
+        }
+        next_node = "specialist_work"
+        summary = f"Routed work to {staff} under AI Manager supervision."
+    elif current_node == "specialist_work":
+        activity_name = orchestration_activity_name_for_department(department, state)
+        is_wordpress = activity_name == "worldbc.wordpress.create_draft"
+        state["activityName"] = activity_name
+        state["draftOutput"] = {
+            "title": "SEO-ready WordPress draft package" if is_wordpress else "Internal department work package",
+            "summary": "Prepared a supervised draft for manager review and activity approval.",
+            "content": "<p>Draft output placeholder prepared by the specialist graph node. Batch 3 can replace this with model-generated content.</p>" if is_wordpress else "Internal analysis package prepared for manager review.",
+            "visibility": "manager_review",
+        }
+        next_node = "qa_gate"
+        summary = "Specialist draft output prepared for QA."
+    elif current_node == "qa_gate":
+        activity_name = str(state.get("activityName") or orchestration_activity_name_for_department(department, state))
+        binding = find_activity_binding(activity_name, department_id) or {}
+        approval_required = activity_external_action_requires_approval(activity_name, binding)
+        state["approvalRequired"] = approval_required
+        state["qa"] = {
+            "status": "Passed",
+            "checks": [
+                "manager-facing output only",
+                "external action approval checked",
+                "Windmill binding resolved" if binding else "Windmill binding missing",
+            ],
+            "bindingId": binding.get("bindingId") or "",
+        }
+        if approval_required and not state.get("activityRunId"):
+            requested = request_activity(
+                {
+                    "departmentId": department_id,
+                    "organizationAccountId": run.get("organizationAccountId") or "",
+                    "activityName": activity_name,
+                    "dryRun": True,
+                    "requestedBy": state.get("manager") or "AIstaff_Manager",
+                    "approvalReason": "LangGraph QA gate requires human confirmation before external execution.",
+                    "goalId": run.get("goalId") or state.get("goalId") or "",
+                    "threadId": run.get("threadId") or "",
+                    "projectStepId": run.get("projectStepId") or "",
+                    "input": orchestration_activity_input(department, state),
+                }
+            )
+            activity = requested.get("activityRun") if requested.get("ok") else None
+            if activity:
+                state["activityRunId"] = activity.get("activityRunId")
+                state["approvalState"] = activity.get("approvalState")
+                state["activityStatus"] = activity.get("status")
+        next_node = "approval_gate" if approval_required else "activity_request"
+        summary = "QA gate completed; approval is required." if approval_required else "QA gate completed; no approval required."
+    elif current_node == "approval_gate":
+        activity_name = str(state.get("activityName") or orchestration_activity_name_for_department(department, state))
+        activity = orchestration_existing_activity(str(state.get("activityRunId") or ""))
+        if not activity:
+            requested = request_activity(
+                {
+                    "departmentId": department_id,
+                    "organizationAccountId": run.get("organizationAccountId") or "",
+                    "activityName": activity_name,
+                    "dryRun": True,
+                    "requestedBy": state.get("manager") or "AIstaff_Manager",
+                    "approvalReason": "LangGraph approval gate requires human confirmation before external execution.",
+                    "goalId": run.get("goalId") or state.get("goalId") or "",
+                    "threadId": run.get("threadId") or "",
+                    "projectStepId": run.get("projectStepId") or "",
+                    "input": orchestration_activity_input(department, state),
+                }
+            )
+            activity = requested.get("activityRun") if requested.get("ok") else None
+        if activity:
+            state["activityRunId"] = activity.get("activityRunId")
+            state["approvalState"] = activity.get("approvalState")
+            state["activityStatus"] = activity.get("status")
+        if state.get("approvalState") == "Approved":
+            next_node = "activity_request"
+            summary = "Human approval found; graph can proceed to Windmill activity execution."
+        else:
+            next_node = "approval_gate"
+            summary = "Graph paused for human approval before external activity execution."
+    elif current_node == "activity_request":
+        activity = orchestration_existing_activity(str(state.get("activityRunId") or ""))
+        if not activity:
+            next_node = "approval_gate" if state.get("approvalRequired") else "activity_request"
+            summary = "No activity run exists yet; graph returned to approval/activity preparation."
+        else:
+            result = run_activity({"activityRunId": activity.get("activityRunId")})
+            activity = result.get("activityRun") or activity
+            state["activityStatus"] = activity.get("status")
+            state["activityResult"] = result.get("result") or activity.get("resultPayload") or {}
+            if activity.get("status") == "Done":
+                next_node = "manager_summary"
+                summary = "Windmill activity completed and result returned to AI Manager."
+            elif activity.get("status") == "Needs Configuration":
+                next_node = "activity_request"
+                summary = "Windmill activity is waiting for configuration."
+            else:
+                state["blocked"] = True
+                next_node = "activity_request"
+                summary = activity.get("error") or "Windmill activity did not complete."
+    else:
+        state["managerSummary"] = {
+            "summary": "AI Manager has the latest staff output and activity result.",
+            "nextAction": "Review result, continue the goal, or start another run.",
+        }
+        next_node = "manager_summary"
+        summary = "AI Manager summary completed."
+
+    status = langgraph_orchestrator.terminal_status(next_node, state)
+    state["lastStep"] = {"from": current_node, "to": next_node, "at": iso_like(), "summary": summary}
+    state["events"] = (state.get("events") or [])[-20:] + [state["lastStep"]]
+    return next_node, status, state, "node_executed", summary
+
+
+def orchestration_status(department_id: str = "") -> dict[str, Any]:
+    params: list[Any] = []
+    where = ""
+    if department_id:
+        where = "WHERE department_id = ?"
+        params.append(department_id)
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM orchestration_runs {where} ORDER BY updated_at DESC LIMIT 20",
+            params,
+        ).fetchall()
+        counts = conn.execute(
+            f"SELECT status, COUNT(*) AS c FROM orchestration_runs {where} GROUP BY status",
+            params,
+        ).fetchall()
+        events = conn.execute(
+            """
+            SELECT *
+            FROM orchestration_events
+            WHERE run_id IN (%s)
+            ORDER BY created_at DESC
+            LIMIT 30
+            """ % ",".join("?" for _ in rows),
+            [row["run_id"] for row in rows],
+        ).fetchall() if rows else []
+    engine = orchestration_engine_status()
+    return {
+        **engine,
+        "departmentId": department_id,
+        "counts": {str(row["status"] or "Unknown"): int(row["c"] or 0) for row in counts},
+        "runs": [row_to_orchestration_run(row) for row in rows],
+        "events": [
+            {
+                "eventId": row["event_id"],
+                "runId": row["run_id"],
+                "departmentId": row["department_id"],
+                "eventType": row["event_type"],
+                "nodeName": row["node_name"],
+                "summary": row["summary"],
+                "payload": parse_json_text(row["payload_json"], {}),
+                "createdAt": iso_like(row["created_at"]),
+                "createdBy": row["created_by"],
+            }
+            for row in events
+        ],
+    }
+
+
+def start_orchestration(payload: dict[str, Any]) -> dict[str, Any]:
+    department_id = str(payload.get("departmentId") or "").strip()
+    if not department_id:
+        return {"ok": False, "error": "Missing departmentId."}
+    department = department_row_by_id(department_id)
+    identity = department_identity_from_row(department, workspace_profile()) if department else {}
+    run_id = f"orch_{uuid.uuid4().hex[:12]}"
+    now = utc_ts()
+    state = {
+        "departmentId": department_id,
+        "goalId": payload.get("goalId") or "",
+        "intent": payload.get("intent") or "Advance department work under supervised autonomy.",
+        "manager": (department or {}).get("aiManager") or "AIstaff_Manager",
+        "resolvedContext": p4_resolve_context({"departmentId": department_id}),
+        "windmillConfigured": windmill_config()["configured"],
+        "graphName": langgraph_orchestrator.GRAPH_NAME,
+        "graphNodes": langgraph_orchestrator.GRAPH_NODES,
+    }
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO orchestration_runs (
+              run_id, department_id, organization_account_id, goal_id, project_step_id,
+              thread_id, status, current_node, graph_name, state_json, last_error,
+              created_at, updated_at, completed_at, created_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'In Progress', 'manager_intake', 'ai_department_langgraph_v1', ?, '', ?, ?, NULL, ?)
+            """,
+            (
+                run_id,
+                department_id,
+                str(identity.get("id") or payload.get("organizationAccountId") or ""),
+                str(payload.get("goalId") or ""),
+                str(payload.get("projectStepId") or ""),
+                str(payload.get("threadId") or ""),
+                json.dumps(state, ensure_ascii=False, default=str),
+                now,
+                now,
+                str(payload.get("createdBy") or "AIstaff_Manager"),
+            ),
+        )
+    record_orchestration_event(run_id, department_id, "run_created", "manager_intake", "LangGraph-compatible orchestration run created.", state, str(payload.get("createdBy") or "AIstaff_Manager"))
+    return {"ok": True, "orchestrationRun": row_to_orchestration_run(get_orchestration_run_row(run_id)), "orchestration": orchestration_status(department_id)}
+
+
+def get_orchestration_run_row(run_id: str) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute("SELECT * FROM orchestration_runs WHERE run_id = ?", (run_id,)).fetchone()
+
+
+def step_orchestration(payload: dict[str, Any]) -> dict[str, Any]:
+    run_id = str(payload.get("runId") or "").strip()
+    if not run_id:
+        return {"ok": False, "error": "Missing runId."}
+    row = get_orchestration_run_row(run_id)
+    if not row:
+        return {"ok": False, "error": f"Orchestration run not found: {run_id}"}
+    current = row_to_orchestration_run(row)
+    next_node, status, state, event_type, summary = execute_orchestration_node(current)
+    now = utc_ts()
+    completed_at = now if status == "Completed" else None
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE orchestration_runs
+            SET current_node = ?, status = ?, state_json = ?, updated_at = ?, completed_at = COALESCE(?, completed_at)
+            WHERE run_id = ?
+            """,
+            (next_node, status, json.dumps(state, ensure_ascii=False, default=str), now, completed_at, run_id),
+        )
+    record_orchestration_event(run_id, current["departmentId"], event_type, next_node, summary, state)
+    return {"ok": True, "orchestrationRun": row_to_orchestration_run(get_orchestration_run_row(run_id)), "orchestration": orchestration_status(current["departmentId"])}
 
 
 def local_worker_command() -> str:
@@ -2099,6 +5503,28 @@ def default_department_platform_objects(fabric: dict[str, Any]) -> dict[str, lis
         "departmentSkills": scoped_skills["departmentSkills"],
         "staffTemplateSkills": scoped_skills["staffTemplateSkills"],
         "laneAdapterSkills": scoped_skills["laneAdapterSkills"],
+        "compatibilityRules": [
+            {
+                "id": "local_alpha_compatible",
+                "label": "Compatible With Local Alpha Runtime",
+                "summary": "This object can run in the current local Python/React + SQLite alpha without production cloud orchestration.",
+                "status": "Active",
+                "ownerLayer": "platformAdmin",
+                "locked": False,
+                "workspaceEditable": True,
+            },
+            {
+                "id": "compatible_with_local_p4_resolver",
+                "label": "Compatible With Local P4 Composition Resolver",
+                "summary": "This skill pack can be resolved into the effective local P4 runtime context.",
+                "status": "Active",
+                "ownerLayer": "platformAdmin",
+                "locked": False,
+                "workspaceEditable": True,
+            },
+        ],
+        "formSchemas": default_platform_admin_form_schema_rows(),
+        "enumSets": default_platform_admin_enum_sets(),
         "skillBindings": scoped_skills["skillBindings"],
         "operatingModel": default_platform_operating_model(),
         "workspaceBusinessProfile": default_workspace_business_profile(),
@@ -2487,6 +5913,7 @@ def load_capability_fabric() -> dict[str, Any]:
         fabric["workspaceBusinessProfile"] = workspace_profile()
     except Exception:
         fabric["workspaceBusinessProfile"] = attach_field_access(default_workspace_business_profile(), "WorkspaceBusinessProfile")
+    fabric = attach_department_identities(fabric)
     errors = validate_capability_fabric(fabric)
     if not isinstance(fabric.get("operatingNotes"), dict):
         fabric["operatingNotes"] = {}
@@ -2525,6 +5952,64 @@ def load_capability_fabric() -> dict[str, Any]:
     }
     fabric["typedCatalogSummary"] = platform_catalog_summary(fabric)
     return fabric
+
+
+LIGHTWEIGHT_DASHBOARD_FABRIC_COLLECTIONS = {
+    "solutionModules",
+    "workspaces",
+    "departments",
+    "departmentTemplates",
+    "workspaceOverrides",
+    "staffProfiles",
+    "staffArchetypes",
+    "capabilities",
+    "connections",
+    "databases",
+    "aiSupport",
+    "qualityGates",
+    "kpis",
+    "reportDefinitions",
+    "automations",
+}
+
+
+def dashboard_capability_fabric(*, full: bool = False) -> dict[str, Any]:
+    fabric = load_capability_fabric()
+    if full:
+        fabric["dashboardPayloadMode"] = "full"
+        return fabric
+    lightweight: dict[str, Any] = {
+        key: json_clone(value)
+        for key, value in fabric.items()
+        if key in LIGHTWEIGHT_DASHBOARD_FABRIC_COLLECTIONS
+    }
+    for key in [
+        "schemaVersion",
+        "status",
+        "lastReviewed",
+        "workspaceBusinessProfile",
+        "fieldAccessLegend",
+        "typedCatalogSummary",
+        "summary",
+        "errors",
+    ]:
+        if key in fabric:
+            lightweight[key] = json_clone(fabric.get(key))
+    lightweight["dashboardPayloadMode"] = "lightweight"
+    lightweight["archivedCollections"] = [
+        "recipes",
+        "lanes",
+        "platformSafetySkills",
+        "departmentSkills",
+        "staffTemplateSkills",
+        "laneAdapterSkills",
+        "skillBindings",
+        "outputTemplates",
+        "operatingNotes",
+        "formSchemas",
+        "enumSets",
+    ]
+    return lightweight
 
 
 def read_fabric_note(section: str) -> dict[str, Any]:
@@ -2665,6 +6150,69 @@ def write_capability_fabric(fabric: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "capabilityFabric": load_capability_fabric()}
 
 
+def validate_platform_admin_form_item(collection: str, item: dict[str, Any], fabric: dict[str, Any], *, mode: str = "", original_id: str = "") -> list[str]:
+    schemas = platform_admin_form_schemas(fabric)
+    schema = schemas.get(collection)
+    if not schema:
+        return []
+    errors: list[str] = []
+    object_id = str(item.get("id") or "").strip()
+    rows = [row for row in fabric.get(collection, []) or [] if isinstance(row, dict)]
+    if not object_id:
+        errors.append("Object ID is required.")
+    if object_id:
+        matching = [row for row in rows if str(row.get("id")) == object_id]
+        if mode == "add" and matching:
+            errors.append(f"{collection} already has an item with ID {object_id}.")
+        if original_id and original_id != object_id and matching:
+            errors.append(f"{collection} already has an item with ID {object_id}.")
+    reference_indexes = platform_admin_reference_indexes(fabric)
+    enum_options = platform_admin_enum_options(fabric)
+
+    def validate_field(field: dict[str, Any], value: Any, path: str) -> None:
+        field_type = str(field.get("type") or "text")
+        label = str(field.get("label") or field.get("name") or path)
+        if field.get("required"):
+            if value is None or value == "" or value == []:
+                errors.append(f"{label} is required.")
+                return
+        if value is None or value == "" or value == []:
+            return
+        if field_type in {"enum", "multiEnum"}:
+            allowed = enum_options.get(str(field.get("enumKey") or ""), [])
+            values = value if isinstance(value, list) else [value]
+            for option in values:
+                if allowed and option not in allowed:
+                    errors.append(f"{label} has invalid option {option}.")
+        if field_type in {"reference", "multiReference"}:
+            target = str(field.get("referenceCollection") or "")
+            allowed_ids = {str(row.get("id")) for row in reference_indexes.get(target, [])}
+            values = value if isinstance(value, list) else [value]
+            for ref in values:
+                if ref and allowed_ids and str(ref) not in allowed_ids:
+                    errors.append(f"{label} references missing {target} item {ref}.")
+        if field_type == "childTable":
+            if not isinstance(value, list):
+                errors.append(f"{label} must be a list.")
+                return
+            child_ids: set[str] = set()
+            for index, child in enumerate(value):
+                if not isinstance(child, dict):
+                    errors.append(f"{label} row {index + 1} must be an object.")
+                    continue
+                child_id = str(child.get("id") or "").strip()
+                if child_id:
+                    if child_id in child_ids:
+                        errors.append(f"{label} has duplicate child ID {child_id}.")
+                    child_ids.add(child_id)
+                for child_field in field.get("fields") or []:
+                    validate_field(child_field, child.get(child_field.get("name")), f"{path}.{index}.{child_field.get('name')}")
+
+    for field in schema.get("fields") or []:
+        validate_field(field, item.get(field.get("name")), str(field.get("name") or "field"))
+    return errors
+
+
 def upsert_fabric_object(payload: dict[str, Any]) -> dict[str, Any]:
     collection = str(payload.get("collection") or "").strip()
     item = payload.get("item")
@@ -2687,6 +6235,15 @@ def upsert_fabric_object(payload: dict[str, Any]) -> dict[str, Any]:
             "error": f"{FABRIC_COLLECTION_LABELS.get(collection, collection)} item {object_id} is platform-locked.",
             "locked": True,
         }
+    form_errors = validate_platform_admin_form_item(
+        collection,
+        item,
+        fabric,
+        mode=str(payload.get("mode") or ""),
+        original_id=str(payload.get("originalId") or ""),
+    )
+    if form_errors:
+        return {"ok": False, "error": "Form validation failed.", "errors": form_errors}
     updated = json_clone(item)
     updated["id"] = object_id
     updated["updatedAt"] = iso_like()
@@ -2748,6 +6305,422 @@ def archive_fabric_object(payload: dict[str, Any]) -> dict[str, Any]:
     )
     result["version"] = version
     result["backup"] = backup
+    return result
+
+
+def connection_setup_fields(connection: dict[str, Any]) -> list[str]:
+    connection_id = normalize_text(connection.get("id"))
+    label = normalize_text(connection.get("label"))
+    configured = [str(item).strip() for item in connection.get("setupFields") or [] if str(item).strip()]
+    if configured:
+        return configured
+    if "search_console" in connection_id or "search console" in label:
+        return ["accountLabel", "siteUrl", "propertyId"]
+    if "analytics" in connection_id or "analytics" in label:
+        return ["accountLabel", "propertyId", "siteUrl"]
+    if "wordpress" in connection_id or "wordpress" in label:
+        return ["siteUrl", "accountLabel"]
+    if "make" in connection_id or "webhook" in connection_id or "make.com" in label:
+        return ["webhookUrl"]
+    if "sheet" in connection_id or "sheets" in label:
+        return ["accountLabel", "propertyId"]
+    if "local" in connection_id or "local" in label:
+        return []
+    return ["accountLabel"]
+
+
+def is_search_console_connection_row(connection: dict[str, Any]) -> bool:
+    connection_id = normalize_text(connection.get("id"))
+    label = normalize_text(connection.get("label"))
+    connection_type = normalize_text(connection.get("type"))
+    return "search_console" in connection_id or "search console" in label or "search console" in connection_type
+
+
+def is_make_webhook_connection_row(connection: dict[str, Any]) -> bool:
+    connection_id = normalize_text(connection.get("id"))
+    label = normalize_text(connection.get("label"))
+    connection_type = normalize_text(connection.get("type"))
+    return "make_com" in connection_id or "make.com" in label or "webhook" in connection_id or "webhook" in connection_type
+
+
+def search_console_property_format_error(connection: dict[str, Any]) -> str:
+    if not is_search_console_connection_row(connection):
+        return ""
+    value = str(connection.get("propertyId") or "").strip()
+    if not value:
+        return ""
+    if value.startswith("sc-domain:") and len(value) > len("sc-domain:"):
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        return ""
+    return "Search Console property value must be the exact property, such as sc-domain:worldbc.co or https://worldbc.co/."
+
+
+def connection_config_success_message(connection: dict[str, Any], *, organization_scoped: bool = False) -> str:
+    if is_make_webhook_connection_row(connection):
+        return "Organization webhook configuration check passed. Webhook action remains blocked until Iman explicitly confirms."
+    if organization_scoped:
+        return "Organization configuration check passed. OAuth can be connected when you are ready."
+    return "Local configuration check passed. Provider credentials can be connected when you are ready."
+
+
+def connection_required_field_label(field: str) -> str:
+    labels = {
+        "accountLabel": "account/workspace label",
+        "propertyId": "property/project ID",
+        "siteUrl": "site URL",
+        "webhookUrl": "webhook/endpoint URL",
+        "endpointUrl": "endpoint URL",
+    }
+    return labels.get(field, field)
+
+
+CONNECTION_CONFIG_EDITABLE_FIELDS = {
+    "status",
+    "type",
+    "requiredFor",
+    "setupFields",
+    "accountLabel",
+    "propertyId",
+    "siteUrl",
+    "webhookUrl",
+    "endpointUrl",
+    "configurationNotes",
+    "provider",
+    "providerFamily",
+    "testMode",
+    "enabled",
+    "openApiSpec",
+    "operationId",
+    "requestContract",
+    "editorialPolicy",
+    "contentChecklist",
+    "categorySelectionPolicy",
+    "referencePolicy",
+    "defaultPostStatus",
+    "requiresHumanConfirmation",
+}
+
+
+def connection_config_from_payload(existing: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    updated = json_clone(existing)
+    for key in CONNECTION_CONFIG_EDITABLE_FIELDS:
+        if key in payload:
+            value = payload.get(key)
+            if key in {"requiredFor", "setupFields"} and isinstance(value, str):
+                value = [item.strip() for item in re.split(r"[,;\n]+", value) if item.strip()]
+            updated[key] = value
+    updated["setupFields"] = connection_setup_fields({**existing, **updated})
+    updated["updatedAt"] = iso_like()
+    updated["updatedBy"] = str(payload.get("updatedBy") or "Human_Iman")
+    return updated
+
+
+def merged_connection_with_config(connection: dict[str, Any], config: dict[str, Any], department: dict[str, Any] | None = None) -> dict[str, Any]:
+    merged = {**json_clone(connection), **json_clone(config)}
+    merged["id"] = connection.get("id")
+    merged["label"] = connection.get("label")
+    merged["connectionId"] = connection.get("id")
+    merged["catalogConnectionId"] = connection.get("id")
+    if department:
+        identity = department_identity_from_row(department, workspace_profile())
+        merged["departmentId"] = department.get("id")
+        merged["organizationAccountId"] = identity.get("id")
+        merged["organizationDisplayName"] = identity.get("organizationDisplayName")
+        merged["organizationScoped"] = True
+    return merged
+
+
+def department_connection_config_target(fabric: dict[str, Any], department_id: str, connection_id: str) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
+    rows = collection_rows(fabric, "departments")
+    department = next((row for row in rows if isinstance(row, dict) and str(row.get("id")) == department_id), None)
+    if not department:
+        return rows, None, None, None
+    connections = collection_rows(fabric, "connections")
+    _, connection = find_collection_item(connections, connection_id)
+    if not connection:
+        return rows, department, None, None
+    identity = department.get("businessIdentity") if isinstance(department.get("businessIdentity"), dict) else {}
+    if not identity:
+        identity = department_identity_from_row(department, workspace_profile())
+    configs = identity.get("connectionConfigs") if isinstance(identity.get("connectionConfigs"), dict) else {}
+    identity["connectionConfigs"] = configs
+    department["businessIdentity"] = identity
+    existing_config = configs.get(connection_id) if isinstance(configs.get(connection_id), dict) else {}
+    return rows, department, connection, existing_config
+
+
+def update_connection_config(payload: dict[str, Any]) -> dict[str, Any]:
+    connection_id = str(payload.get("connectionId") or payload.get("id") or "").strip()
+    department_id = str(payload.get("departmentId") or "").strip()
+    if not connection_id:
+        return {"ok": False, "error": "Missing connectionId."}
+    try:
+        fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+    if department_id:
+        department_rows, department, connection, existing_config = department_connection_config_target(fabric, department_id, connection_id)
+        if not department:
+            return {"ok": False, "error": f"Department not found: {department_id}"}
+        if not connection:
+            return {"ok": False, "error": f"Connection not found: {connection_id}"}
+        updated_config = connection_config_from_payload(existing_config or {}, payload)
+        updated_config["connectionId"] = connection_id
+        updated_config["scope"] = "department_organization_account"
+        updated_config["organizationAccountId"] = str((department.get("businessIdentity") or {}).get("id") or f"identity_{department_id}")
+        department["businessIdentity"]["connectionConfigs"][connection_id] = updated_config
+        department["updatedAt"] = updated_config["updatedAt"]
+        department["updatedBy"] = updated_config["updatedBy"]
+        backup = create_config_backup({"reason": f"Before organization connection config update: {department_id}/{connection_id}", "notes": "Automatic pre-organization-connection-config backup."})
+        result = write_capability_fabric(fabric)
+        if not result.get("ok"):
+            return result
+        result.pop("capabilityFabric", None)
+        version = record_department_version(
+            object_type="departmentConnectionConfig",
+            object_id=f"{department_id}:{connection_id}",
+            action="Update organization connection configuration",
+            before_payload=existing_config or {},
+            after_payload=updated_config,
+            created_by=updated_config["updatedBy"],
+            reason=str(payload.get("reason") or "Organization-scoped connection configured from Department Explorer."),
+        )
+        result["connection"] = attach_field_access(merged_connection_with_config(connection, updated_config, department), "AiConnection")
+        result["department"] = attach_field_access(department, "AiDepartmentInstance")
+        result["businessIdentity"] = department_identity_from_row(department, workspace_profile())
+        result["version"] = version
+        result["backup"] = backup
+        return result
+    rows = collection_rows(fabric, "connections")
+    index, existing = find_collection_item(rows, connection_id)
+    if index < 0 or not existing:
+        return {"ok": False, "error": f"Connection not found: {connection_id}"}
+
+    updated = connection_config_from_payload(existing, payload)
+
+    backup = create_config_backup({"reason": f"Before connection config update: {connection_id}", "notes": "Automatic pre-connection-config backup."})
+    rows[index] = updated
+    result = write_capability_fabric(fabric)
+    if not result.get("ok"):
+        return result
+    result.pop("capabilityFabric", None)
+    version = record_department_version(
+        object_type="connections",
+        object_id=connection_id,
+        action="Update connection configuration",
+        before_payload=existing,
+        after_payload=updated,
+        created_by=str(payload.get("updatedBy") or "Human_Iman"),
+        reason=str(payload.get("reason") or "Connection configured from Department Explorer."),
+    )
+    result["connection"] = attach_field_access(updated, "AiConnection")
+    result["version"] = version
+    result["backup"] = backup
+    return result
+
+
+def test_connection_config(payload: dict[str, Any]) -> dict[str, Any]:
+    connection_id = str(payload.get("connectionId") or payload.get("id") or "").strip()
+    department_id = str(payload.get("departmentId") or "").strip()
+    if not connection_id:
+        return {"ok": False, "error": "Missing connectionId."}
+    try:
+        fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+    if department_id:
+        department_rows, department, connection, existing_config = department_connection_config_target(fabric, department_id, connection_id)
+        if not department:
+            return {"ok": False, "error": f"Department not found: {department_id}"}
+        if not connection:
+            return {"ok": False, "error": f"Connection not found: {connection_id}"}
+        updated = merged_connection_with_config(connection, existing_config or {}, department)
+        required_fields = connection_setup_fields(updated)
+        missing = [field for field in required_fields if not str(updated.get(field) or "").strip()]
+        format_error = search_console_property_format_error(updated)
+        status = "Available" if not required_fields else ("Configured" if not missing else "Needs Setup")
+        ok = not missing and not format_error
+        if normalize_text(updated.get("status")) in {"disabled", "archived"}:
+            ok = False
+            status = "Disabled"
+            message = "Connection is disabled for this organization account."
+        elif missing:
+            missing_labels = ", ".join(connection_required_field_label(field) for field in missing)
+            message = f"Missing setup fields for this organization account: {missing_labels}."
+        elif format_error:
+            status = "Needs Setup"
+            message = format_error
+        elif required_fields:
+            message = connection_config_success_message(updated, organization_scoped=True)
+        else:
+            message = "Local connection is available for this organization account."
+        tested_at = iso_like()
+        config = json_clone(existing_config or {})
+        config.update(
+            {
+                "connectionId": connection_id,
+                "scope": "department_organization_account",
+                "organizationAccountId": str((department.get("businessIdentity") or {}).get("id") or f"identity_{department_id}"),
+                "status": status,
+                "setupFields": required_fields,
+                "lastTestStatus": "Passed" if ok else "Needs Setup",
+                "lastTestAt": tested_at,
+                "lastTestMessage": message,
+                "updatedAt": tested_at,
+                "updatedBy": str(payload.get("updatedBy") or "Human_Iman"),
+            }
+        )
+        department["businessIdentity"]["connectionConfigs"][connection_id] = config
+        department["updatedAt"] = tested_at
+        department["updatedBy"] = config["updatedBy"]
+        backup = create_config_backup({"reason": f"Before organization connection test update: {department_id}/{connection_id}", "notes": "Automatic pre-organization-connection-test backup."})
+        result = write_capability_fabric(fabric)
+        if not result.get("ok"):
+            return result
+        result.pop("capabilityFabric", None)
+        version = record_department_version(
+            object_type="departmentConnectionConfig",
+            object_id=f"{department_id}:{connection_id}",
+            action="Test organization connection configuration",
+            before_payload=existing_config or {},
+            after_payload=config,
+            created_by=config["updatedBy"],
+            reason=str(payload.get("reason") or "Organization connection test from Department Explorer."),
+        )
+        result["ok"] = True
+        result["connection"] = attach_field_access(merged_connection_with_config(connection, config, department), "AiConnection")
+        result["department"] = attach_field_access(department, "AiDepartmentInstance")
+        result["businessIdentity"] = department_identity_from_row(department, workspace_profile())
+        result["test"] = {
+            "ok": ok,
+            "status": config["lastTestStatus"],
+            "message": message,
+            "missingFields": missing,
+            "testedAt": tested_at,
+        }
+        result["version"] = version
+        result["backup"] = backup
+        return result
+    rows = collection_rows(fabric, "connections")
+    index, existing = find_collection_item(rows, connection_id)
+    if index < 0 or not existing:
+        return {"ok": False, "error": f"Connection not found: {connection_id}"}
+
+    updated = json_clone(existing)
+    required_fields = connection_setup_fields(updated)
+    missing = [field for field in required_fields if not str(updated.get(field) or "").strip()]
+    format_error = search_console_property_format_error(updated)
+    status = "Available" if not required_fields else ("Configured" if not missing else "Needs Setup")
+    ok = not missing and not format_error
+    if normalize_text(updated.get("status")) in {"disabled", "archived"}:
+        ok = False
+        status = "Disabled"
+        message = "Connection is disabled."
+    elif missing:
+        missing_labels = ", ".join(connection_required_field_label(field) for field in missing)
+        message = f"Missing setup fields: {missing_labels}."
+    elif format_error:
+        status = "Needs Setup"
+        message = format_error
+    elif required_fields:
+        message = connection_config_success_message(updated)
+    else:
+        message = "Local connection is available."
+
+    updated["status"] = status
+    updated["setupFields"] = required_fields
+    updated["lastTestStatus"] = "Passed" if ok else "Needs Setup"
+    updated["lastTestAt"] = iso_like()
+    updated["lastTestMessage"] = message
+    updated["updatedAt"] = updated["lastTestAt"]
+    updated["updatedBy"] = str(payload.get("updatedBy") or "Human_Iman")
+    rows[index] = updated
+    backup = create_config_backup({"reason": f"Before connection test update: {connection_id}", "notes": "Automatic pre-connection-test backup."})
+    result = write_capability_fabric(fabric)
+    if not result.get("ok"):
+        return result
+    result.pop("capabilityFabric", None)
+    version = record_department_version(
+        object_type="connections",
+        object_id=connection_id,
+        action="Test connection configuration",
+        before_payload=existing,
+        after_payload=updated,
+        created_by=str(payload.get("updatedBy") or "Human_Iman"),
+        reason=str(payload.get("reason") or "Connection test from Department Explorer."),
+    )
+    result["ok"] = True
+    result["connection"] = attach_field_access(updated, "AiConnection")
+    result["test"] = {
+        "ok": ok,
+        "status": updated["lastTestStatus"],
+        "message": message,
+        "missingFields": missing,
+        "testedAt": updated["lastTestAt"],
+    }
+    result["version"] = version
+    result["backup"] = backup
+    return result
+
+
+def set_department_status(payload: dict[str, Any]) -> dict[str, Any]:
+    department_id = str(payload.get("departmentId") or payload.get("id") or "").strip()
+    action = str(payload.get("action") or "activate").strip().lower()
+    if not department_id:
+        return {"ok": False, "error": "Missing departmentId."}
+    if action not in {"activate", "pause"}:
+        return {"ok": False, "error": "Unsupported department status action."}
+    try:
+        fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not load capability fabric: {exc}"}
+
+    rows = collection_rows(fabric, "departments")
+    target = next((row for row in rows if isinstance(row, dict) and str(row.get("id")) == department_id), None)
+    if not target:
+        return {"ok": False, "error": f"Department not found: {department_id}"}
+    if normalize_text(target.get("status")) == "archived" or target.get("archived"):
+        return {"ok": False, "error": "Archived departments cannot be activated or paused."}
+
+    before_payload = json_clone(rows)
+    updated_at = iso_like()
+    updated_by = str(payload.get("updatedBy") or "Human_Iman")
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if normalize_text(row.get("status")) == "archived" or row.get("archived"):
+            continue
+        if action == "activate":
+            row["status"] = "Active" if str(row.get("id")) == department_id else "Paused"
+            row["lifecycleStatus"] = row["status"]
+            row["isCurrentDepartment"] = str(row.get("id")) == department_id
+        elif str(row.get("id")) == department_id:
+            row["status"] = "Paused"
+            row["lifecycleStatus"] = "Paused"
+            row["isCurrentDepartment"] = False
+        row["updatedAt"] = updated_at
+        row["updatedBy"] = updated_by
+
+    backup = create_config_backup({"reason": f"Before department {action}: {department_id}", "notes": "Automatic pre-status-change backup."})
+    result = write_capability_fabric(fabric)
+    if not result.get("ok"):
+        return result
+    after_target = next((row for row in rows if isinstance(row, dict) and str(row.get("id")) == department_id), {})
+    version = record_department_version(
+        object_type="departments",
+        object_id=department_id,
+        action=f"Department {action}",
+        before_payload={"departments": before_payload},
+        after_payload={"departments": json_clone(rows), "department": json_clone(after_target)},
+        created_by=updated_by,
+        reason=str(payload.get("reason") or f"Department {action} from Departments workspace."),
+    )
+    result["department"] = attach_field_access(after_target, "AiDepartmentInstance")
+    result["departments"] = [attach_field_access(row, "AiDepartmentInstance") for row in rows if isinstance(row, dict)]
+    result["version"] = version
+    result["backup"] = backup
+    result["catalogs"] = platform_admin_catalogs()
     return result
 
 
@@ -3206,6 +7179,15 @@ def platform_admin_catalogs() -> dict[str, Any]:
         ],
         "scopedSkills": [attach_field_access(row, "AiScopedSkillDefinition") for row in scoped_skill_definitions(fabric)],
         "workflowTemplates": [attach_field_access(row, "AiWorkflowTemplate") for row in workflow_templates_from_fabric(fabric)],
+        "capabilities": [attach_field_access(row, "AiCapability") for row in (fabric.get("capabilities", []) or []) if isinstance(row, dict)],
+        "connections": [attach_field_access(row, "AiConnection") for row in (fabric.get("connections", []) or []) if isinstance(row, dict)],
+        "databases": [attach_field_access(row, "AiDatabase") for row in (fabric.get("databases", []) or []) if isinstance(row, dict)],
+        "aiSupport": [attach_field_access(row, "AiSupport") for row in (fabric.get("aiSupport", []) or []) if isinstance(row, dict)],
+        "qualityGates": [attach_field_access(row, "AiQualityGate") for row in (fabric.get("qualityGates", []) or []) if isinstance(row, dict)],
+        "automations": [attach_field_access(row, "AiAutomation") for row in (fabric.get("automations", []) or []) if isinstance(row, dict)],
+        "compatibilityRules": [attach_field_access(row, "AiCompatibilityRule") for row in (fabric.get("compatibilityRules", []) or []) if isinstance(row, dict)],
+        "formSchemas": [attach_field_access(row, "AiFormSchema") for row in (fabric.get("formSchemas", []) or []) if isinstance(row, dict)],
+        "enumSets": [attach_field_access(row, "AiEnumSet") for row in (fabric.get("enumSets", []) or []) if isinstance(row, dict)],
         "senderIdentities": list_sender_identities(),
     }
     p4_catalog_rows = p4.get("catalogs") or {}
@@ -3215,6 +7197,10 @@ def platform_admin_catalogs() -> dict[str, Any]:
         "summary": {key: len(value) for key, value in catalogs.items()},
         "p4Catalogs": p4_catalog_rows,
         "p4Summary": p4.get("summary") or {},
+        "formSchemas": platform_admin_form_schemas(fabric),
+        "enumOptions": platform_admin_enum_options(fabric),
+        "referenceIndexes": platform_admin_reference_indexes(fabric),
+        "editableCollections": sorted(EDITABLE_FABRIC_COLLECTIONS),
         "fieldAccessLegend": fabric.get("fieldAccessLegend") or {},
         "validation": {"errors": fabric.get("errors") or [], "errorCount": len(fabric.get("errors") or [])},
         "exportReady": {
@@ -3224,6 +7210,15 @@ def platform_admin_catalogs() -> dict[str, Any]:
             "laneAdapters": [row.get("id") for row in catalogs["laneAdapters"]],
             "scopedSkills": [row.get("id") for row in catalogs["scopedSkills"]],
             "workflowTemplates": [row.get("id") for row in catalogs["workflowTemplates"]],
+            "capabilities": [row.get("id") for row in catalogs["capabilities"]],
+            "connections": [row.get("id") for row in catalogs["connections"]],
+            "databases": [row.get("id") for row in catalogs["databases"]],
+            "aiSupport": [row.get("id") for row in catalogs["aiSupport"]],
+            "qualityGates": [row.get("id") for row in catalogs["qualityGates"]],
+            "automations": [row.get("id") for row in catalogs["automations"]],
+            "compatibilityRules": [row.get("id") for row in catalogs["compatibilityRules"]],
+            "formSchemas": [row.get("id") for row in catalogs["formSchemas"]],
+            "enumSets": [row.get("id") for row in catalogs["enumSets"]],
         },
     }
 
@@ -3237,6 +7232,8 @@ def create_department_from_template(payload: dict[str, Any]) -> dict[str, Any]:
     ai_manager_alias = str(payload.get("aiManagerAlias") or DEFAULT_STAFF_ALIASES["AIstaff_Manager"]).strip()
     human_manager = str(payload.get("humanManager") or "Human_Iman").strip()
     workspace_id = str(payload.get("workspaceId") or "workspace_iman_swiss_planner").strip()
+    default_language = str(payload.get("defaultLanguage") or workspace_profile().get("defaultLanguage") or "English").strip()
+    approval_policy = str(payload.get("approvalPolicy") or "").strip()
     raw_project_types = payload.get("projectTypes")
     if isinstance(raw_project_types, str):
         project_types = [item.strip() for item in re.split(r"[,;\n]+", raw_project_types) if item.strip()]
@@ -3244,6 +7241,20 @@ def create_department_from_template(payload: dict[str, Any]) -> dict[str, Any]:
         project_types = [str(item).strip() for item in raw_project_types if str(item).strip()]
     else:
         project_types = []
+    raw_active_connections = payload.get("activeConnections")
+    if isinstance(raw_active_connections, str):
+        active_connections = [item.strip() for item in re.split(r"[,;\n]+", raw_active_connections) if item.strip()]
+    elif isinstance(raw_active_connections, list):
+        active_connections = [str(item).strip() for item in raw_active_connections if str(item).strip()]
+    else:
+        active_connections = []
+    raw_approved_datasets = payload.get("approvedDatasets")
+    if isinstance(raw_approved_datasets, str):
+        approved_datasets = [item.strip() for item in re.split(r"[,;\n]+", raw_approved_datasets) if item.strip()]
+    elif isinstance(raw_approved_datasets, list):
+        approved_datasets = [str(item).strip() for item in raw_approved_datasets if str(item).strip()]
+    else:
+        approved_datasets = []
     try:
         fabric = normalize_capability_fabric(json.loads(CAPABILITY_FABRIC_PATH.read_text(encoding="utf-8")))
     except Exception as exc:
@@ -3288,6 +7299,10 @@ def create_department_from_template(payload: dict[str, Any]) -> dict[str, Any]:
         "label": f"{department_label} Blueprint",
         "purpose": purpose or source_template.get("purpose") or "",
         "projectTypes": project_types or json_clone(source_template.get("projectTypes") or []),
+        "approvalPolicy": approval_policy,
+        "activeConnections": active_connections,
+        "approvedDatasets": approved_datasets,
+        "defaultLanguage": default_language,
         "sourceTemplateId": source_template.get("id"),
         "status": "Draft",
         "locked": False,
@@ -3307,11 +7322,37 @@ def create_department_from_template(payload: dict[str, Any]) -> dict[str, Any]:
         "sponsoredParticipantsSee": ["tasks", "uploads", "confirmations", "approvals", "outputs"],
         "humanManager": human_manager,
         "aiManager": "AIstaff_Manager",
+        "aiManagerAlias": ai_manager_alias,
         "purpose": purpose or source_template.get("purpose") or "",
+        "projectTypes": project_types or json_clone(source_template.get("projectTypes") or []),
+        "approvalPolicy": approval_policy,
+        "activeConnections": active_connections,
+        "approvedDatasets": approved_datasets,
+        "defaultLanguage": default_language,
         "status": "Active",
         "workspaceEditable": True,
         "createdAt": iso_like(),
         "createdBy": str(payload.get("createdBy") or "Human_Iman"),
+    }
+    created_department["businessIdentity"] = {
+        "id": f"identity_{department_id}",
+        "departmentId": department_id,
+        "organizationDisplayName": str(payload.get("organizationDisplayName") or department_label).strip(),
+        "legalOrganizationName": str(payload.get("legalOrganizationName") or "").strip(),
+        "websiteUrl": str(payload.get("websiteUrl") or "").strip(),
+        "primaryDomain": str(payload.get("primaryDomain") or "").strip(),
+        "industrySector": str(payload.get("industrySector") or "").strip(),
+        "defaultLanguage": default_language,
+        "approvedBrandTone": str(payload.get("approvedBrandTone") or workspace_profile().get("approvedBrandTone") or "").strip(),
+        "managerDisplayName": human_manager,
+        "managerTitle": str(payload.get("managerTitle") or workspace_profile().get("defaultManagerTitle") or "Human Manager").strip(),
+        "publicDescription": purpose or source_template.get("purpose") or "",
+        "activeConnections": active_connections,
+        "approvedDatabases": approved_datasets,
+        "connectionConfigs": {},
+        "workspaceEditable": True,
+        "createdAt": created_department["createdAt"],
+        "createdBy": created_department["createdBy"],
     }
     workspace_override = {
         "id": override_id,
@@ -3319,7 +7360,10 @@ def create_department_from_template(payload: dict[str, Any]) -> dict[str, Any]:
         "departmentId": department_id,
         "humanManager": human_manager,
         "aiManagerAlias": ai_manager_alias,
-        "defaultLanguage": (workspace_profile().get("defaultLanguage") or "English"),
+        "defaultLanguage": default_language,
+        "approvalPolicy": approval_policy,
+        "activeConnections": active_connections,
+        "approvedDatasets": approved_datasets,
         "status": "Active",
         "workspaceEditable": True,
         "createdAt": iso_like(),
@@ -3582,14 +7626,17 @@ def p4_staff_profile_for_blueprint(fabric: dict[str, Any], blueprint_id: str = "
 
 
 def p4_connection_ready(connection: dict[str, Any], profile: dict[str, Any]) -> bool:
-    status = normalize_text(connection.get("status") or connection.get("lifecycleStatus") or "active")
-    if status in {"disabled", "inactive", "archived", "deprecated", "blocked"}:
+    configs = profile.get("connectionConfigs") if isinstance(profile.get("connectionConfigs"), dict) else {}
+    scoped_config = configs.get(str(connection.get("id"))) if isinstance(configs.get(str(connection.get("id"))), dict) else {}
+    effective_connection = {**connection, **scoped_config}
+    status = normalize_text(effective_connection.get("status") or effective_connection.get("lifecycleStatus") or "active")
+    if status in {"disabled", "inactive", "archived", "deprecated", "blocked", "needs setup", "planned", "draft", "test failed"}:
         return False
     active = {normalize_text(item) for item in profile.get("activeConnections", []) or [] if item}
     if not active:
         return True
-    connection_id = normalize_text(connection.get("id"))
-    connection_label = normalize_text(connection.get("label"))
+    connection_id = normalize_text(effective_connection.get("id"))
+    connection_label = normalize_text(effective_connection.get("label"))
     local_aliases = {
         "local runtime": {"local command center", "codex worker", "google sheet crm", "apps script bridge"},
         "local sqlite": {"local command center", "google sheet crm"},
@@ -3608,7 +7655,9 @@ def p4_resolve_context(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     department_id = str(payload.get("departmentId") or "").strip()
     department = next((row for row in departments if str(row.get("id")) == department_id), None)
     if not department:
-        department = next((row for row in departments if normalize_text(row.get("status") or "active") == "active"), departments[0] if departments else {})
+        department = next((row for row in departments if row.get("isCurrentDepartment")), None)
+        if not department:
+            department = next((row for row in departments if normalize_text(row.get("status") or "active") == "active"), departments[0] if departments else {})
         department_id = str(department.get("id") or department_id)
     package = p4_lookup(catalogs.get("departmentPackages") or [], str(department.get("templateId") or ""), str(payload.get("departmentPackageId") or ""))
     stage_template = p4_lookup(catalogs.get("stageTemplates") or [], str(payload.get("stageTemplateId") or ""))
@@ -3651,13 +7700,14 @@ def p4_resolve_context(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     connections = {str(row.get("id")): row for row in fabric.get("connections", []) or [] if isinstance(row, dict)}
     databases = {str(row.get("id")): row for row in fabric.get("databases", []) or [] if isinstance(row, dict)}
     workspace_defaults = workspace_profile()
+    department_identity = department_identity_from_row(department, workspace_defaults) if department else attach_field_access({}, "DepartmentBusinessIdentity")
     for contract in tool_contracts:
         for connection_id in contract.get("requiredConnections") or []:
             connection = connections.get(str(connection_id))
             if not connection:
                 missing.append({"type": "missing_tool", "scope": "connection", "id": connection_id, "message": f"Missing connection {connection_id}."})
-            elif not p4_connection_ready(connection, workspace_defaults):
-                missing.append({"type": "inactive_connection", "scope": "connection", "id": connection_id, "message": f"Connection {connection.get('label') or connection_id} is not active for this workspace."})
+            elif not p4_connection_ready(connection, department_identity):
+                missing.append({"type": "inactive_connection", "scope": "connection", "id": connection_id, "message": f"Connection {connection.get('label') or connection_id} is not active for this department."})
         for database_id in contract.get("requiredDatabases") or []:
             if str(database_id) not in databases:
                 missing.append({"type": "missing_dataset", "scope": "database", "id": database_id, "message": f"Missing dataset/database {database_id}."})
@@ -3677,6 +7727,7 @@ def p4_resolve_context(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "toolDataContracts": tool_contracts,
         "laneAdapters": lane_adapters,
         "workspaceProfile": workspace_defaults,
+        "departmentBusinessIdentity": department_identity,
         "managerEscalationPolicy": "Route blocked or ambiguous execution to AI Manager before human escalation.",
         "humanApprovalRequirements": human_approval,
         "skillResolutionOrder": scoped.get("resolutionOrder") or [
@@ -3708,7 +7759,7 @@ def p4_next_action_for_missing(missing: list[dict[str, Any]]) -> str:
     if kind == "approval_required":
         return "Ask AI Manager to request Iman approval before external or irreversible action."
     if kind == "inactive_connection":
-        return "Activate or map the required workspace connection in Workspace Settings."
+        return "Configure and test the required connection from Department Explorer -> Tools & Lanes or Settings -> Connected Apps."
     if kind == "missing_dataset":
         return "Add or map the required dataset/database before running this stage."
     if kind == "missing_tool":
@@ -3722,7 +7773,9 @@ def p4_readiness(department_id: str = "") -> dict[str, Any]:
     fabric = load_capability_fabric()
     departments = [row for row in fabric.get("departments", []) or [] if isinstance(row, dict)]
     if not department_id:
-        active = next((row for row in departments if normalize_text(row.get("status") or "active") == "active"), departments[0] if departments else {})
+        active = next((row for row in departments if row.get("isCurrentDepartment")), None)
+        if not active:
+            active = next((row for row in departments if normalize_text(row.get("status") or "active") == "active"), departments[0] if departments else {})
         department_id = str(active.get("id") or "")
     department = next((row for row in departments if str(row.get("id")) == department_id), {})
     package = p4_lookup(catalogs.get("departmentPackages") or [], str(department.get("templateId") or ""))
@@ -3788,6 +7841,211 @@ def p4_readiness(department_id: str = "") -> dict[str, Any]:
         "summary": counts,
         "rows": rows,
         "checkedAt": iso_like(checked_at),
+    }
+
+
+def p4_scenario_map(department_id: str = "") -> dict[str, Any]:
+    fabric = load_capability_fabric()
+    catalogs = p4_catalogs().get("catalogs") or {}
+    readiness = p4_readiness(department_id)
+    department_id = str(readiness.get("departmentId") or department_id or "")
+    departments = [row for row in fabric.get("departments", []) or [] if isinstance(row, dict)]
+    department = next((row for row in departments if str(row.get("id")) == department_id), {})
+    package = p4_lookup(catalogs.get("departmentPackages") or [], str(department.get("templateId") or ""))
+    connections = {str(row.get("id")): attach_field_access(row, "AiConnection") for row in fabric.get("connections", []) or [] if isinstance(row, dict)}
+    databases = {str(row.get("id")): attach_field_access(row, "AiDatabase") for row in fabric.get("databases", []) or [] if isinstance(row, dict)}
+    nodes: dict[str, dict[str, Any]] = {}
+    edges: list[dict[str, str]] = []
+
+    def node_id(node_type: str, object_id: str) -> str:
+        return f"{node_type}:{object_id}"
+
+    def edit_target(node_type: str, row: dict[str, Any]) -> dict[str, str]:
+        object_id = str(row.get("id") or row.get("packageId") or row.get("stageTemplateId") or row.get("adapterId") or row.get("contractId") or "")
+        mapping = {
+            "departmentPackage": ("departmentPackages", "departmentTemplates", object_id),
+            "stage": ("stageTemplates", "recipes", str(row.get("recipeId") or object_id)),
+            "staff": ("staffTemplates", "staffProfiles", object_id),
+            "skillPack": ("skillPacks", str(row.get("sourceCatalog") or row.get("catalog") or "staffTemplateSkills"), object_id),
+            "lane": ("laneAdapters", "lanes", str(row.get("adapterId") or object_id)),
+            "toolDataContract": ("toolDataContracts", "lanes", str(row.get("laneId") or object_id)),
+            "connection": ("connections", "connections", object_id),
+            "database": ("databases", "databases", object_id),
+        }
+        tab, collection, target_id = mapping.get(node_type, ("", "", object_id))
+        return {"tab": tab, "collection": collection, "id": target_id} if tab and target_id else {}
+
+    def add_node(node_type: str, row: dict[str, Any], status: str = "ready", summary: str = "", metadata: dict[str, Any] | None = None) -> str:
+        object_id = str(row.get("id") or row.get("packageId") or row.get("stageTemplateId") or row.get("adapterId") or row.get("contractId") or row.get("label") or node_type)
+        key = node_id(node_type, object_id)
+        if key not in nodes:
+            nodes[key] = {
+                "id": key,
+                "objectId": object_id,
+                "type": node_type,
+                "label": row.get("label") or row.get("name") or row.get("alias") or row.get("profileTitle") or object_id,
+                "summary": summary or row.get("summary") or row.get("purpose") or row.get("role") or row.get("providerResolutionRule") or "",
+                "status": status,
+                "metadata": metadata or {},
+                "source": json_clone(row),
+                "editTarget": edit_target(node_type, row),
+            }
+        else:
+            if nodes[key].get("status") == "ready" and status != "ready":
+                nodes[key]["status"] = status
+            nodes[key]["metadata"] = {**(nodes[key].get("metadata") or {}), **(metadata or {})}
+        return key
+
+    def add_edge(from_id: str, to_id: str, label: str) -> None:
+        if from_id and to_id and not any(edge.get("from") == from_id and edge.get("to") == to_id and edge.get("label") == label for edge in edges):
+            edges.append({"from": from_id, "to": to_id, "label": label})
+
+    package_node = add_node(
+        "departmentPackage",
+        package or department,
+        "ready",
+        (package or {}).get("purpose") or department.get("label") or "Installed AI Department package.",
+        {"departmentId": department_id, "templateId": department.get("templateId")},
+    )
+    stages: list[dict[str, Any]] = []
+    summary = {"stageCount": 0, "ready": 0, "blocked": 0, "approvalRequired": 0}
+    for readiness_row in readiness.get("rows") or []:
+        resolved = p4_resolve_context({"departmentId": department_id, "stageTemplateId": readiness_row.get("scopeId")})
+        context = resolved.get("effectiveContext") or {}
+        stage = context.get("stageTemplate") or {}
+        staff = context.get("staffProfile") or {}
+        staff_blueprint = context.get("staffBlueprint") or {}
+        skill_packs = context.get("skillPacks") or []
+        tool_contracts = context.get("toolDataContracts") or []
+        lane_adapters = context.get("laneAdapters") or []
+        missing = resolved.get("missingRequirements") or []
+        raw_state = str(resolved.get("readinessState") or readiness_row.get("state") or "blocked")
+        stage_state = "approval_required" if raw_state == "ready" and any(item.get("type") == "approval_required" for item in missing) else raw_state
+        summary["stageCount"] += 1
+        if stage_state == "ready":
+            summary["ready"] += 1
+        elif stage_state == "approval_required":
+            summary["approvalRequired"] += 1
+        else:
+            summary["blocked"] += 1
+        stage_node = add_node(
+            "stage",
+            stage,
+            stage_state,
+            stage.get("summary") or stage.get("escalationPolicy") or "",
+            {
+                "sequence": stage.get("sequence"),
+                "recipeId": stage.get("recipeId"),
+                "capabilityId": stage.get("capabilityId"),
+                "capabilityLabel": stage.get("capabilityLabel"),
+                "qualityGates": stage.get("requiredQualityGates") or stage.get("qualityGates") or [],
+                "outputs": stage.get("outputs") or [],
+                "nextAction": resolved.get("nextAction") or "",
+            },
+        )
+        add_edge(package_node, stage_node, "contains stage")
+        staff_node = add_node(
+            "staff",
+            staff,
+            stage_state,
+            staff_blueprint.get("purpose") or staff.get("role") or "",
+            {
+                "staffBlueprint": staff_blueprint.get("label") or staff_blueprint.get("id"),
+                "promptRules": staff_blueprint.get("outputContract") or [],
+                "approvalRequiredFor": staff_blueprint.get("requiresApprovalFor") or [],
+                "datasets": {
+                    "required": staff_blueprint.get("requiredDatasets") or [],
+                    "optional": staff_blueprint.get("optionalDatasets") or [],
+                    "workspace": staff_blueprint.get("workspaceProvidedDatasets") or [],
+                },
+                "tools": staff_blueprint.get("requiredLanesTools") or [],
+            },
+        )
+        add_edge(stage_node, staff_node, "assigned to")
+        connection_rows: list[dict[str, Any]] = []
+        database_rows: list[dict[str, Any]] = []
+        for skill in skill_packs:
+            skill_node = add_node(
+                "skillPack",
+                skill,
+                stage_state,
+                skill.get("summary") or "; ".join(str(rule) for rule in (skill.get("rules") or [])[:2]),
+                {"scope": skill.get("scope"), "sourceCatalog": skill.get("sourceCatalog")},
+            )
+            add_edge(staff_node, skill_node, "uses skill")
+        for contract in tool_contracts:
+            contract_node = add_node(
+                "toolDataContract",
+                contract,
+                stage_state,
+                contract.get("purpose") or contract.get("providerResolutionRule") or "",
+                {
+                    "providerResolutionRule": contract.get("providerResolutionRule"),
+                    "fallbackBehavior": contract.get("fallbackBehavior"),
+                    "laneId": contract.get("laneId"),
+                },
+            )
+            add_edge(stage_node, contract_node, "requires tool")
+            for connection_id in contract.get("requiredConnections") or []:
+                connection = connections.get(str(connection_id)) or {"id": connection_id, "label": str(connection_id), "status": "missing"}
+                missing_connection = next((item for item in missing if item.get("scope") == "connection" and str(item.get("id")) == str(connection_id)), {})
+                connection_state = str(missing_connection.get("type") or stage_state)
+                connection_node = add_node("connection", connection, connection_state, connection.get("summary") or connection.get("type") or "", {"nextAction": missing_connection.get("message") or ""})
+                add_edge(contract_node, connection_node, "requires connection")
+                connection_rows.append(nodes[connection_node].get("source") or connection)
+            for database_id in contract.get("requiredDatabases") or []:
+                database = databases.get(str(database_id)) or {"id": database_id, "label": str(database_id), "status": "missing"}
+                missing_database = next((item for item in missing if item.get("scope") == "database" and str(item.get("id")) == str(database_id)), {})
+                database_state = str(missing_database.get("type") or stage_state)
+                database_node = add_node("database", database, database_state, database.get("summary") or database.get("type") or "", {"nextAction": missing_database.get("message") or ""})
+                add_edge(contract_node, database_node, "requires data")
+                database_rows.append(nodes[database_node].get("source") or database)
+        for lane in lane_adapters:
+            lane_node = add_node(
+                "lane",
+                lane,
+                stage_state,
+                lane.get("summary") or lane.get("routeType") or "",
+                {
+                    "connections": lane.get("connections") or [],
+                    "databases": lane.get("databases") or [],
+                    "qualityGates": lane.get("qualityGates") or [],
+                    "providerRulesOwnedBy": lane.get("providerRulesOwnedBy"),
+                },
+            )
+            add_edge(stage_node, lane_node, "resolved by")
+        stages.append(
+            {
+                "stage": stage,
+                "staff": staff,
+                "staffBlueprint": staff_blueprint,
+                "skillPacks": skill_packs,
+                "laneAdapters": lane_adapters,
+                "toolDataContracts": tool_contracts,
+                "connections": connection_rows,
+                "databases": database_rows,
+                "readinessState": stage_state,
+                "rawReadinessState": raw_state,
+                "missingRequirements": missing,
+                "nextAction": resolved.get("nextAction") or "",
+                "nodeIds": {
+                    "stage": stage_node,
+                    "staff": staff_node,
+                    "skills": [node_id("skillPack", str(row.get("id"))) for row in skill_packs],
+                    "lanes": [node_id("lane", str(row.get("id"))) for row in lane_adapters],
+                },
+            }
+        )
+    return {
+        "ok": True,
+        "departmentId": department_id,
+        "department": attach_field_access(department, "AiDepartmentInstance") if department else {},
+        "package": package,
+        "nodes": list(nodes.values()),
+        "edges": edges,
+        "stages": stages,
+        "summary": summary,
+        "readiness": readiness,
     }
 
 
@@ -3878,6 +8136,8 @@ def p4_runtime_handler_summary() -> dict[str, Any]:
         {"handlerId": "handler_project_step_output", "handlerType": "project_step", "handlerKey": "project_step_output", "status": "Active"},
         {"handlerId": "handler_thread_task", "handlerType": "thread_task", "handlerKey": "local_thread_task", "status": "Active"},
         {"handlerId": "handler_local_snapshot", "handlerType": "crm_local", "handlerKey": "dashboard_snapshot", "status": "Active"},
+        {"handlerId": "handler_langgraph_orchestrator", "handlerType": "orchestration", "handlerKey": "ai_department_langgraph_v1", "status": "Interface Ready"},
+        {"handlerId": "handler_windmill_activity", "handlerType": "activity_executor", "handlerKey": "WINDMILL_BASE_URL/WINDMILL_WORKSPACE", "status": "Active" if windmill_config()["configured"] else "Mock Mode"},
     ]
     now = utc_ts()
     with connect() as conn:
@@ -3923,6 +8183,8 @@ def p4_runtime_handler_summary() -> dict[str, Any]:
         "handlers": handlers,
         "canExecuteResolvedContexts": bool(local_worker_command()),
         "missingConfiguration": "" if local_worker_command() else "AI_DEPARTMENT_WORKER_COMMAND is not configured for local worker execution.",
+        "langGraph": orchestration_status(),
+        "windmill": windmill_status(),
     }
 
 
@@ -4008,7 +8270,7 @@ def capability_fabric_manager_context() -> dict[str, Any]:
     }
 
 
-def load_dashboard_snapshot() -> Dashboard | None:
+def load_dashboard_snapshot(*, full_fabric: bool = False, fast: bool = False) -> Dashboard | None:
     with connect() as conn:
         row = conn.execute("SELECT payload, updated_at, source, error FROM dashboard_snapshot WHERE id = 1").fetchone()
     if not row:
@@ -4018,21 +8280,30 @@ def load_dashboard_snapshot() -> Dashboard | None:
     payload = reconcile_snapshot_tasks_from_threads(payload)
     payload = apply_task_status_overrides(payload)
     payload = normalize_task_table(payload)
-    payload = apply_task_status_overrides(payload)
-    payload = normalize_task_table(payload)
-    payload = ensure_threads_for_tasks(payload)
-    ensure_project_plans_from_snapshot(payload)
-    payload["projectPlans"] = list_project_plans("active", 100, refresh=False)
-    payload["skillUpdates"] = list_skill_updates("Pending").get("learning", [])
-    payload["skillUpdatesAll"] = list_skill_updates("All").get("learning", [])
-    payload["staffWakeups"] = staff_wakeup_summary()
-    payload["localSync"] = local_status()
-    payload["capabilityFabric"] = load_capability_fabric()
+    if fast:
+        cached_plans = payload.get("projectPlans") if isinstance(payload.get("projectPlans"), dict) else {}
+        payload["projectPlans"] = cached_plans or {"ok": True, "plans": [], "counts": {"total": 0, "blocked": 0, "inProgress": 0, "active": 0}, "fastMode": True}
+        payload["skillUpdates"] = payload.get("skillUpdates") or []
+        payload["skillUpdatesAll"] = payload.get("skillUpdatesAll") or []
+        payload["staffWakeups"] = payload.get("staffWakeups") or {}
+        payload["localSync"] = local_status(fast=True, snapshot_payload=payload)
+    else:
+        payload = apply_task_status_overrides(payload)
+        payload = normalize_task_table(payload)
+        payload = ensure_threads_for_tasks(payload)
+        ensure_project_plans_from_snapshot(payload)
+        payload["projectPlans"] = list_project_plans("active", 100, refresh=False)
+        payload["skillUpdates"] = list_skill_updates("Pending").get("learning", [])
+        payload["skillUpdatesAll"] = list_skill_updates("All").get("learning", [])
+        payload["staffWakeups"] = staff_wakeup_summary()
+        payload["localSync"] = local_status()
+    payload["capabilityFabric"] = dashboard_capability_fabric(full=full_fabric)
     return payload
 
 
 def save_dashboard_snapshot(payload: Dashboard, source: str = "bridge", error: str = "") -> Dashboard:
     saved = dict(payload or {})
+    saved.pop("capabilityFabric", None)
     saved = apply_task_status_overrides(saved)
     saved = normalize_task_table(saved)
     saved = apply_task_status_overrides(saved)
@@ -4044,7 +8315,7 @@ def save_dashboard_snapshot(payload: Dashboard, source: str = "bridge", error: s
     saved["skillUpdatesAll"] = list_skill_updates("All").get("learning", [])
     saved["staffWakeups"] = staff_wakeup_summary()
     saved["localSync"] = local_status()
-    saved["capabilityFabric"] = load_capability_fabric()
+    saved["capabilityFabric"] = dashboard_capability_fabric(full=False)
     raw = json.dumps(saved, default=str)
     now = utc_ts()
     with connect() as conn:
@@ -9329,7 +13600,7 @@ def empty_dashboard(error: str = "") -> Dashboard:
         "skillUpdatesAll": [],
         "staffWakeups": staff_wakeup_summary(),
         "localSync": local_status() | {"snapshotError": error},
-        "capabilityFabric": load_capability_fabric(),
+        "capabilityFabric": dashboard_capability_fabric(full=False),
     }
 
 
