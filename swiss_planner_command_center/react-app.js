@@ -9973,30 +9973,57 @@ function StaffProfileHero({ dashboard, fabric, staffId, runOne, openTaskDialog, 
   const contact = staffContactInfo(staffId);
   const isManager = staffId === managerStaffId || staffId === "AIstaff_Manager";
   const isHuman = isHumanResponsible(staffId);
-  return h("article", { className: "staff-profile-hero" },
-    h("div", { className: "staff-profile-main" },
-      h("span", { className: "staff-profile-avatar-wrap" },
-        h("span", { className: "staff-profile-avatar" }, staffAvatar(staffId)),
-        h("span", { className: "profile-presence" }, isHuman ? "Owner" : "AI")
+
+  return h("div", { className: "bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 mb-6" },
+    h("div", { className: "flex items-start space-x-5" },
+      h("div", { className: "relative shrink-0" },
+        h("div", { className: "h-16 w-16 rounded-full bg-gradient-to-tr from-sky-100 to-indigo-100 border border-slate-200 flex items-center justify-center text-3xl overflow-hidden shadow-inner" },
+          staffAvatar(staffId)
+        ),
+        h("span", { className: "absolute bottom-0 right-0 h-5 w-5 bg-blue-600 text-[10px] font-bold text-white rounded-full border-2 border-white flex items-center justify-center" }, isHuman ? "Owner" : "AI")
       ),
       h("div", null,
-        h("div", { className: "staff-profile-name-line" },
-          h("h2", null, profile.label),
-          h("span", null, contact.jobTitle)
+        h("div", { className: "flex flex-wrap items-center gap-2" },
+          h("h2", { className: "text-xl font-bold text-slate-900" }, profile.label),
+          h("span", { className: "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100" }, contact.jobTitle)
         ),
-        h("p", { className: "muted" }, staffRolePurpose(staffId, fabric))
+        h("p", { className: "text-sm text-slate-500 mt-1.5 max-w-2xl leading-relaxed m-0" }, staffRolePurpose(staffId, fabric))
       )
     ),
-    h("div", { className: "staff-profile-actions" },
-      h(Button, { onClick: () => openTaskDialog({ assignedTo: managerStaffId, taskType: "Manager Guidance", taskCategory: "Manager Guidance", nextAction: isHuman || isManager ? "" : `Please review ${profile.systemLabel || profile.label} and route my instruction safely.` }) }, icon("mail"), isHuman || isManager ? "Message Manager" : "Ask Manager"),
-      isManager ? h(Button, { actionKey: `run-one:${staffId}`, variant: "secondary", onClick: () => runOne(staffId) }, icon("play"), "Run Manager") : null,
-      isHuman || isManager ? h(Button, { variant: "outline", size: "icon", title: contact.email }, icon("mail")) : null,
-      isHuman || isManager ? h(Button, { variant: "outline", size: "icon", title: contact.chat }, icon("send")) : null,
-      h(Button, { variant: "ghost", size: "icon", title: "More profile actions" }, "...")
-    ),
-    h("div", { className: "staff-profile-stats" },
-      [["Tasks", row.openTasks || staffOpenTasks(dashboard, staffId).length], ["Threads", staffOpenThreadCount(dashboard, staffId)], ["Wake-ups", staffWakeupCount(dashboard, staffId)]].map(([label, value]) =>
-        h("span", { key: label }, h("strong", null, value || 0), label)
+    h("div", { className: "flex items-center space-x-8 shrink-0" },
+      h("div", { className: "flex space-x-6 text-center" },
+        h("div", null,
+          h("p", { className: "text-2xl font-bold text-slate-900 m-0" }, row.openTasks || staffOpenTasks(dashboard, staffId).length || 0),
+          h("p", { className: "text-[11px] font-medium text-slate-400 uppercase tracking-wider m-0" }, "Tasks")
+        ),
+        h("div", { className: "border-l border-slate-200 h-8 self-center" }),
+        h("div", null,
+          h("p", { className: "text-2xl font-bold text-slate-900 m-0" }, staffOpenThreadCount(dashboard, staffId) || 0),
+          h("p", { className: "text-[11px] font-medium text-slate-400 uppercase tracking-wider m-0" }, "Threads")
+        ),
+        h("div", { className: "border-l border-slate-200 h-8 self-center" }),
+        h("div", null,
+          h("p", { className: "text-2xl font-bold text-slate-900 m-0" }, staffWakeupCount(dashboard, staffId) || 0),
+          h("p", { className: "text-[11px] font-medium text-slate-400 uppercase tracking-wider m-0" }, "Wake-ups")
+        )
+      ),
+      h("div", { className: "flex items-center space-x-2" },
+        h(Button, {
+          className: "bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold px-4 py-2 rounded-lg flex items-center space-x-2 transition border border-blue-100",
+          onClick: () => openTaskDialog({
+            assignedTo: managerStaffId,
+            taskType: "Manager Guidance",
+            taskCategory: "Manager Guidance",
+            nextAction: isHuman || isManager ? "" : `Please review ${profile.systemLabel || profile.label} and route my instruction safely.`
+          })
+        },
+          h("svg", { className: "h-4 w-4", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+            h("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2", d: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" })
+          ),
+          h("span", null, isHuman || isManager ? "Message Manager" : "Ask Manager")
+        ),
+        isManager ? h(Button, { actionKey: `run-one:${staffId}`, variant: "secondary", onClick: () => runOne(staffId) }, icon("play"), "Run Manager") : null,
+        h(Button, { variant: "ghost", size: "icon", title: "More profile actions" }, "...")
       )
     )
   );
@@ -10442,13 +10469,13 @@ function StaffProfilePanel({ dashboard, fabric, staffId, runOne, openTaskDialog,
   useEffect(() => {
     setActiveTab(isSeoStageProfileStaff(staffId) ? "workspace" : "overview");
   }, [staffId]);
-  return h(Card, { className: "staff-profile-panel" },
+  return h(Card, { className: cn("staff-profile-panel", isSeoProfile && "seo-staff-profile-panel") },
     h(CardContent, null,
       h(StaffProfileHero, { dashboard, fabric, staffId, runOne, openTaskDialog, managerStaffId }),
-      h("div", { className: "profile-tabs", role: "tablist", "aria-label": `${staffProfile(staffId).label} profile sections` }, tabs.map(([key, label]) =>
+      !isSeoProfile ? h("div", { className: "profile-tabs", role: "tablist", "aria-label": `${staffProfile(staffId).label} profile sections` }, tabs.map(([key, label]) =>
         h("button", { key, type: "button", role: "tab", "aria-selected": activeTab === key, className: cn("profile-tab", activeTab === key && "active"), onClick: () => setActiveTab(key) }, label)
-      )),
-      isSeoProfile ? h(SeoStaffPrototypeProfileTabs, { staffId, scenarioStages, activeTab }) : null,
+      )) : null,
+      isSeoProfile ? h(SeoStaffPrototypeProfileTabs, { staffId, scenarioStages, activeTab, setActiveTab }) : null,
       !isSeoProfile && activeTab === "overview" ? h(ProfileOverviewTab, { dashboard, fabric, staffId, openTasks, capabilities, learning }) : null,
       !isSeoProfile && activeTab === "contact" ? h(ProfileContactTab, { staffId }) : null,
       !isSeoProfile && activeTab === "organization" ? h(ProfileSection, { title: "Organization", body: "Reporting line and closest collaborators." },
@@ -10494,11 +10521,21 @@ function SeoProfileChipList({ label, values = [] }) {
   );
 }
 
-function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab = "workspace" }) {
+function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab = "workspace", setActiveTab = () => {} }) {
   const defaultGroups = seoProfileStageGroupsForStaff(staffId, scenarioStages).map(group => normalizeSeoProfileStageGroup(group, staffId));
   const [stageState, setStageState] = useState({ loading: true, error: "", saveMessage: "", dirty: false, stages: null, settings: {}, updatedAt: "" });
   const groups = (stageState.stages || defaultGroups).map(group => normalizeSeoProfileStageGroup(group, staffId));
   const [selectedStageId, setSelectedStageId] = useState((groups[0] || {}).id || "");
+  const selectedStage = groups.find(group => group.id === selectedStageId) || groups[0] || {};
+  const selectedSubtasks = selectedStage.subtasks || [];
+  const [selectedSubtaskId, setSelectedSubtaskId] = useState((((groups[0] || {}).subtasks || [])[0] || {}).id || "");
+  const workspaceTabs = [
+    ["workspace", "Step workspace"],
+    ["lanes", "Data lanes"],
+    ["skills", "Skills"],
+    ["script", `${staffProfile(staffId).label} script`],
+    ["settings", "Settings"],
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -10530,6 +10567,11 @@ function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab 
     if (!groups.some(group => group.id === selectedStageId)) setSelectedStageId(firstId);
   }, [staffId, groups.map(group => group.id).join("|"), selectedStageId]);
 
+  useEffect(() => {
+    const firstSubtaskId = (selectedSubtasks[0] || {}).id || "";
+    if (!selectedSubtasks.some(subtask => subtask.id === selectedSubtaskId)) setSelectedSubtaskId(firstSubtaskId);
+  }, [staffId, selectedStageId, selectedSubtasks.map(subtask => subtask.id).join("|"), selectedSubtaskId]);
+
   function setGroups(nextGroups, message = "") {
     const safeGroups = (typeof nextGroups === "function" ? nextGroups(groups) : nextGroups).map(group => normalizeSeoProfileStageGroup(group, staffId));
     setStageState(current => ({ ...current, loading: false, saveMessage: message, error: "", dirty: true, stages: safeGroups }));
@@ -10554,6 +10596,7 @@ function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab 
     const stage = newSeoProfileStage(staffId);
     setGroups(current => [...current, stage], "New assigned stage added. Save to persist it.");
     setSelectedStageId(stage.id);
+    setSelectedSubtaskId(((stage.subtasks || [])[0] || {}).id || "");
   }
 
   function removeSelectedStage() {
@@ -10561,6 +10604,7 @@ function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab 
     const nextGroups = groups.filter(group => group.id !== selectedStageId);
     setGroups(nextGroups, "Assigned stage removed. Save to persist it.");
     setSelectedStageId((nextGroups[0] || {}).id || "");
+    setSelectedSubtaskId((((nextGroups[0] || {}).subtasks || [])[0] || {}).id || "");
   }
 
   function updateStageLane(laneId, patch) {
@@ -10662,6 +10706,7 @@ function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab 
       });
       setStageState(current => ({ loading: false, error: "", saveMessage: "Reset to default stage model.", dirty: false, stages: null, settings: current.settings || {}, updatedAt: "" }));
       setSelectedStageId((defaultGroups[0] || {}).id || "");
+      setSelectedSubtaskId(((((defaultGroups[0] || {}).subtasks || [])[0] || {}).id || ""));
     } catch (error) {
       setStageState(current => ({ ...current, error: error.message || String(error), saveMessage: "" }));
     }
@@ -10678,57 +10723,125 @@ function SeoStaffPrototypeProfileTabs({ staffId, scenarioStages = [], activeTab 
     );
   }
 
-  const selectedStage = groups.find(group => group.id === selectedStageId) || groups[0];
-  return h(ProfileSection, {
-    title: "Stage Workspace",
-    body: `${staffProfile(staffId).label} owns these assigned SEO stages. The workflow rows inside each stage are shown as subtasks with their own goal, detail, next action, lanes, and skills.`
-  },
-    h("div", { className: "seo-prototype-edit-bar" },
+  return h("div", { className: "bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" },
+    // Tab Navigation inside Workspace
+    h("div", { className: "border-b border-slate-200 bg-slate-50/50 px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4" },
       h("div", null,
-        h("strong", null, stageState.dirty ? "Unsaved profile edits" : "Profile stage editor"),
-        h("span", null, stageState.error || stageState.saveMessage || (stageState.loading ? "Loading saved edits..." : stageState.updatedAt ? `Last saved ${stageState.updatedAt}` : "Using default stage model."))
+        h("h3", { className: "text-base font-bold text-slate-900 m-0" }, "Stage Workspace"),
+        h("p", { className: "text-xs text-slate-500 mt-0.5 m-0" }, `${staffProfile(staffId).label} owns these assigned SEO stages. Workflow rows inside each stage are shown as selectable subtasks.`)
       ),
-      h("div", { className: "seo-prototype-edit-actions" },
-        h(Button, { type: "button", variant: "outline", onClick: addStage }, icon("plus"), "Add stage"),
-        h(Button, { type: "button", variant: "outline", onClick: removeSelectedStage, disabled: !selectedStageId }, icon("trash"), "Remove stage"),
-        h(Button, { type: "button", variant: "outline", onClick: resetStagesToDefault }, icon("rotate-ccw"), "Reset defaults"),
-        h(Button, { type: "button", onClick: saveStages, disabled: !stageState.dirty && !stageState.error }, icon("save"), "Save changes")
+      h("div", { className: "flex flex-wrap gap-1 bg-slate-100 p-1 rounded-lg self-start" },
+        workspaceTabs.map(([key, label]) =>
+          h("button", {
+            key,
+            type: "button",
+            className: cn("px-3 py-1.5 rounded-md text-xs font-semibold transition border-0 cursor-pointer", activeTab === key ? "bg-white text-slate-800 shadow-sm" : "bg-transparent text-slate-500 hover:text-slate-800"),
+            onClick: () => setActiveTab(key),
+          }, label)
+        )
       )
     ),
-    h("div", { className: "seo-prototype-profile-shell" },
-      h("aside", { className: "seo-prototype-stage-rail" },
-        h("div", { className: "seo-prototype-rail-head" },
-          h("div", null,
-            h("p", { className: "eyebrow" }, "Assigned stages"),
-            h("span", null, `${groups.length} configured`)
-          )
-        ),
-        h("div", { className: "seo-prototype-stage-list" }, groups.map(group => {
-          const readiness = seoProfileStageReadiness(group);
-          return h("button", {
-            key: group.id,
-            type: "button",
-            className: cn("seo-prototype-stage-row", group.id === selectedStage.id && "active"),
-            onClick: () => setSelectedStageId(group.id),
-          },
-            h("span", null,
-              h("strong", null, group.label),
-              h(Badge, { tone: seoWorkspaceTone(readiness) }, readiness)
-            ),
-            h("small", null, `${group.subtasks.length} workflow subtask${group.subtasks.length === 1 ? "" : "s"} / ${group.capabilityLabel || group.capabilityId || "SEO capability"}`)
-          );
-        }))
+    // Alert Bar: Unsaved Edits / Profile Save status
+    h("div", { className: cn("border-b px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3", stageState.dirty ? "bg-amber-50/70 border-amber-100" : "bg-emerald-50/30 border-emerald-100") },
+      h("div", { className: "flex items-center space-x-2.5" },
+        h("span", { className: cn("h-2 w-2 rounded-full", stageState.dirty ? "bg-amber-500 animate-pulse" : "bg-emerald-500") }),
+        h("div", null,
+          h("p", { className: cn("text-xs font-bold m-0", stageState.dirty ? "text-amber-900" : "text-emerald-900") }, stageState.dirty ? "Unsaved profile edits" : "Profile stage editor"),
+          h("p", { className: cn("text-[11px] m-0", stageState.dirty ? "text-amber-700/80" : "text-emerald-700/80") }, stageState.error || stageState.saveMessage || (stageState.loading ? "Loading saved edits..." : stageState.updatedAt ? `Last saved ${stageState.updatedAt}` : "Using default stage model."))
+        )
       ),
-      h("section", { className: "seo-prototype-tab-panel" },
-        activeTab === "lanes" ? h(SeoPrototypeLanesTab, { staffId, selectedStage, onAddLane: addStageLane, onUpdateLane: updateStageLane, onRemoveLane: removeStageLane, onToggleSubtaskRoute: toggleSubtaskRoute }) : null,
-        activeTab === "skills" ? h(SeoPrototypeSkillsTab, { staffId, selectedStage, onAddSkill: addStageSkill, onUpdateSkill: updateStageSkill, onRemoveSkill: removeStageSkill, onToggleSubtaskRoute: toggleSubtaskRoute }) : null,
-        activeTab === "script" ? h(SeoPrototypeScriptTab, { staffId, selectedStage }) : null,
-        activeTab === "settings" ? h(SeoPrototypeSettingsTab, { staffId, selectedStage, profileSettings: stageState.settings || {}, onStageChange: updateSelectedStage, onSettingsChange: updateProfileSettings }) : null,
-        activeTab === "workspace" || !["lanes", "skills", "script", "settings"].includes(activeTab)
-          ? h(SeoPrototypeWorkspaceTab, { staffId, selectedStage, onStageChange: updateSelectedStage, onSubtaskChange: updateSelectedSubtask })
-          : null
+      h("div", { className: "flex flex-wrap gap-2" },
+        h("button", {
+          type: "button",
+          className: "bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded-lg transition flex items-center space-x-1.5 cursor-pointer",
+          onClick: addStage
+        },
+          h("svg", { className: "h-3.5 w-3.5 text-slate-400", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+            h("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2", d: "M12 4v16m8-8H4" })
+          ),
+          h("span", null, "Add stage")
+        ),
+        h("button", {
+          type: "button",
+          className: "bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded-lg transition flex items-center space-x-1.5 cursor-pointer",
+          disabled: !selectedStageId,
+          onClick: removeSelectedStage
+        },
+          h("svg", { className: "h-3.5 w-3.5 text-slate-400", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+            h("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2", d: "M20 12H4" })
+          ),
+          h("span", null, "Remove stage")
+        ),
+        h("button", {
+          type: "button",
+          className: "bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded-lg transition cursor-pointer",
+          onClick: resetStagesToDefault
+        }, "Reset defaults"),
+        h("button", {
+          type: "button",
+          className: cn("text-white text-[11px] font-bold px-4 py-1.5 rounded-lg transition shadow-sm cursor-pointer border-0", stageState.dirty || stageState.error ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-400 cursor-not-allowed"),
+          disabled: !stageState.dirty && !stageState.error,
+          onClick: saveStages
+        }, "Save changes")
       )
-    )
+    ),
+    // SPLIT OR FULL LAYOUT based on activeTab
+    (activeTab === "workspace" || !["lanes", "skills", "script", "settings"].includes(activeTab))
+      ? h("div", { className: "grid grid-cols-1 xl:grid-cols-4 min-h-[500px]" },
+          // Left Panel: Workflow Subtasks as Selection Cards
+          h("div", { className: "xl:col-span-1 border-r border-slate-200 p-6 bg-slate-50/30 flex flex-col gap-6" },
+            groups.length > 1 ? h("div", null,
+              h("h4", { className: "text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-3" }, "Assigned Stages"),
+              h("div", { className: "flex flex-col gap-2" }, groups.map(group => {
+                const readiness = seoProfileStageReadiness(group);
+                return h("button", {
+                  key: group.id,
+                  type: "button",
+                  className: cn("w-full text-left p-3 rounded-lg border transition text-xs font-semibold cursor-pointer", group.id === selectedStage.id ? "bg-blue-50 border-blue-200 text-blue-900" : "bg-white border-slate-200 text-slate-700 hover:border-slate-300"),
+                  onClick: () => {
+                    setSelectedStageId(group.id);
+                    setSelectedSubtaskId((((group.subtasks || [])[0] || {}).id || ""));
+                  },
+                },
+                  h("div", { className: "font-bold" }, group.label),
+                  h("div", { className: "text-[10px] text-slate-400 mt-1 font-normal" }, readiness)
+                );
+              }))
+            ) : null,
+            h("div", null,
+              h("h4", { className: "text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-3" }, "Workflow Subtasks"),
+              h("div", { className: "space-y-3" }, selectedSubtasks.map((subtask, index) =>
+                h("button", {
+                  key: subtask.id,
+                  type: "button",
+                  className: cn("w-full text-left p-4 rounded-xl border transition shadow-sm cursor-pointer", subtask.id === selectedSubtaskId ? "bg-blue-50/60 border-blue-400 text-blue-950" : "bg-white border-slate-200 hover:border-slate-300 text-slate-800"),
+                  onClick: () => {
+                    setSelectedSubtaskId(subtask.id);
+                  },
+                },
+                  h("div", { className: "flex justify-between items-start gap-2" },
+                    h("div", { className: "flex items-center space-x-2" },
+                      h("span", { className: cn("text-[10px] font-bold px-1.5 py-0.5 rounded", subtask.id === selectedSubtaskId ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-700") }, String(index + 1).padStart(2, "0")),
+                      h("h5", { className: cn("text-xs font-bold leading-snug m-0", subtask.id === selectedSubtaskId ? "text-blue-950" : "text-slate-800") }, subtask.label)
+                    ),
+                    h(Badge, { tone: seoWorkspaceTone(subtask.readiness) }, subtask.readiness || "Ready")
+                  ),
+                  h("p", { className: cn("text-[11px] mt-2 line-clamp-2 m-0", subtask.id === selectedSubtaskId ? "text-blue-800" : "text-slate-500") }, shortText(subtask.detail || subtask.goal || "Workflow subtask", 118))
+                )
+              ))
+            )
+          ),
+          // Right Panel: Tab Content Area
+          h("div", { className: "xl:col-span-3 p-6 bg-white" },
+            h(SeoPrototypeWorkspaceTab, { staffId, selectedStage, selectedSubtaskId, onStageChange: updateSelectedStage, onSubtaskChange: updateSelectedSubtask })
+          )
+        )
+      : h("div", { className: "p-6 bg-white min-h-[500px]" },
+          activeTab === "lanes" ? h(SeoPrototypeLanesTab, { staffId, selectedStage, onAddLane: addStageLane, onUpdateLane: updateStageLane, onRemoveLane: removeStageLane, onToggleSubtaskRoute: toggleSubtaskRoute }) : null,
+          activeTab === "skills" ? h(SeoPrototypeSkillsTab, { staffId, selectedStage, onAddSkill: addStageSkill, onUpdateSkill: updateStageSkill, onRemoveSkill: removeStageSkill, onToggleSubtaskRoute: toggleSubtaskRoute }) : null,
+          activeTab === "script" ? h(SeoPrototypeScriptTab, { staffId, selectedStage }) : null,
+          activeTab === "settings" ? h(SeoPrototypeSettingsTab, { staffId, selectedStage, profileSettings: stageState.settings || {}, onStageChange: updateSelectedStage, onSettingsChange: updateProfileSettings }) : null
+        )
   );
 }
 
@@ -10786,84 +10899,118 @@ function SeoPrototypeFileUpload({ staffId, targetKind, onProcessed }) {
       const item = targetKind === "lane" ? result.lane : result.skill;
       if (!item) throw new Error("The uploaded file did not return a usable lane or skill.");
       onProcessed(item, result.asset || {});
-      setState({ file: null, busy: false, message: `${state.file.name} processed as ${targetKind}. Save changes to persist it.`, error: "" });
+      setState({ file: null, busy: false, message: `${state.file.name} processed successfully. Save changes to persist.`, error: "" });
     } catch (error) {
       setState(current => ({ ...current, busy: false, error: error.message || String(error), message: "" }));
     }
   }
-  return h("div", { className: "seo-prototype-upload-card" },
+
+  return h("div", { className: "border border-slate-200 rounded-xl p-5 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6" },
     h("div", null,
-      h("strong", null, targetKind === "lane" ? "Upload file as data lane" : "Upload file as skill"),
-      h("p", null, targetKind === "lane"
-        ? "PDF, TXT, or MD files become a processed source lane for this stage."
-        : "PDF, TXT, or MD files become a staff skill rule/guidance card for this stage.")
+      h("h5", { className: "text-xs font-bold text-slate-800 m-0" }, targetKind === "lane" ? "Upload file as data lane" : "Upload file as skill"),
+      h("p", { className: "text-[11px] text-slate-500 mt-0.5 m-0" }, targetKind === "lane" ? "PDF, TXT, or MD files become a processed source lane for this stage." : "PDF, TXT, or MD files become a staff skill rule/guidance card for this stage.")
     ),
-    h("div", { className: "seo-prototype-upload-controls" },
-      h(Input, {
+    h("div", { className: "flex items-center space-x-2 flex-wrap gap-2" },
+      h("input", {
         type: "file",
+        id: `${targetKind}-file-upload`,
         accept: ".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown",
-        onChange: event => setState({ file: (event.target.files || [])[0] || null, busy: false, message: "", error: "" }),
+        className: "hidden",
+        onChange: event => setState({ file: (event.target.files || [])[0] || null, busy: false, message: "", error: "" })
       }),
-      h(Button, { type: "button", onClick: processFile, disabled: state.busy }, icon("upload"), state.busy ? "Processing..." : targetKind === "lane" ? "Process as lane" : "Process as skill")
-    ),
-    state.file ? h("small", null, `Selected: ${state.file.name}`) : null,
-    state.message ? h("small", { className: "success-text" }, state.message) : null,
-    state.error ? h("small", { className: "error-text" }, state.error) : null
+      h("label", {
+        htmlFor: `${targetKind}-file-upload`,
+        className: "bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold px-3 py-2 rounded-lg cursor-pointer transition"
+      }, "Browse..."),
+      h("span", { className: "text-xs text-slate-500" }, state.file ? state.file.name : "No file selected."),
+      h(Button, {
+        className: "bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition shadow-sm",
+        onClick: processFile,
+        disabled: state.busy || !state.file
+      }, state.busy ? "Processing..." : targetKind === "lane" ? "Process as lane" : "Process as skill"),
+      state.message ? h("p", { className: "text-xs text-emerald-600 m-0 w-full" }, state.message) : null,
+      state.error ? h("p", { className: "text-xs text-red-600 m-0 w-full" }, state.error) : null
+    )
   );
 }
 
-function SeoPrototypeWorkspaceTab({ staffId, selectedStage, onStageChange, onSubtaskChange }) {
+function SeoPrototypeWorkspaceTab({ staffId, selectedStage, selectedSubtaskId = "", onStageChange, onSubtaskChange }) {
   const readiness = seoProfileStageReadiness(selectedStage);
-  return h("div", { className: "seo-prototype-tab-content" },
-    h(SeoPrototypeTabHeader, { title: selectedStage.label, body: selectedStage.goal || "Assigned SEO department stage." }),
-    h("div", { className: "seo-prototype-workspace-grid" },
-      h("section", { className: "seo-prototype-main-column" },
-        h(SeoPrototypeEditableField, { label: "Stage goal", value: selectedStage.goal, rows: 4, onChange: value => onStageChange({ goal: value }) }),
-        h(SeoPrototypeEditableField, { label: "Stage description", value: selectedStage.description, rows: 5, onChange: value => onStageChange({ description: value }) }),
-        h(SeoPrototypeEditableField, { label: "Duty assigned to staff", value: selectedStage.assignedDuty, rows: 4, onChange: value => onStageChange({ assignedDuty: value }) }),
-        h("div", { className: "seo-prototype-subtask-section" },
-          h("div", { className: "seo-prototype-section-title" },
-            h("p", { className: "eyebrow" }, "Workflow stages"),
-            h("h3", null, "Subtasks in this stage"),
-            h("p", null, "Each workflow row is a subtask the assigned AI staff must complete inside this stage.")
-          ),
-          selectedStage.subtasks.map((subtask, index) => h("article", { className: "seo-prototype-subtask-card", key: subtask.id },
-            h("div", { className: "seo-prototype-subtask-head" },
-              h("div", null,
-                h("span", null, String(index + 1).padStart(2, "0")),
-                h("strong", null, subtask.label)
-              ),
-              h(Badge, { tone: seoWorkspaceTone(subtask.readiness) }, subtask.readiness || "Ready")
-            ),
-            h("div", { className: "seo-prototype-subtask-fields" },
-              h(SeoPrototypeEditableField, { label: "Goal of this step", value: subtask.goal, rows: 4, onChange: value => onSubtaskChange(subtask.id, { goal: value }) }),
-              h(SeoPrototypeEditableField, { label: "Step detail", value: subtask.detail, rows: 4, onChange: value => onSubtaskChange(subtask.id, { detail: value }) }),
-              h(SeoPrototypeEditableField, { label: "Next action", value: subtask.nextAction, rows: 3, onChange: value => onSubtaskChange(subtask.id, { nextAction: value }) })
-            ),
-            h("div", { className: "seo-prototype-route-grid" },
-              h(SeoProfileChipList, { label: "Uses lanes", values: subtask.lanes }),
-              h(SeoProfileChipList, { label: "Uses skills", values: subtask.skills }),
-              h(SeoProfileChipList, { label: "Outputs", values: subtask.outputs })
-            )
-          ))
+  const selectedSubtask = (selectedStage.subtasks || []).find(subtask => subtask.id === selectedSubtaskId) || (selectedStage.subtasks || [])[0] || {};
+  const subtaskIndex = (selectedStage.subtasks || []).findIndex(subtask => subtask.id === selectedSubtaskId) + 1;
+  const indexStr = String(subtaskIndex > 0 ? subtaskIndex : 1).padStart(2, "0");
+
+  return h("div", { className: "space-y-6" },
+    h("div", { className: "space-y-4" },
+      h("h4", { className: "text-xs font-bold text-slate-400 uppercase tracking-wider mb-2" }, "Stage Configuration"),
+      h("div", { className: "grid grid-cols-1 lg:grid-cols-3 gap-4" },
+        h("div", { className: "space-y-1.5" },
+          h("label", { className: "block text-xs font-semibold text-slate-500 mb-1" }, "Stage Goal"),
+          h("textarea", {
+            value: selectedStage.goal || "",
+            onChange: event => onStageChange({ goal: event.target.value }),
+            className: "w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg p-3 h-28 focus:ring-2 focus:ring-blue-500 focus:outline-none transition leading-relaxed"
+          })
+        ),
+        h("div", { className: "space-y-1.5" },
+          h("label", { className: "block text-xs font-semibold text-slate-500 mb-1" }, "Stage Description"),
+          h("textarea", {
+            value: selectedStage.description || "",
+            onChange: event => onStageChange({ description: event.target.value }),
+            className: "w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg p-3 h-28 focus:ring-2 focus:ring-blue-500 focus:outline-none transition leading-relaxed"
+          })
+        ),
+        h("div", { className: "space-y-1.5" },
+          h("label", { className: "block text-xs font-semibold text-slate-500 mb-1" }, "Duty Assigned to Staff"),
+          h("textarea", {
+            value: selectedStage.assignedDuty || "",
+            onChange: event => onStageChange({ assignedDuty: event.target.value }),
+            className: "w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg p-3 h-28 focus:ring-2 focus:ring-blue-500 focus:outline-none transition leading-relaxed"
+          })
+        )
+      )
+    ),
+    h("div", { className: "border-t border-slate-200 pt-6" },
+      h("div", { className: "flex items-center justify-between border-b border-slate-100 pb-3 mb-4" },
+        h("div", { className: "flex items-center space-x-2" },
+          h("span", { className: "bg-blue-100 text-blue-700 font-bold text-xs px-2.5 py-0.5 rounded-md" }, indexStr),
+          h("h4", { className: "text-sm font-bold text-slate-900 m-0" },
+            "Configure Subtask: ",
+            h("span", { className: "text-blue-600" }, selectedSubtask.label || "Workflow subtask")
+          )
+        ),
+        h(Badge, { tone: seoWorkspaceTone(selectedSubtask.readiness) }, selectedSubtask.readiness || "Ready")
+      ),
+      h("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4 mb-5" },
+        h("div", null,
+          h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Goal of this step"),
+          h("textarea", {
+            value: selectedSubtask.goal || "",
+            onChange: event => onSubtaskChange(selectedSubtask.id, { goal: event.target.value }),
+            className: "w-full h-24 text-xs text-slate-700 bg-white border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition leading-relaxed"
+          })
+        ),
+        h("div", null,
+          h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Step detail"),
+          h("textarea", {
+            value: selectedSubtask.detail || "",
+            onChange: event => onSubtaskChange(selectedSubtask.id, { detail: event.target.value }),
+            className: "w-full h-24 text-xs text-slate-700 bg-white border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition leading-relaxed"
+          })
         )
       ),
-      h("aside", { className: "seo-prototype-summary-stack" },
-        h("div", { className: "seo-prototype-summary-card" },
-          h("p", { className: "eyebrow" }, "Stage summary"),
-          h(DetailList, { rows: [
-            { label: "Readiness", value: h(Badge, { tone: seoWorkspaceTone(readiness) }, readiness), raw: true },
-            { label: "Capability", value: selectedStage.capabilityLabel || selectedStage.capabilityId },
-            { label: "Recipe", value: selectedStage.label },
-            { label: "Assigned staff", value: `${staffProfile(staffId).label} - ${staffJobTitle(staffId)}` },
-            { label: "Outputs", value: selectedStage.outputs.join(", "), length: 260 },
-          ] })
+      h("div", { className: "flex flex-wrap items-center gap-3 border-t border-slate-50 pt-4" },
+        h("div", { className: "flex items-center space-x-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-150 text-[11px]" },
+          h("span", { className: "font-bold text-slate-400" }, "Uses Lane:"),
+          h("span", { className: "font-semibold text-slate-700" }, (selectedSubtask.lanes || []).map(friendlyId).join(", ") || "None mapped")
         ),
-        h("div", { className: "seo-prototype-summary-card" },
-          h("p", { className: "eyebrow" }, "Stage lanes and skills"),
-          h(SeoProfileChipList, { label: "Stage lanes", values: selectedStage.lanes }),
-          h(SeoProfileChipList, { label: "Stage skills", values: selectedStage.skills }),
-          h(SeoProfileChipList, { label: "Stage quality gates", values: selectedStage.qualityGates })
+        h("div", { className: "flex items-center space-x-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-150 text-[11px]" },
+          h("span", { className: "font-bold text-slate-400" }, "Uses Skills:"),
+          h("span", { className: "font-semibold text-slate-700" }, (selectedSubtask.skills || []).map(friendlyId).join(", ") || "None mapped")
+        ),
+        h("div", { className: "flex items-center space-x-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-150 text-[11px]" },
+          h("span", { className: "font-bold text-slate-400" }, "Outputs:"),
+          h("span", { className: "font-semibold text-slate-700" }, (selectedSubtask.outputs || []).map(friendlyId).join(", ") || "None mapped")
         )
       )
     )
@@ -10886,49 +11033,123 @@ function SeoPrototypeLanesTab({ staffId, selectedStage, onAddLane, onUpdateLane,
     });
     setDraft({ id: "", label: "", type: "", data: "", status: "Draft" });
   }
-  return h("div", { className: "seo-prototype-tab-content" },
-    h(SeoPrototypeTabHeader, { title: "Data lanes used in this stage", body: "Stage-level lanes are inherited by the workflow subtasks that need them." }),
-    h(SeoPrototypeFileUpload, { staffId, targetKind: "lane", onProcessed: lane => onAddLane(lane) }),
-    h("div", { className: "seo-prototype-add-row" },
-      h(Field, { label: "Lane ID" }, h(Input, { value: draft.id, placeholder: "lane_custom_source", onChange: event => setDraft({ ...draft, id: event.target.value }) })),
-      h(Field, { label: "Lane label" }, h(Input, { value: draft.label, placeholder: "Custom source lane", onChange: event => setDraft({ ...draft, label: event.target.value }) })),
-      h(Field, { label: "Route type" }, h(Input, { value: draft.type, placeholder: "local file/text intake", onChange: event => setDraft({ ...draft, type: event.target.value }) })),
-      h(Button, { type: "button", onClick: submitLane }, icon("plus"), "Add lane")
+
+  return h("div", { className: "space-y-6" },
+    h("div", null,
+      h("h4", { className: "text-lg font-bold text-slate-900 m-0" }, "Data lanes used in this stage"),
+      h("p", { className: "text-xs text-slate-500 mt-0.5 m-0" }, "Stage-level lanes are inherited by the workflow subtasks that need them.")
     ),
-    h("table", { className: "seo-prototype-mini-table" },
-      h("thead", null, h("tr", null,
-        h("th", null, "Lane"),
-        h("th", null, "Route type"),
-        h("th", null, "Data handled"),
-        h("th", null, "Status"),
-        h("th", null, "Used by subtasks"),
-        h("th", null, "")
-      )),
-      h("tbody", null, (selectedStage.lanes || []).map(id => {
-        const lane = laneCatalog[id] || { label: promptRuleLabel(id), type: "custom route", data: "custom data", status: "Draft" };
-        return h("tr", { key: id },
-          h("td", null,
-            h(Input, { value: lane.label || "", onChange: event => onUpdateLane(id, { ...lane, label: event.target.value }) }),
-            h("small", null, id)
+    h(SeoPrototypeFileUpload, { staffId, targetKind: "lane", onProcessed: lane => onAddLane(lane) }),
+    // Quick Add Lane Form
+    h("div", { className: "bg-white border border-slate-200 rounded-xl p-5" },
+      h("h5", { className: "text-xs font-bold text-slate-800 mb-4 uppercase tracking-wider m-0" }, "Quick Add Lane"),
+      h("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4 items-end" },
+        h("div", null,
+          h("label", { className: "block text-xs font-semibold text-slate-500 mb-1.5" }, "Lane ID"),
+          h("input", {
+            type: "text",
+            value: draft.id,
+            placeholder: "lane_custom_source",
+            onChange: event => setDraft({ ...draft, id: event.target.value }),
+            className: "w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          })
+        ),
+        h("div", null,
+          h("label", { className: "block text-xs font-semibold text-slate-500 mb-1.5" }, "Lane label"),
+          h("input", {
+            type: "text",
+            value: draft.label,
+            placeholder: "Custom source lane",
+            onChange: event => setDraft({ ...draft, label: event.target.value }),
+            className: "w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          })
+        ),
+        h("div", { className: "flex space-x-2 items-end" },
+          h("div", { className: "flex-1" },
+            h("label", { className: "block text-xs font-semibold text-slate-500 mb-1.5" }, "Route type"),
+            h("input", {
+              type: "text",
+              value: draft.type,
+              placeholder: "local file/text intake",
+              onChange: event => setDraft({ ...draft, type: event.target.value }),
+              className: "w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            })
           ),
-          h("td", null, h(Input, { value: lane.type || "", onChange: event => onUpdateLane(id, { ...lane, type: event.target.value }) })),
-          h("td", null, h(Input, { value: lane.data || "", onChange: event => onUpdateLane(id, { ...lane, data: event.target.value }) })),
-          h("td", null, h(Input, { value: lane.status || "", onChange: event => onUpdateLane(id, { ...lane, status: event.target.value }) })),
-          h("td", null,
-            h("div", { className: "seo-prototype-checkbox-stack" }, (selectedStage.subtasks || []).map(subtask =>
-              h("label", { key: `${id}-${subtask.id}` },
-                h("input", {
-                  type: "checkbox",
-                  checked: (subtask.lanes || []).includes(id),
-                  onChange: () => onToggleSubtaskRoute(subtask.id, "lanes", id),
-                }),
-                h("span", null, subtask.label)
-              )
-            ))
-          ),
-          h("td", null, h(Button, { type: "button", variant: "outline", onClick: () => onRemoveLane(id) }, "Remove"))
-        );
-      }))
+          h("button", {
+            type: "button",
+            onClick: submitLane,
+            className: "bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shrink-0 h-[34px] flex items-center justify-center cursor-pointer border-0"
+          }, "+ Add lane")
+        )
+      )
+    ),
+    // Table List
+    h("div", { className: "border border-slate-200 rounded-xl overflow-hidden shadow-sm" },
+      h("table", { className: "w-full text-left border-collapse m-0" },
+        h("thead", null,
+          h("tr", { className: "bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider" },
+            h("th", { className: "p-4" }, "Lane"),
+            h("th", { className: "p-4" }, "Route type"),
+            h("th", { className: "p-4" }, "Data handled"),
+            h("th", { className: "p-4" }, "Status"),
+            h("th", { className: "p-4" }, "Used by subtasks"),
+            h("th", { className: "p-4 text-right" }, "Action")
+          )
+        ),
+        h("tbody", { className: "text-xs divide-y divide-slate-150 bg-white" }, (selectedStage.lanes || []).map(id => {
+          const lane = laneCatalog[id] || { label: promptRuleLabel(id), type: "custom route", data: "custom data", status: "Draft" };
+          return h("tr", { key: id, className: "hover:bg-slate-50/50 transition" },
+            h("td", { className: "p-4" },
+              h("input", {
+                type: "text",
+                value: lane.label || "",
+                onChange: event => onUpdateLane(id, { ...lane, label: event.target.value }),
+                className: "text-xs font-bold text-slate-800 bg-transparent border-0 border-b border-dashed border-slate-200 hover:border-slate-400 focus:border-blue-500 focus:outline-none pb-0.5"
+              }),
+              h("div", { className: "text-[10px] font-mono text-slate-400 mt-1" }, id)
+            ),
+            h("td", { className: "p-4" },
+              h("input", {
+                type: "text",
+                value: lane.type || "",
+                onChange: event => onUpdateLane(id, { ...lane, type: event.target.value }),
+                className: "text-xs text-slate-600 bg-transparent border-0 border-b border-dashed border-slate-200 hover:border-slate-400 focus:border-blue-500 focus:outline-none pb-0.5"
+              })
+            ),
+            h("td", { className: "p-4" },
+              h("input", {
+                type: "text",
+                value: lane.data || "",
+                onChange: event => onUpdateLane(id, { ...lane, data: event.target.value }),
+                className: "text-xs font-mono text-slate-500 bg-transparent border-0 border-b border-dashed border-slate-200 hover:border-slate-400 focus:border-blue-500 focus:outline-none pb-0.5"
+              })
+            ),
+            h("td", { className: "p-4" },
+              h("span", { className: "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase font-mono" }, lane.status || "Draft")
+            ),
+            h("td", { className: "p-4" },
+              h("div", { className: "flex flex-col gap-2" }, (selectedStage.subtasks || []).map(subtask =>
+                h("label", { key: `${id}-${subtask.id}`, className: "flex items-center space-x-2 cursor-pointer m-0" },
+                  h("input", {
+                    type: "checkbox",
+                    checked: (subtask.lanes || []).includes(id),
+                    onChange: () => onToggleSubtaskRoute(subtask.id, "lanes", id),
+                    className: "rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                  }),
+                  h("span", { className: "text-[11px] font-medium text-slate-600" }, subtask.label)
+                )
+              ))
+            ),
+            h("td", { className: "p-4 text-right" },
+              h("button", {
+                type: "button",
+                onClick: () => onRemoveLane(id),
+                className: "text-red-600 hover:text-red-700 hover:bg-red-50 font-bold px-3 py-1.5 rounded-lg transition border border-transparent cursor-pointer bg-transparent"
+              }, "Remove")
+            )
+          );
+        }))
+      )
     )
   );
 }
@@ -10948,34 +11169,100 @@ function SeoPrototypeSkillsTab({ staffId, selectedStage, onAddSkill, onUpdateSki
     });
     setDraft({ id: "", label: "", scope: "Custom", rule: "" });
   }
-  return h("div", { className: "seo-prototype-tab-content" },
-    h(SeoPrototypeTabHeader, { title: "Skills used in this stage", body: "Skills define the behavior, guardrails, and reporting style for the assigned staff and its subtasks." }),
-    h(SeoPrototypeFileUpload, { staffId, targetKind: "skill", onProcessed: skill => onAddSkill(skill) }),
-    h("div", { className: "seo-prototype-add-row" },
-      h(Field, { label: "Skill ID" }, h(Input, { value: draft.id, placeholder: "staff_skill_custom", onChange: event => setDraft({ ...draft, id: event.target.value }) })),
-      h(Field, { label: "Skill label" }, h(Input, { value: draft.label, placeholder: "Custom SEO checker", onChange: event => setDraft({ ...draft, label: event.target.value }) })),
-      h(Field, { label: "Scope" }, h(Input, { value: draft.scope, onChange: event => setDraft({ ...draft, scope: event.target.value }) })),
-      h(Button, { type: "button", onClick: submitSkill }, icon("plus"), "Add skill")
+
+  return h("div", { className: "space-y-6" },
+    h("div", null,
+      h("h4", { className: "text-lg font-bold text-slate-900 m-0" }, "Skills used in this stage"),
+      h("p", { className: "text-xs text-slate-500 mt-0.5 m-0" }, "Skills define the behavior, guardrails, and reporting style for the assigned staff and its subtasks.")
     ),
-    h("div", { className: "seo-prototype-skill-grid" }, (selectedStage.skills || []).map(id => {
-      const skill = skillCatalog[id] || { label: promptRuleLabel(id), scope: "Custom", rule: "Custom skill rule." };
-      return h("article", { className: "seo-prototype-skill-card", key: id },
+    h(SeoPrototypeFileUpload, { staffId, targetKind: "skill", onProcessed: skill => onAddSkill(skill) }),
+    // Quick Add Skill Form
+    h("div", { className: "bg-white border border-slate-200 rounded-xl p-5" },
+      h("h5", { className: "text-xs font-bold text-slate-800 mb-4 uppercase tracking-wider m-0" }, "Quick Add Skill"),
+      h("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4 items-end" },
         h("div", null,
-          h(Field, { label: "Skill label" }, h(Input, { value: skill.label || "", onChange: event => onUpdateSkill(id, { ...skill, label: event.target.value }) })),
-          h(Field, { label: "Scope" }, h(Input, { value: skill.scope || "", onChange: event => onUpdateSkill(id, { ...skill, scope: event.target.value }) }))
+          h("label", { className: "block text-xs font-semibold text-slate-500 mb-1.5" }, "Skill ID"),
+          h("input", {
+            type: "text",
+            value: draft.id,
+            placeholder: "staff_skill_custom",
+            onChange: event => setDraft({ ...draft, id: event.target.value }),
+            className: "w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          })
         ),
-        h(Field, { label: "Rule" }, h(Textarea, { value: skill.rule || "", rows: 4, onChange: event => onUpdateSkill(id, { ...skill, rule: event.target.value }) })),
-        h("div", { className: "seo-prototype-checkbox-stack" }, (selectedStage.subtasks || []).map(subtask =>
-          h("label", { key: `${id}-${subtask.id}` },
+        h("div", null,
+          h("label", { className: "block text-xs font-semibold text-slate-500 mb-1.5" }, "Skill label"),
+          h("input", {
+            type: "text",
+            value: draft.label,
+            placeholder: "Custom SEO checker",
+            onChange: event => setDraft({ ...draft, label: event.target.value }),
+            className: "w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          })
+        ),
+        h("div", { className: "flex space-x-2 items-end" },
+          h("div", { className: "flex-1" },
+            h("label", { className: "block text-xs font-semibold text-slate-500 mb-1.5" }, "Scope"),
             h("input", {
-              type: "checkbox",
-              checked: (subtask.skills || []).includes(id),
-              onChange: () => onToggleSubtaskRoute(subtask.id, "skills", id),
-            }),
-            h("span", null, subtask.label)
+              type: "text",
+              value: draft.scope,
+              placeholder: "Custom",
+              onChange: event => setDraft({ ...draft, scope: event.target.value }),
+              className: "w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            })
+          ),
+          h("button", {
+            type: "button",
+            onClick: submitSkill,
+            className: "bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shrink-0 h-[34px] flex items-center justify-center cursor-pointer border-0"
+          }, "+ Add skill")
+        )
+      )
+    ),
+    // Skills Grid List
+    h("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-6" }, (selectedStage.skills || []).map(id => {
+      const skill = skillCatalog[id] || { label: promptRuleLabel(id), scope: "Custom", rule: "Custom skill rule." };
+      return h("div", { className: "border border-slate-200 rounded-xl p-5 space-y-4 bg-white hover:shadow-md transition", key: id },
+        h("div", null,
+          h("input", {
+            type: "text",
+            value: skill.label || "",
+            onChange: event => onUpdateSkill(id, { ...skill, label: event.target.value }),
+            className: "text-sm font-bold text-slate-900 bg-transparent border-0 border-b border-dashed border-slate-200 hover:border-slate-400 focus:border-blue-500 focus:outline-none pb-0.5 w-full mb-1"
+          }),
+          h("p", { className: "text-[11px] text-slate-500 mt-0.5 m-0" },
+            "Scope: ",
+            h("span", { className: "font-semibold text-slate-700" }, skill.scope || "Custom")
           )
-        )),
-        h(Button, { type: "button", variant: "outline", onClick: () => onRemoveSkill(id) }, "Remove skill")
+        ),
+        h("div", null,
+          h("label", { className: "block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Rule Guidance"),
+          h("textarea", {
+            value: skill.rule || "",
+            rows: 3,
+            onChange: event => onUpdateSkill(id, { ...skill, rule: event.target.value }),
+            className: "w-full h-24 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 leading-relaxed"
+          })
+        ),
+        h("div", { className: "space-y-2 border-t border-slate-100 pt-3" },
+          h("p", { className: "text-[10px] font-bold text-slate-400 uppercase tracking-wider m-0 mb-1" }, "Used by subtasks"),
+          h("div", { className: "flex flex-col gap-2" }, (selectedStage.subtasks || []).map(subtask =>
+            h("label", { key: `${id}-${subtask.id}`, className: "flex items-center space-x-2 cursor-pointer m-0" },
+              h("input", {
+                type: "checkbox",
+                checked: (subtask.skills || []).includes(id),
+                onChange: () => onToggleSubtaskRoute(subtask.id, "skills", id),
+                className: "rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+              }),
+              h("span", { className: "text-xs text-slate-600" }, subtask.label)
+            )
+          ))
+        ),
+        h("button", {
+          type: "button",
+          onClick: () => onRemoveSkill(id),
+          className: "w-full text-center text-red-600 hover:text-red-700 hover:bg-red-50 font-bold py-2 rounded-lg transition border border-slate-200 text-xs mt-2 cursor-pointer bg-white"
+        }, "Remove skill")
       );
     }))
   );
@@ -10983,24 +11270,45 @@ function SeoPrototypeSkillsTab({ staffId, selectedStage, onAddSkill, onUpdateSki
 
 function SeoPrototypeScriptTab({ staffId, selectedStage }) {
   const script = ((selectedStage.subtasks || [])[0] || {}).script || {};
-  return h("div", { className: "seo-prototype-tab-content" },
-    h(SeoPrototypeTabHeader, { title: `${staffProfile(staffId).label} script`, body: "Windmill execution contract for this staff-owned stage and its workflow subtasks." }),
-    h("div", { className: "seo-prototype-script-grid" },
-      h("section", { className: "seo-prototype-main-column" },
-        h(Field, { label: "Windmill script path" }, h(Input, { value: script.windmillPath || "u/admin/seo_demand_engine_worldbc_staff_stage_v2", readOnly: true })),
-        h(Field, { label: "Stage mode" }, h(Input, { value: script.mode || seoWorkspaceMode(selectedStage.id), readOnly: true })),
-        h("div", { className: "seo-prototype-two-col" },
-          h(SeoPrototypeReadOnlyField, { label: "Input contract", value: script.inputContract || "stage, subtasks, staffContext, approvals", rows: 5 }),
-          h(SeoPrototypeReadOnlyField, { label: "Output contract", value: script.outputContract || "stageId, staffId, status, evidence, missingInputs, nextAction", rows: 5 })
+  const label = staffProfile(staffId).label;
+  const title = staffJobTitle(staffId);
+  return h("div", { className: "space-y-6" },
+    h("div", null,
+      h("h4", { className: "text-lg font-bold text-slate-900 m-0" }, `${label} script`),
+      h("p", { className: "text-xs text-slate-500 mt-0.5 m-0" }, "Windmill execution contract for this staff-owned stage and its workflow subtasks.")
+    ),
+    h("div", { className: "grid grid-cols-1 lg:grid-cols-3 gap-6" },
+      h("div", { className: "lg:col-span-2 space-y-4" },
+        h("div", null,
+          h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Windmill script path"),
+          h("input", { type: "text", value: script.windmillPath || "u/admin/seo_demand_engine_worldbc_staff_stage_v2", readOnly: true, className: "w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" })
+        ),
+        h("div", null,
+          h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Stage mode"),
+          h("input", { type: "text", value: script.mode || seoWorkspaceMode(selectedStage.id), readOnly: true, className: "w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" })
+        ),
+        h("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4" },
+          h("div", null,
+            h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Input contract"),
+            h("textarea", { readOnly: true, value: script.inputContract || "sourceText, topic, keyword evidence, case-study context, staffContext, approvals", className: "w-full h-32 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" })
+          ),
+          h("div", null,
+            h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Output contract"),
+            h("textarea", { readOnly: true, value: script.outputContract || "stageId, staffId, status, evidence, missingInputs, nextAction, approvalRequest", className: "w-full h-32 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" })
+          )
         )
       ),
-      h("aside", { className: "seo-prototype-summary-card" },
-        h("p", { className: "eyebrow" }, `${staffProfile(staffId).label} in this stage`),
-        h("h3", null, staffProfile(staffId).label),
-        h("p", null, staffJobTitle(staffId)),
-        h("div", { className: "seo-prototype-duty-box" },
-          h("strong", null, "Script responsibility"),
-          h("p", null, selectedStage.assignedDuty)
+      h("div", { className: "bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4 h-fit" },
+        h("h5", { className: "text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-2 m-0" }, `${label} in this stage`),
+        h("div", { className: "space-y-3" },
+          h("div", null,
+            h("h6", { className: "text-sm font-bold text-slate-800 m-0" }, label),
+            h("p", { className: "text-[11px] text-slate-500 m-0" }, title)
+          ),
+          h("div", { className: "border-t border-slate-200/60 pt-3" },
+            h("span", { className: "block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1" }, "Script responsibility"),
+            h("p", { className: "text-xs text-slate-600 leading-relaxed m-0" }, selectedStage.assignedDuty)
+          )
         )
       )
     )
@@ -11010,59 +11318,123 @@ function SeoPrototypeScriptTab({ staffId, selectedStage }) {
 function SeoPrototypeSettingsTab({ staffId, selectedStage, profileSettings = {}, onStageChange, onSettingsChange }) {
   const readiness = seoProfileStageReadiness(selectedStage);
   const isSeoManager = staffId === "AIstaff_SEOManager";
-  return h("div", { className: "seo-prototype-tab-content" },
-    h(SeoPrototypeTabHeader, { title: "Settings", body: "Editable source view for the staff stage profile that is saved in the local backend." }),
-    h("div", { className: "seo-prototype-settings-grid" },
-      h("section", { className: "seo-prototype-main-column" },
-        isSeoManager ? h(Field, { label: "Manager email address" },
-          h(Input, {
+
+  const dbJson = JSON.stringify({
+    staffId,
+    stageId: selectedStage.id,
+    stageProfile: {
+      label: selectedStage.label,
+      goal: selectedStage.goal,
+      description: selectedStage.description,
+      duty: selectedStage.assignedDuty,
+    },
+    lanes: selectedStage.lanes,
+    skills: selectedStage.skills,
+    qualityGates: selectedStage.qualityGates,
+  }, null, 2);
+
+  return h("div", { className: "space-y-6" },
+    h("div", null,
+      h("h4", { className: "text-lg font-bold text-slate-900 m-0" }, "Settings"),
+      h("p", { className: "text-xs text-slate-500 mt-0.5 m-0" }, "Editable source view for the staff stage profile that is saved in the local backend.")
+    ),
+    h("div", { className: "grid grid-cols-1 lg:grid-cols-3 gap-6" },
+      // Form Fields Column
+      h("div", { className: "lg:col-span-2 space-y-4" },
+        isSeoManager ? h("div", null,
+          h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Manager email address"),
+          h("input", {
             type: "email",
             value: profileSettings.email || "",
             placeholder: "sofia@example.com",
             onChange: event => onSettingsChange({ email: event.target.value }),
+            className: "w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           })
         ) : null,
-        h("div", { className: "seo-prototype-two-col" },
-          h(Field, { label: "Stage name" }, h(Input, { value: selectedStage.label, onChange: event => onStageChange({ label: event.target.value }) })),
-          h(Field, { label: "Readiness" }, h(Input, { value: selectedStage.readiness || readiness, onChange: event => onStageChange({ readiness: event.target.value }) }))
+        h("div", null,
+          h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Stage name"),
+          h("input", {
+            type: "text",
+            value: selectedStage.label || "",
+            onChange: event => onStageChange({ label: event.target.value }),
+            className: "w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          })
         ),
-        h("div", { className: "seo-prototype-two-col" },
-          h(Field, { label: "Staff display name" }, h(Input, { value: selectedStage.staffAlias || staffProfile(staffId).label, onChange: event => onStageChange({ staffAlias: event.target.value }) })),
-          h(Field, { label: "Staff job title" }, h(Input, { value: selectedStage.staffTitle || staffJobTitle(staffId), onChange: event => onStageChange({ staffTitle: event.target.value }) }))
+        h("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4" },
+          h("div", null,
+            h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Readiness"),
+            h("input", {
+              type: "text",
+              value: selectedStage.readiness || readiness,
+              onChange: event => onStageChange({ readiness: event.target.value }),
+              className: "w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            })
+          ),
+          h("div", null,
+            h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Staff display name"),
+            h("input", {
+              type: "text",
+              value: selectedStage.staffAlias || staffProfile(staffId).label,
+              onChange: event => onStageChange({ staffAlias: event.target.value }),
+              className: "w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            })
+          )
         ),
-        h("div", { className: "seo-prototype-two-col" },
-          h(Field, { label: "Capability ID" }, h(Input, { value: selectedStage.capabilityId || "", onChange: event => onStageChange({ capabilityId: event.target.value }) })),
-          h(Field, { label: "Owner staff ID" }, h(Input, { value: selectedStage.ownerStaff || staffId, onChange: event => onStageChange({ ownerStaff: event.target.value }) }))
+        h("div", null,
+          h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Staff job title"),
+          h("input", {
+            type: "text",
+            value: selectedStage.staffTitle || staffJobTitle(staffId),
+            onChange: event => onStageChange({ staffTitle: event.target.value }),
+            className: "w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          })
         ),
-        h("div", { className: "seo-prototype-two-col" },
-          h(Field, { label: "Capability label" }, h(Input, { value: selectedStage.capabilityLabel || "", onChange: event => onStageChange({ capabilityLabel: event.target.value }) })),
-          h(Field, { label: "Outputs" }, h(Input, { value: (selectedStage.outputs || []).join(", "), onChange: event => onStageChange({ outputs: event.target.value.split(",").map(item => item.trim()).filter(Boolean) }) }))
+        h("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4" },
+          h("div", null,
+            h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Capability ID"),
+            h("input", {
+              type: "text",
+              value: selectedStage.capabilityId || "",
+              onChange: event => onStageChange({ capabilityId: event.target.value }),
+              className: "w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            })
+          ),
+          h("div", null,
+            h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Owner staff ID"),
+            h("input", {
+              type: "text",
+              value: selectedStage.ownerStaff || staffId,
+              onChange: event => onStageChange({ ownerStaff: event.target.value }),
+              className: "w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            })
+          )
+        ),
+        h("div", null,
+          h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Capability label"),
+          h("input", {
+            type: "text",
+            value: selectedStage.capabilityLabel || "",
+            onChange: event => onStageChange({ capabilityLabel: event.target.value }),
+            className: "w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          })
+        ),
+        h("div", null,
+          h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "Outputs"),
+          h("textarea", {
+            value: (selectedStage.outputs || []).join(", "),
+            onChange: event => onStageChange({ outputs: event.target.value.split(",").map(item => item.trim()).filter(Boolean) }),
+            className: "w-full h-24 text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          })
         )
       ),
-      h("aside", { className: "seo-prototype-summary-card" },
-        h("p", { className: "eyebrow" }, "DB write preview"),
-        h("pre", { className: "seo-prototype-json-preview" }, JSON.stringify({
-          staffId,
-          stageId: selectedStage.id,
-          stageProfile: {
-            label: selectedStage.label,
-            goal: selectedStage.goal,
-            description: selectedStage.description,
-            duty: selectedStage.assignedDuty,
-            lanes: selectedStage.lanes,
-            skills: selectedStage.skills,
-            qualityGates: selectedStage.qualityGates,
-            subtasks: selectedStage.subtasks.map(subtask => ({
-              id: subtask.id,
-              label: subtask.label,
-              goal: subtask.goal,
-              detail: subtask.detail,
-              nextAction: subtask.nextAction,
-              lanes: subtask.lanes,
-              skills: subtask.skills,
-            })),
-          },
-        }, null, 2))
+      // Database Preview Block Column
+      h("div", null,
+        h("label", { className: "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5" }, "DB Write Preview"),
+        h("div", { className: "bg-slate-900 text-slate-300 font-mono text-[11px] rounded-xl p-5 shadow-lg overflow-x-auto leading-relaxed border border-slate-800" },
+          h("pre", { className: "m-0" },
+            h("code", { className: "text-blue-400" }, dbJson)
+          )
+        )
       )
     )
   );
