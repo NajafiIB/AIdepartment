@@ -1,3 +1,5 @@
+This is Obsolete, and is used only as a test tool. do not use it, the correct one is on https://github.com/NajafiIB/AIdeparmtentUIonly_2. 
+
 # AIdepartment
 
 The structure of a single AI department in which there are multiple AI staff working under an AI manager.
